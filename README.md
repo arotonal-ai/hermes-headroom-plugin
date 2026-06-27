@@ -56,6 +56,20 @@ ln -s "$PWD" ~/.hermes/plugins/headroom_retrieve
 hermes plugins enable headroom_retrieve
 ```
 
+## P0.1 verified
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+python -m py_compile $(find src tests -name '*.py' | sort)
+python -m hermes_headroom_plugin.proxy smoke --json
+```
+
+Current local proof:
+
+- 10 tests pass, including clean temporary `HERMES_HOME` plugin discovery/load.
+- Real live smoke passed against `http://127.0.0.1:28787` with marker `2c966d5df220` and sentinel retrieval.
+- Real Hermes CLI temp-home `plugins enable` + `plugins list --plain --no-bundled` shows `headroom_retrieve` enabled.
+
 ## Non-goals in this repo stage
 
 - No default/global provider proxy route.
