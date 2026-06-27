@@ -4,7 +4,18 @@ from __future__ import annotations
 import json
 
 from .health import audit
-from .proxy import readyz, resolve_proxy_url
+from .proxy import readyz, smoke
+
+
+def _render_smoke(result: dict) -> str:
+    if result.get("ok"):
+        return (
+            "Headroom smoke PASS · "
+            f"tokens_before={result.get('tokens_before')} tokens_after={result.get('tokens_after')} "
+            f"saved={result.get('tokens_saved')} marker={result.get('marker')} "
+            f"retrieve_count={result.get('retrieve_count')} sentinel_found={result.get('sentinel_found')}"
+        )
+    return f"Headroom smoke FAIL · phase={result.get('phase')} · proxy={result.get('proxy_url')} · error={result.get('error', 'unknown')}"
 
 
 def handle_headroom_command(raw_args: str = "") -> str:
@@ -17,9 +28,5 @@ def handle_headroom_command(raw_args: str = "") -> str:
         result = audit()
         return "Headroom audit " + ("PASS" if result.get("ok") else "FAIL") + " · " + json.dumps(result, ensure_ascii=False, sort_keys=True)
     if action == "smoke":
-        # P0 smoke is intentionally non-mutating unless a live proxy is present.
-        health = readyz()
-        if not health.get("ok"):
-            return f"Headroom smoke BLOCKED · proxy not ready · proxy={resolve_proxy_url()}"
-        return "Headroom smoke READY · proxy healthy; full compress/retrieve smoke is implemented in the health/audit harness."
+        return _render_smoke(smoke())
     return "Usage: /headroom status|smoke|audit"
