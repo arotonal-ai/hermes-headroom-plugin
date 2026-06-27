@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-headroom-plugin"
+version = "0.1.0"
+description = "Installable Hermes plugin for Headroom context reduction with safe exact/compress/blocked policies."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Hermes Headroom contributors" }]
+dependencies = [
+  "PyYAML>=6,<7",
+]
+
+[project.optional-dependencies]
+proxy = ["headroom-ai>=0.26,<0.27"]
+test = []
+
+[project.entry-points."hermes_agent.plugins"]
+headroom_retrieve = "hermes_headroom_plugin"
+
+[project.scripts]
+headroom-health-audit = "hermes_headroom_plugin.health:main"
+headroom-proxy-start = "hermes_headroom_plugin.proxy:main"
+headroom-worker-lane = "hermes_headroom_plugin.wrappers:worker_main"
+headroom-background-lane = "hermes_headroom_plugin.wrappers:background_main"
+headroom-command-preflight = "hermes_headroom_plugin.wrappers:preflight_main"
+headroom-smart-route = "hermes_headroom_plugin.routing:smart_route_main"
+headroom-cost-route = "hermes_headroom_plugin.routing:cost_route_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+hermes_headroom_plugin = ["skills/*/SKILL.md", "data/systemd/*.template"]

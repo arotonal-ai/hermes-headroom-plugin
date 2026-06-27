@@ -1,0 +1,16 @@
+[Unit]
+Description=Hermes Headroom Context Reduction Proxy
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=HEADROOM_TELEMETRY=off
+Environment=HEADROOM_DISABLE_UPDATE_CHECK=1
+Environment=HEADROOM_HOST=127.0.0.1
+Environment=HEADROOM_PORT={port}
+ExecStart={headroom_executable} proxy --host 127.0.0.1 --port {port} --no-telemetry
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
