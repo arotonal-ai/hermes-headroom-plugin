@@ -1,74 +1,154 @@
 # Hermes Headroom Plugin
 
-Starter repository for converting the owner-local Headroom / Context Reduction Layer into an installable Hermes plugin.
+Installable Hermes plugin for Headroom / Context Reduction Layer controls.
 
-## Status
+> **Primary install path:** this repo is meant to be installed by another Hermes instance directly with `hermes plugins install`.
 
-This repo is intentionally **P0/P1 scaffolding**, not a full migration of the owner control plane. It is safe to iterate locally and is designed to support both:
+## Quick install in Hermes
 
-1. pip/entry-point installation via `hermes_agent.plugins`;
-2. direct directory-plugin testing via the top-level `plugin.yaml` + `__init__.py` shim.
+Run this from the target Hermes machine:
 
-## Architecture stance
+```bash
+hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
+hermes plugins list --enabled --user --plain
+```
+
+Then start a fresh session so Hermes reloads plugin discovery:
+
+```bash
+hermes gateway restart   # for Telegram/Discord/etc. gateway sessions
+# or use /new in an active chat/CLI session
+```
+
+Verify inside Hermes:
+
+```text
+/headroom status
+```
+
+If a Headroom proxy is running, also run:
+
+```text
+/headroom smoke
+```
+
+Expected minimum result after install:
+
+```text
+headroom_retrieve appears as enabled in `hermes plugins list`
+/headroom status responds without crashing
+```
+
+If `/headroom status` says the proxy is down, the plugin is installed correctly but the optional Headroom compression service is not running yet. See [INSTALL.md](INSTALL.md).
+
+## One-command installer
+
+For humans or another Hermes instance operating a shell:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arotonal-ai/hermes-headroom-plugin/main/scripts/install-hermes-plugin.sh | bash
+```
+
+For a cloned checkout:
+
+```bash
+scripts/install-hermes-plugin.sh
+scripts/verify-hermes-install.sh
+```
+
+## What this plugin adds
+
+- `headroom_retrieve` tool for retrieving exact content behind Headroom CCR markers.
+- `/headroom status` to check proxy reachability.
+- `/headroom smoke` to run a real compress → retrieve synthetic sentinel check when the proxy is available.
+- `/headroom audit` for local health/audit output.
+- Conservative exact/compress/blocked policy helpers.
+
+## Safe defaults
 
 ```text
 Headroom = bounded context-reduction for eligible intermediates
 not = global/default provider proxy routing
 ```
 
-Safe defaults:
+Defaults:
 
-- plugin disabled until explicitly enabled in Hermes;
-- telemetry off by default;
+- plugin disabled until explicitly enabled by Hermes install command;
 - no global/default provider routing;
-- final/edit-critical/sensitive content remains exact or blocked;
-- retrieval tool name stays `headroom_retrieve` for compatibility.
+- no external telemetry;
+- secrets, memory, profile, system/developer instructions, patches, diffs, manifests, hashes, claim ledgers, final packets, and protected content are exact or blocked, not compressed;
+- routing/canary/provider-cost features are opt-in advanced work, not first-install behavior.
 
-## P0 target
+## Install paths
 
-- `headroom_retrieve` tool;
-- `/headroom status|smoke|audit` command family;
-- proxy endpoint resolver;
-- policy module for exact/compress/blocked classes;
-- tests that run without a live Hermes process.
-
-## Local verification
+### Recommended: native Hermes Git plugin
 
 ```bash
-PYTHONPATH=src python -m unittest discover -s tests -v
-python -m py_compile $(find src -name '*.py')
+hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
+hermes plugins list --enabled --user --plain
+hermes gateway restart
 ```
 
-## Hermes install sketch
+This clones the repo under the target Hermes home, enables `headroom_retrieve`, and makes the slash command available after a fresh session/restart.
 
-Pip/editable path:
+### Local checkout / development
 
 ```bash
-pip install -e .
+git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
+cd hermes-headroom-plugin
+scripts/install-hermes-plugin.sh --local
+scripts/verify-hermes-install.sh
+```
+
+### Python package / entry point path
+
+The package also declares:
+
+```toml
+[project.entry-points."hermes_agent.plugins"]
+headroom_retrieve = "hermes_headroom_plugin"
+```
+
+Use this path only when you intentionally install into the same Python environment that runs Hermes:
+
+```bash
+python -m pip install git+https://github.com/arotonal-ai/hermes-headroom-plugin.git
 hermes plugins enable headroom_retrieve
-# start a fresh session or restart gateway so plugin discovery reruns
+hermes gateway restart
 ```
 
-Directory-plugin path for local development:
+For most Hermes users, prefer `hermes plugins install`.
+
+## Verification from a clean Hermes home
+
+Maintainers can test the install path without touching their real profile:
 
 ```bash
-ln -s "$PWD" ~/.hermes/plugins/headroom_retrieve
-hermes plugins enable headroom_retrieve
+TMP_HOME="$(mktemp -d)"
+HERMES_HOME="$TMP_HOME" hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
+HERMES_HOME="$TMP_HOME" hermes plugins list --enabled --user --plain
 ```
 
-## P0.1 verified
+A passing install shows `headroom_retrieve` enabled.
+
+## Local development checks
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
-python -m py_compile $(find src tests -name '*.py' | sort)
-python -m hermes_headroom_plugin.proxy smoke --json
+python3 -m py_compile $(find src tests -name '*.py' | sort)
+bash -n scripts/*.sh
 ```
 
-Current local proof:
+If a local proxy is running:
 
-- 10 tests pass, including clean temporary `HERMES_HOME` plugin discovery/load.
-- Real live smoke passed against `http://127.0.0.1:28787` with marker `2c966d5df220` and sentinel retrieval.
-- Real Hermes CLI temp-home `plugins enable` + `plugins list --plain --no-bundled` shows `headroom_retrieve` enabled.
+```bash
+python3 src/hermes_headroom_plugin/proxy.py smoke --json
+```
+
+## Documentation
+
+- [INSTALL.md](INSTALL.md) — complete installation, verification, update, rollback, and troubleshooting guide.
+- [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md) — compact instructions for another Hermes/AI agent installing this repo.
 
 ## Non-goals in this repo stage
 
