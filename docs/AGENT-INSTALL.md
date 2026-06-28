@@ -30,6 +30,8 @@ If full runtime/proxy validation is requested, verify the upstream Headroom depe
 
 ```bash
 scripts/test-headroom-dependency-install.sh
+# or, after native Hermes install:
+"${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
 ```
 
 If a proxy is running:

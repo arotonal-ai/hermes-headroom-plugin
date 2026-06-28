@@ -72,6 +72,12 @@ The plugin intentionally does **not** require `headroom-ai` just to load. That k
 scripts/test-headroom-dependency-install.sh
 ```
 
+After native Hermes install, the same check is available from the installed plugin directory:
+
+```bash
+"${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
+```
+
 This creates a temporary Python virtualenv, installs `headroom-ai[proxy]>=0.26,<0.27`, verifies imports, and checks `headroom --help` plus `headroom proxy --help`. It does not touch Hermes config or your real Python environment.
 
 ## One-command installer

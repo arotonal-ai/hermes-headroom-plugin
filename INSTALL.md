@@ -109,6 +109,12 @@ From a cloned checkout of this repo:
 scripts/test-headroom-dependency-install.sh
 ```
 
+Or, after native Hermes install:
+
+```bash
+"${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
+```
+
 What this proves:
 
 - `headroom-ai[proxy]>=0.26,<0.27` installs in a clean temporary virtualenv;
