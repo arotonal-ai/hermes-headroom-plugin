@@ -18,7 +18,7 @@ class SmokeTest(unittest.TestCase):
                     "tokens_saved": 900,
                 }, ""
             if url.endswith('/v1/retrieve'):
-                return 200, {"result": {"count": 1, "original_content": proxy.SMOKE_SENTINEL}}, ""
+                return 200, {"result": {"count": 1, "original_content": payload.get("query", proxy.SMOKE_SENTINEL)}}, ""
             raise AssertionError(url)
 
         with patch('hermes_headroom_plugin.proxy.http_json', fake_http_json):

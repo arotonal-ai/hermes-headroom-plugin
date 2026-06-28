@@ -8,7 +8,6 @@ Hermes config, HERMES_HOME, or the caller's system Python environment.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import os
 import shutil
 import subprocess
@@ -28,8 +27,23 @@ def exe_name(name: str) -> str:
     return f"{name}.exe" if os.name == "nt" else name
 
 
+def _timeout_output(exc: subprocess.TimeoutExpired) -> str:
+    stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+    stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+    return stdout + stderr
+
+
 def run(cmd: list[str], *, timeout: int = 120, log: Path | None = None) -> subprocess.CompletedProcess[str]:
-    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=False)
+    try:
+        proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as exc:
+        output = _timeout_output(exc)
+        if log is not None:
+            with log.open("a", encoding="utf-8") as fh:
+                fh.write(f"\n$ {' '.join(cmd)}\n")
+                fh.write(output)
+                fh.write(f"\nTIMEOUT after {timeout}s\n")
+        return subprocess.CompletedProcess(cmd, 124, output + f"\nTIMEOUT after {timeout}s\n")
     if log is not None:
         with log.open("a", encoding="utf-8") as fh:
             fh.write(f"\n$ {' '.join(cmd)}\n")
@@ -40,6 +54,7 @@ def run(cmd: list[str], *, timeout: int = 120, log: Path | None = None) -> subpr
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify headroom-ai[proxy] in a temporary venv.")
     parser.add_argument("--spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_SPEC), help=f"package spec (default: {DEFAULT_SPEC})")
+    parser.add_argument("--install-timeout", type=int, default=int(os.environ.get("HEADROOM_DEP_INSTALL_TIMEOUT", "600")), help="seconds allowed for each pip install command")
     parser.add_argument("--keep", action="store_true", help="keep the temporary venv for inspection")
     args = parser.parse_args(argv)
 
@@ -52,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
         headroom = bin_dir(venv_dir) / exe_name("headroom")
 
         for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", args.spec]):
-            proc = run(cmd, timeout=300, log=log)
+            proc = run(cmd, timeout=args.install_timeout, log=log)
             if proc.returncode != 0:
                 print(f"FAIL: dependency install command failed rc={proc.returncode}; log={log}", file=sys.stderr)
                 print(proc.stdout[-4000:], file=sys.stderr)

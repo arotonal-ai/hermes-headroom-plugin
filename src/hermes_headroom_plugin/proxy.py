@@ -7,6 +7,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -105,7 +106,7 @@ def retrieve(hash_key: str, query: str = "", proxy_url: str | None = None) -> di
     return data
 
 
-def synthetic_messages() -> list[dict[str, Any]]:
+def synthetic_messages(sentinel: str = SMOKE_SENTINEL) -> list[dict[str, Any]]:
     rows = []
     for i in range(220):
         rows.append({
@@ -113,7 +114,7 @@ def synthetic_messages() -> list[dict[str, Any]]:
             "title": "Synthetic Headroom Plugin Smoke",
             "messages": [{
                 "role": "assistant",
-                "content": "synthetic filler " * 80 + (SMOKE_SENTINEL if i == 137 else ""),
+                "content": "synthetic filler " * 80 + (sentinel if i == 137 else ""),
             }],
             "bookend_start": [],
             "bookend_end": [],
@@ -150,7 +151,8 @@ def smoke(proxy_url: str | None = None, *, require_marker: bool = True) -> dict[
     if not health.get("ok"):
         return {"ok": False, "phase": "readyz", "proxy_url": proxy_url, "readyz": health, "error": "proxy not ready"}
 
-    compressed = compress_messages(synthetic_messages(), proxy_url=proxy_url)
+    sentinel = f"{SMOKE_SENTINEL}_{uuid.uuid4().hex}"
+    compressed = compress_messages(synthetic_messages(sentinel), proxy_url=proxy_url)
     if not compressed.get("ok"):
         return {"ok": False, "phase": "compress", **compressed}
 
@@ -168,8 +170,8 @@ def smoke(proxy_url: str | None = None, *, require_marker: bool = True) -> dict[
         }
 
     marker = markers[0].split()[0]
-    retrieved = retrieve(marker, query=SMOKE_SENTINEL, proxy_url=proxy_url)
-    sentinel_found = SMOKE_SENTINEL in _result_text(retrieved)
+    retrieved = retrieve(marker, query=sentinel, proxy_url=proxy_url)
+    sentinel_found = sentinel in _result_text(retrieved)
     result = retrieved.get("result") if isinstance(retrieved.get("result"), dict) else retrieved
     retrieve_count = result.get("count") if isinstance(result, dict) else None
     ok = bool(retrieved.get("success", "error" not in retrieved)) and (sentinel_found or int(retrieve_count or 0) >= 1)
