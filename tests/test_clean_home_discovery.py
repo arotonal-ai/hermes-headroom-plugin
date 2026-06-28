@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 import shutil
@@ -10,18 +11,19 @@ from pathlib import Path
 
 
 class CleanHomeDiscoveryTest(unittest.TestCase):
+    @unittest.skipIf(importlib.util.find_spec("hermes_cli") is None, "Hermes CLI package not installed in this Python environment")
     def test_directory_plugin_discovery_and_loads_in_temp_home(self):
         repo = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as td:
-            home = Path(td) / 'hermes-home'
-            plugins = home / 'plugins'
+            home = Path(td) / "hermes-home"
+            plugins = home / "plugins"
             plugins.mkdir(parents=True)
-            target = plugins / 'headroom_retrieve'
+            target = plugins / "headroom_retrieve"
             try:
                 target.symlink_to(repo, target_is_directory=True)
             except OSError:
-                shutil.copytree(repo, target, ignore=shutil.ignore_patterns('.git', '__pycache__', '*.pyc'))
-            (home / 'config.yaml').write_text('plugins:\n  enabled:\n    - headroom_retrieve\n', encoding='utf-8')
+                shutil.copytree(repo, target, ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"))
+            (home / "config.yaml").write_text("plugins:\n  enabled:\n    - headroom_retrieve\n", encoding="utf-8")
             code = textwrap.dedent("""
                 import json
                 from hermes_cli.plugins import PluginManager
@@ -37,17 +39,17 @@ class CleanHomeDiscoveryTest(unittest.TestCase):
                 }, sort_keys=True))
             """)
             env = os.environ.copy()
-            env['HERMES_HOME'] = str(home)
-            env['PYTHONPATH'] = str(repo / 'src') + os.pathsep + env.get('PYTHONPATH', '')
-            proc = subprocess.run([sys.executable, '-c', code], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False)
+            env["HERMES_HOME"] = str(home)
+            env["PYTHONPATH"] = str(repo / "src") + os.pathsep + env.get("PYTHONPATH", "")
+            proc = subprocess.run([sys.executable, "-c", code], env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30, check=False)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             data = json.loads(proc.stdout.strip().splitlines()[-1])
-            self.assertTrue(data['seen'], data)
-            self.assertTrue(data['enabled'], data)
-            self.assertIsNone(data['error'], data)
-            self.assertIn('headroom_retrieve', data['tools'])
-            self.assertIn('headroom', data['commands'])
+            self.assertTrue(data["seen"], data)
+            self.assertTrue(data["enabled"], data)
+            self.assertIsNone(data["error"], data)
+            self.assertIn("headroom_retrieve", data["tools"])
+            self.assertIn("headroom", data["commands"])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()
