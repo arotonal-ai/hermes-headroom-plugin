@@ -23,6 +23,8 @@ jobs:
           bash -n scripts/*.sh
       - name: Repo readiness audit
         run: scripts/audit-repo-readiness.sh
+      - name: Upstream Headroom dependency install smoke
+        run: scripts/test-headroom-dependency-install.sh
       - name: Clean-home install smoke if Hermes CLI is available
         run: |
           if command -v hermes >/dev/null 2>&1; then

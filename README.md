@@ -56,6 +56,24 @@ If a Headroom proxy is running, also run:
 
 If `/headroom status` says the proxy is down, the plugin is installed correctly but the optional Headroom compression service is not running yet. See [INSTALL.md](INSTALL.md).
 
+## Headroom dependency and proxy layer
+
+Pedagogical split:
+
+| Layer | What installs it | Required for |
+|---|---|---|
+| Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `INSTALL_PASS`: Hermes can load `headroom_retrieve` and `/headroom status` |
+| Upstream Headroom Python package | `python -m pip install "headroom-ai[proxy]>=0.26,<0.27"` | running a local Headroom proxy/backend |
+| Runtime proxy | `headroom proxy --port 28787` or another configured endpoint | `RUNTIME_FULL`: `/headroom smoke` can compress → retrieve |
+
+The plugin intentionally does **not** require `headroom-ai` just to load. That keeps first install safe and lightweight. But if you want real compression/retrieval, verify the dependency layer:
+
+```bash
+scripts/test-headroom-dependency-install.sh
+```
+
+This creates a temporary Python virtualenv, installs `headroom-ai[proxy]>=0.26,<0.27`, verifies imports, and checks `headroom --help` plus `headroom proxy --help`. It does not touch Hermes config or your real Python environment.
+
 ## One-command installer
 
 For humans or another Hermes instance operating a shell:
@@ -166,6 +184,12 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m py_compile $(find src tests -name '*.py' | sort)
 bash -n scripts/*.sh
 scripts/audit-repo-readiness.sh
+```
+
+Verify upstream Headroom dependency in a temporary venv:
+
+```bash
+scripts/test-headroom-dependency-install.sh
 ```
 
 If a local proxy is running:

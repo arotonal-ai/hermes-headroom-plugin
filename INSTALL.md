@@ -15,6 +15,12 @@ If `hermes` is not installed or not on `PATH`, install/fix Hermes first. This re
 
 No API keys are required for plugin installation. Do not paste secrets into shell commands or GitHub issues.
 
+Important distinction:
+
+- **Hermes plugin install** does not require `headroom-ai`; it only needs Hermes + git.
+- **Full compression runtime** requires the upstream Headroom Python package/proxy.
+- This guide verifies both layers separately so an agent does not confuse “plugin installed” with “proxy running”.
+
 ## Recommended install
 
 ```bash
@@ -93,9 +99,43 @@ command: /headroom status|smoke|audit
 
 ## Optional proxy/backend setup
 
-The plugin can be installed without a running Headroom proxy. In that state, `/headroom status` should report that the proxy is unavailable.
+The plugin can be installed without a running Headroom proxy. In that state, `/headroom status` should report that the proxy is unavailable. That is `RUNTIME_PARTIAL`, not a failed plugin install.
 
-To use real compression/retrieval, run a compatible Headroom proxy and point the plugin to it:
+### Step 1 — Verify the upstream Headroom dependency safely
+
+From a cloned checkout of this repo:
+
+```bash
+scripts/test-headroom-dependency-install.sh
+```
+
+What this proves:
+
+- `headroom-ai[proxy]>=0.26,<0.27` installs in a clean temporary virtualenv;
+- Python can import the Headroom package and proxy dependencies;
+- the `headroom` CLI exists;
+- `headroom proxy --help` exposes proxy startup options.
+
+Equivalent manual check:
+
+```bash
+TMP_DIR="$(mktemp -d)"
+python3 -m venv "$TMP_DIR/venv"
+"$TMP_DIR/venv/bin/python" -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+"$TMP_DIR/venv/bin/headroom" --help
+"$TMP_DIR/venv/bin/headroom" proxy --help
+rm -rf "$TMP_DIR"
+```
+
+### Step 2 — Run or point to a Headroom proxy
+
+To use real compression/retrieval, run a compatible Headroom proxy and point the plugin to it. The plugin default is `http://127.0.0.1:28787`; upstream Headroom's CLI default may differ, so be explicit:
+
+```bash
+headroom proxy --host 127.0.0.1 --port 28787
+```
+
+Or point Hermes to an already-running proxy:
 
 ```bash
 export HEADROOM_PROXY_URL="http://127.0.0.1:28787"
@@ -116,7 +156,7 @@ Then restart/fresh-session and run:
 
 This repo intentionally does **not** enable global provider routing by default.
 
-Backend note: this repository installs the Hermes plugin. For the broader Headroom backend/proxy lifecycle, follow upstream Headroom documentation rather than duplicating it here:
+Backend note: this repository installs the Hermes plugin and provides a dependency smoke test. For deeper Headroom backend/proxy lifecycle behavior, follow upstream Headroom documentation rather than duplicating it here:
 
 - https://github.com/chopratejas/headroom
 - https://headroomlabs-ai.github.io/headroom/quickstart/
@@ -132,13 +172,21 @@ scripts/audit-repo-readiness.sh
 
 This checks metadata, docs, syntax, shell scripts, markdown links, and obvious secret patterns without mutating Hermes.
 
-## Validate install without touching real Hermes home
+## Validate dependency and install without touching real environments
+
+Validate upstream Headroom dependency in a temporary Python venv:
+
+```bash
+scripts/test-headroom-dependency-install.sh
+```
+
+Validate plugin install in a temporary Hermes home:
 
 ```bash
 scripts/test-clean-hermes-install.sh --local
 ```
 
-This creates a temporary `HERMES_HOME`, installs/enables the plugin there, verifies that Hermes loads `headroom_retrieve` and `/headroom`, then removes the temp home.
+The first script removes its temporary virtualenv. The second creates a temporary `HERMES_HOME`, installs/enables the plugin there, verifies that Hermes loads `headroom_retrieve` and `/headroom`, then removes the temp home.
 
 ## Update
 
@@ -186,6 +234,18 @@ Check that the target machine has `git` and can reach GitHub:
 ```bash
 git ls-remote https://github.com/arotonal-ai/hermes-headroom-plugin.git HEAD
 ```
+
+### `headroom-ai` dependency install fails
+
+This is a dependency/backend issue, not a Hermes plugin install issue. Capture:
+
+```bash
+python3 --version
+python3 -m pip --version
+scripts/test-headroom-dependency-install.sh --keep
+```
+
+Then inspect the kept temporary venv/logs and compare against upstream Headroom docs.
 
 ### Plugin is enabled but smoke fails at `readyz`
 

@@ -22,6 +22,7 @@ required=(
   scripts/install-hermes-plugin.sh
   scripts/verify-hermes-install.sh
   scripts/test-clean-hermes-install.sh
+  scripts/test-headroom-dependency-install.sh
 )
 
 for f in "${required[@]}"; do
@@ -38,10 +39,10 @@ for p in py_files:
     ast.parse(p.read_text(encoding='utf-8'), filename=str(p))
 print(f"PASS: python syntax ok ({len(py_files)} files)")
 required_text = {
-    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom'],
-    'INSTALL.md': ['Acceptance matrix', 'No API keys are required', 'scripts/test-clean-hermes-install.sh --local'],
-    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom'],
-    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if'],
+    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom', 'scripts/test-headroom-dependency-install.sh', 'headroom-ai[proxy]>=0.26,<0.27'],
+    'INSTALL.md': ['Acceptance matrix', 'No API keys are required', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'headroom proxy --host 127.0.0.1 --port 28787'],
+    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh'],
+    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.27'],
     'ACKNOWLEDGEMENTS.md': ['chopratejas/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
 }
 for rel, needles in required_text.items():

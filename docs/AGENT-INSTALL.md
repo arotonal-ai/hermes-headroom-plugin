@@ -26,6 +26,12 @@ In Hermes:
 /headroom status
 ```
 
+If full runtime/proxy validation is requested, verify the upstream Headroom dependency without touching the real environment:
+
+```bash
+scripts/test-headroom-dependency-install.sh
+```
+
 If a proxy is running:
 
 ```text
@@ -47,6 +53,7 @@ PARTIAL if:
 
 FULL if:
 
+- `scripts/test-headroom-dependency-install.sh` passes for `headroom-ai[proxy]>=0.26,<0.27`;
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval.
 
 FAIL if:

@@ -26,6 +26,12 @@ Verify in Hermes:
 /headroom status
 ```
 
+If full runtime verification is requested, verify the upstream Headroom dependency first:
+
+```bash
+bash scripts/test-headroom-dependency-install.sh
+```
+
 If a Headroom proxy is running, also verify:
 
 ```text
@@ -38,7 +44,7 @@ If a Headroom proxy is running, also verify:
 |---|---|---|
 | `INSTALL_PASS` | Plugin installed and Hermes can load it | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, but Headroom proxy is unavailable | `/headroom status` reports proxy unavailable or `/headroom smoke` fails at `readyz` |
-| `RUNTIME_FULL` | Plugin and proxy both work | `/headroom smoke` returns PASS with compress → retrieve sentinel |
+| `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]`, and proxy all work | `scripts/test-headroom-dependency-install.sh` PASS and `/headroom smoke` returns PASS with compress → retrieve sentinel |
 | `FAIL` | Plugin not installed/loaded | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
 
 ## Do not do these things
