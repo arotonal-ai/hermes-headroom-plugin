@@ -13,6 +13,7 @@ required=(
   AGENTS.md
   SECURITY.md
   PRIVACY.md
+  ACKNOWLEDGEMENTS.md
   docs/AGENT-INSTALL.md
   plugin.yaml
   __init__.py
@@ -37,10 +38,11 @@ for p in py_files:
     ast.parse(p.read_text(encoding='utf-8'), filename=str(p))
 print(f"PASS: python syntax ok ({len(py_files)} files)")
 required_text = {
-    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL'],
+    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom'],
     'INSTALL.md': ['Acceptance matrix', 'No API keys are required', 'scripts/test-clean-hermes-install.sh --local'],
-    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve'],
+    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom'],
     'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if'],
+    'ACKNOWLEDGEMENTS.md': ['chopratejas/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
 }
 for rel, needles in required_text.items():
     text = Path(rel).read_text(encoding='utf-8')
@@ -49,7 +51,7 @@ for rel, needles in required_text.items():
         raise SystemExit(f"FAIL: {rel} missing required text: {missing}")
 print('PASS: required documentation text present')
 missing_links = []
-for rel in ['README.md', 'INSTALL.md', 'AGENTS.md', 'SECURITY.md', 'PRIVACY.md', 'docs/AGENT-INSTALL.md']:
+for rel in ['README.md', 'INSTALL.md', 'AGENTS.md', 'SECURITY.md', 'PRIVACY.md', 'ACKNOWLEDGEMENTS.md', 'docs/AGENT-INSTALL.md']:
     path = Path(rel)
     text = path.read_text(encoding='utf-8')
     for target in re.findall(r'\[[^\]]+\]\(([^)]+)\)', text):

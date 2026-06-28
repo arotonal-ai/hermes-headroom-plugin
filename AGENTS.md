@@ -76,6 +76,17 @@ bash scripts/test-clean-hermes-install.sh --local
 
 This uses a temporary `HERMES_HOME` and removes it at the end.
 
+
+## Upstream relationship
+
+When reporting or documenting this plugin, preserve the distinction:
+
+- upstream Headroom: https://github.com/chopratejas/headroom
+- upstream docs: https://headroomlabs-ai.github.io/headroom/
+- this repo: Hermes Agent plugin/integration wrapper
+
+Do not present this repository as the original Headroom project. Link upstream for backend/proxy behavior and Headroom project evolution.
+
 ## Rollback
 
 ```bash

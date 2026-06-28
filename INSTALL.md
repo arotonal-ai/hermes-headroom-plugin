@@ -116,6 +116,12 @@ Then restart/fresh-session and run:
 
 This repo intentionally does **not** enable global provider routing by default.
 
+Backend note: this repository installs the Hermes plugin. For the broader Headroom backend/proxy lifecycle, follow upstream Headroom documentation rather than duplicating it here:
+
+- https://github.com/chopratejas/headroom
+- https://headroomlabs-ai.github.io/headroom/quickstart/
+- https://pypi.org/project/headroom-ai/
+
 ## Analyze without installing
 
 ```bash

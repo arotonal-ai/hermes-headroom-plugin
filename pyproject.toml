@@ -14,6 +14,13 @@ dependencies = [
   "PyYAML>=6,<7",
 ]
 
+[project.urls]
+Homepage = "https://github.com/arotonal-ai/hermes-headroom-plugin"
+Repository = "https://github.com/arotonal-ai/hermes-headroom-plugin"
+"Upstream Headroom" = "https://github.com/chopratejas/headroom"
+"Upstream Headroom Docs" = "https://headroomlabs-ai.github.io/headroom/"
+"headroom-ai on PyPI" = "https://pypi.org/project/headroom-ai/"
+
 [project.optional-dependencies]
 proxy = ["headroom-ai>=0.26,<0.27"]
 test = []

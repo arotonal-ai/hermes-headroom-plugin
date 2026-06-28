@@ -4,6 +4,19 @@ Installable Hermes plugin for Headroom / Context Reduction Layer controls.
 
 > **Primary install path:** this repo is meant to be installed by another Hermes instance directly with `hermes plugins install`.
 
+
+## Relationship to upstream Headroom
+
+This repository is a **Hermes Agent integration plugin** for Headroom. It is not the upstream Headroom project and should not be read as a fork or replacement.
+
+Upstream Headroom resources:
+
+- Original/open-source project: [chopratejas/headroom](https://github.com/chopratejas/headroom)
+- Documentation site: [headroomlabs-ai.github.io/headroom](https://headroomlabs-ai.github.io/headroom/)
+- Python package: [`headroom-ai` on PyPI](https://pypi.org/project/headroom-ai/)
+
+Acknowledgement: this plugin builds on the Headroom project's context-reduction ideas and Python package surface. The Hermes-specific work here is the installable plugin wrapper, safe admission policy, retrieval command, smoke/audit commands, and agent/human installation harnesses. See [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
+
 ## Quick install in Hermes
 
 Run this from the target Hermes machine:
