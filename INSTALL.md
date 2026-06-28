@@ -51,6 +51,15 @@ Expected successful smoke:
 Headroom smoke PASS ... sentinel_found=True
 ```
 
+## Acceptance matrix
+
+| State | Meaning | Evidence |
+|---|---|---|
+| `INSTALL_PASS` | Plugin installed and Hermes can load it | `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`; `/headroom status` responds after restart/new session |
+| `RUNTIME_PARTIAL` | Plugin works, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz` |
+| `RUNTIME_FULL` | Plugin and proxy both work | `/headroom smoke` returns PASS with sentinel retrieval |
+| `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
+
 ## One-command install script
 
 ```bash
@@ -107,6 +116,24 @@ Then restart/fresh-session and run:
 
 This repo intentionally does **not** enable global provider routing by default.
 
+## Analyze without installing
+
+```bash
+git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
+cd hermes-headroom-plugin
+scripts/audit-repo-readiness.sh
+```
+
+This checks metadata, docs, syntax, shell scripts, markdown links, and obvious secret patterns without mutating Hermes.
+
+## Validate install without touching real Hermes home
+
+```bash
+scripts/test-clean-hermes-install.sh --local
+```
+
+This creates a temporary `HERMES_HOME`, installs/enables the plugin there, verifies that Hermes loads `headroom_retrieve` and `/headroom`, then removes the temp home.
+
 ## Update
 
 ```bash
@@ -162,7 +189,7 @@ The plugin is installed; the Headroom proxy is not reachable. Start/configure th
 export HEADROOM_PROXY_URL="http://host:port"
 ```
 
-### Validate without touching real Hermes home
+### Validate remote install with a temp Hermes home
 
 ```bash
 TMP_HOME="$(mktemp -d)"

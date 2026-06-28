@@ -4,7 +4,7 @@ Use this when another Hermes/AI agent is given only this repository URL and aske
 
 ## Goal
 
-Install and enable the Hermes Headroom plugin without exposing secrets or changing global provider routing.
+Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing.
 
 ## Commands
 
@@ -37,7 +37,7 @@ If a proxy is running:
 PASS if:
 
 - `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`;
-- `/headroom status` responds;
+- `/headroom status` responds after restart/new session;
 - no secrets are requested or printed;
 - global/default provider routing is unchanged.
 
@@ -45,11 +45,29 @@ PARTIAL if:
 
 - install succeeds but `/headroom smoke` fails because no Headroom proxy is running.
 
+FULL if:
+
+- install succeeds and `/headroom smoke` returns PASS with sentinel retrieval.
+
 FAIL if:
 
 - plugin is not listed as enabled;
 - `/headroom` command is unavailable after a fresh session/restart;
 - install required copying owner-local `~/.hermes` state.
+
+## Analyze without installing
+
+```bash
+git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
+cd hermes-headroom-plugin
+scripts/audit-repo-readiness.sh
+```
+
+## Temp-home test when allowed
+
+```bash
+scripts/test-clean-hermes-install.sh --local
+```
 
 ## Rollback
 

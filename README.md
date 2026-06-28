@@ -32,12 +32,14 @@ If a Headroom proxy is running, also run:
 /headroom smoke
 ```
 
-Expected minimum result after install:
+## Expected states
 
-```text
-headroom_retrieve appears as enabled in `hermes plugins list`
-/headroom status responds without crashing
-```
+| State | What it means | Expected result |
+|---|---|---|
+| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds |
+| `RUNTIME_PARTIAL` | Plugin is installed but no Headroom proxy is reachable | `/headroom status` reports unavailable, or `/headroom smoke` fails at `readyz` |
+| `RUNTIME_FULL` | Plugin and proxy both work | `/headroom smoke` passes a real compress → retrieve sentinel check |
+| `FAIL` | Plugin cannot be used | plugin is not enabled, `/headroom` is unavailable after restart/new session, or install required copying owner-local state |
 
 If `/headroom status` says the proxy is down, the plugin is installed correctly but the optional Headroom compression service is not running yet. See [INSTALL.md](INSTALL.md).
 
@@ -119,14 +121,27 @@ hermes gateway restart
 
 For most Hermes users, prefer `hermes plugins install`.
 
-## Verification from a clean Hermes home
+## Verification without touching the real Hermes profile
 
-Maintainers can test the install path without touching their real profile:
+Read-only repo audit:
+
+```bash
+scripts/audit-repo-readiness.sh
+```
+
+Temporary `HERMES_HOME` install test:
+
+```bash
+scripts/test-clean-hermes-install.sh --local
+```
+
+Maintainers can test the remote install path with a temporary home:
 
 ```bash
 TMP_HOME="$(mktemp -d)"
 HERMES_HOME="$TMP_HOME" hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
 HERMES_HOME="$TMP_HOME" hermes plugins list --enabled --user --plain
+rm -rf "$TMP_HOME"
 ```
 
 A passing install shows `headroom_retrieve` enabled.
@@ -137,6 +152,7 @@ A passing install shows `headroom_retrieve` enabled.
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m py_compile $(find src tests -name '*.py' | sort)
 bash -n scripts/*.sh
+scripts/audit-repo-readiness.sh
 ```
 
 If a local proxy is running:
@@ -147,8 +163,11 @@ python3 src/hermes_headroom_plugin/proxy.py smoke --json
 
 ## Documentation
 
+- [AGENTS.md](AGENTS.md) — root instructions for another Hermes/AI agent.
 - [INSTALL.md](INSTALL.md) — complete installation, verification, update, rollback, and troubleshooting guide.
-- [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md) — compact instructions for another Hermes/AI agent installing this repo.
+- [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md) — compact install brief for agents.
+- [SECURITY.md](SECURITY.md) — security reporting and secret-handling policy.
+- [PRIVACY.md](PRIVACY.md) — privacy and telemetry posture.
 
 ## Non-goals in this repo stage
 
