@@ -6,6 +6,10 @@ Use this when another Hermes/AI agent is given only this repository URL and aske
 
 Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing.
 
+## Platform note
+
+Linux is the primary tested path. macOS/WSL are expected when Hermes, git, and Python are available. Native Windows should use native Hermes commands and Python helper scripts; Bash helpers require Git Bash/WSL.
+
 ## Commands
 
 ```bash
@@ -29,6 +33,8 @@ In Hermes:
 If full runtime/proxy validation is requested, verify the upstream Headroom dependency without touching the real environment:
 
 ```bash
+python scripts/test-headroom-dependency-install.py
+# Unix wrapper:
 scripts/test-headroom-dependency-install.sh
 # or, after native Hermes install:
 "${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
@@ -55,7 +61,7 @@ PARTIAL if:
 
 FULL if:
 
-- `scripts/test-headroom-dependency-install.sh` passes for `headroom-ai[proxy]>=0.26,<0.27`;
+- `scripts/test-headroom-dependency-install.sh` or the Python equivalent passes for `headroom-ai[proxy]>=0.26,<0.27`;
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval.
 
 FAIL if:
@@ -76,6 +82,14 @@ scripts/audit-repo-readiness.sh
 
 ```bash
 scripts/test-clean-hermes-install.sh --local
+```
+
+## Metrics
+
+Weekly savings tables must be generated from retained JSONL evidence:
+
+```bash
+python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.jsonl --write docs/metrics/weekly-savings.md
 ```
 
 ## Rollback

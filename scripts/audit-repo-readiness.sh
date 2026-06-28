@@ -15,6 +15,7 @@ required=(
   PRIVACY.md
   ACKNOWLEDGEMENTS.md
   docs/AGENT-INSTALL.md
+  docs/metrics/weekly-savings.md
   plugin.yaml
   __init__.py
   pyproject.toml
@@ -23,6 +24,8 @@ required=(
   scripts/verify-hermes-install.sh
   scripts/test-clean-hermes-install.sh
   scripts/test-headroom-dependency-install.sh
+  scripts/test-headroom-dependency-install.py
+  scripts/generate-weekly-savings-table.py
 )
 
 for f in "${required[@]}"; do
@@ -34,15 +37,16 @@ python3 - <<'PY'
 from pathlib import Path
 import ast, re, sys
 root = Path('.')
-py_files = [Path('__init__.py')] + sorted(Path('src').rglob('*.py')) + sorted(Path('tests').rglob('*.py'))
+py_files = [Path('__init__.py')] + sorted(Path('src').rglob('*.py')) + sorted(Path('tests').rglob('*.py')) + sorted(Path('scripts').glob('*.py'))
 for p in py_files:
     ast.parse(p.read_text(encoding='utf-8'), filename=str(p))
 print(f"PASS: python syntax ok ({len(py_files)} files)")
 required_text = {
-    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom', 'scripts/test-headroom-dependency-install.sh', 'headroom-ai[proxy]>=0.26,<0.27'],
-    'INSTALL.md': ['Acceptance matrix', 'No API keys are required', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'headroom proxy --host 127.0.0.1 --port 28787'],
-    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh'],
-    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.27'],
+    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'docs/metrics/weekly-savings.md', 'headroom-ai[proxy]>=0.26,<0.27'],
+    'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'python scripts/test-headroom-dependency-install.py', 'headroom proxy --host 127.0.0.1 --port 28787'],
+    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh', 'weekly metrics'],
+    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.27', 'generate-weekly-savings-table.py'],
+    'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],
     'ACKNOWLEDGEMENTS.md': ['chopratejas/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
 }
 for rel, needles in required_text.items():
@@ -52,7 +56,7 @@ for rel, needles in required_text.items():
         raise SystemExit(f"FAIL: {rel} missing required text: {missing}")
 print('PASS: required documentation text present')
 missing_links = []
-for rel in ['README.md', 'INSTALL.md', 'AGENTS.md', 'SECURITY.md', 'PRIVACY.md', 'ACKNOWLEDGEMENTS.md', 'docs/AGENT-INSTALL.md']:
+for rel in ['README.md', 'INSTALL.md', 'AGENTS.md', 'SECURITY.md', 'PRIVACY.md', 'ACKNOWLEDGEMENTS.md', 'docs/AGENT-INSTALL.md', 'docs/metrics/weekly-savings.md']:
     path = Path(rel)
     text = path.read_text(encoding='utf-8')
     for target in re.findall(r'\[[^\]]+\]\(([^)]+)\)', text):
