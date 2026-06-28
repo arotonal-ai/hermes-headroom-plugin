@@ -1,29 +1,247 @@
 ---
 name: headroom-token-cost-evaluation
-description: Use when operating the installable Headroom plugin: retrieval, safe compression admission, health checks, and exact-source verification.
-version: 0.1.0
+description: "Use when operating the installable Hermes Headroom plugin: install, verify, retrieve CCR content, classify exact/compress/blocked data, and publish evidence-backed savings without changing global routing."
 author: Hermes Headroom contributors
 license: MIT
+platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [headroom, context-reduction, plugin]
+    tags: [headroom, context-reduction, hermes-plugin, retrieval, token-savings]
 ---
 
 # Headroom plugin operations
 
-## Contract
+## Overview
 
-Use Headroom only for eligible bulky intermediate/diagnostic material with retained exact sources. Keep final, edit-critical, sensitive, profile/memory/system/developer, patches, manifests, hashes, claim ledgers, and final packets exact or blocked.
+This skill is bundled with the `headroom_retrieve` Hermes plugin. Load it with the qualified plugin name:
 
-## Quick checks
-
-```bash
-headroom-health-audit --json
-headroom-proxy-start status
+```text
+skill_view(name="headroom_retrieve:headroom-token-cost-evaluation")
 ```
 
-## Verification
+It is for **portable plugin operation**: installing the Hermes plugin, checking whether the optional Headroom proxy works, retrieving exact CCR content, applying safe admission policy, and publishing savings only from retained evidence.
 
-- Retrieval marker resolves before trusting compressed summaries.
-- Exact sidecar exists for important claims.
-- Proxy-down failure falls back to exact output.
+Do **not** treat this bundled skill as an owner-local deployment manual. It must not depend on private paths, local profile state, or unpublished wrappers.
+
+## When to Use
+
+Use this skill when you need to:
+
+- install or verify `arotonal-ai/hermes-headroom-plugin` in a Hermes instance;
+- decide whether a Headroom result is `INSTALL_PASS`, `RUNTIME_PARTIAL`, `RUNTIME_FULL`, or `FAIL`;
+- use `headroom_retrieve` to resolve an exact CCR marker;
+- validate the upstream `headroom-ai[proxy]` dependency without touching the real Python environment;
+- check `/headroom status`, `/headroom smoke`, or `/headroom audit`;
+- classify payloads as compressible, exact, or blocked;
+- generate weekly savings tables from JSONL evidence.
+
+Do not use this skill to claim packaged worker/background wrappers are production-ready. The installable repo declares stable command names, but full wrapper behavior is still a later migration stage unless tests in this repo prove otherwise.
+
+## Support Posture
+
+| Platform | Posture | Operator note |
+|---|---|---|
+| Linux | tested path | Bash and Python helpers should work. |
+| WSL2 | expected | Verify on target before calling it certified. |
+| macOS | expected | Prefer Python helper scripts for checks; run CI/target evidence. |
+| Windows native | possible via Hermes | Use native `hermes` commands and Python helpers; Bash helpers require Git Bash or WSL. |
+| Termux | expected when Hermes/Python/git work | No systemd assumptions. |
+
+Do not print or advertise a plugin/skill version from this skill. If a version, commit, or release matters, inspect live repo metadata (`git rev-parse`, `pyproject.toml`, GitHub release data) and report that evidence instead of hardcoding a displayed version here.
+
+## Install and Reload
+
+Recommended plugin install:
+
+```bash
+hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
+hermes plugins list --enabled --user --plain
+```
+
+Then reload discovery:
+
+```bash
+hermes gateway restart   # gateway/platform sessions
+# or start /new in an active CLI/chat session
+```
+
+Verify in Hermes:
+
+```text
+/headroom status
+```
+
+If a proxy is running, also verify:
+
+```text
+/headroom smoke
+```
+
+## Acceptance States
+
+| State | Meaning | Required evidence |
+|---|---|---|
+| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds after restart/new session. |
+| `RUNTIME_PARTIAL` | Plugin loads, but no proxy is reachable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; plugin does not crash. |
+| `RUNTIME_FULL` | Plugin, dependency, and proxy work | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval. |
+| `FAIL` | Plugin cannot be used | plugin not enabled, `/headroom` unavailable after reload, or install required copying another machine/profile state. |
+
+Never call proxy-down `RUNTIME_PARTIAL` a failed install. It is a valid degraded state.
+
+## Dependency and Proxy Split
+
+The Hermes plugin and upstream Headroom runtime are separate layers:
+
+| Layer | Installed by | Required for |
+|---|---|---|
+| Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `headroom_retrieve` tool and `/headroom` command. |
+| Upstream Headroom package | `headroom-ai[proxy]>=0.26,<0.27` | local proxy/backend. |
+| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787` or configured endpoint | real compress → retrieve smoke. |
+
+Use the cross-platform dependency smoke before claiming runtime capability:
+
+```bash
+python scripts/test-headroom-dependency-install.py
+```
+
+Unix-compatible wrapper:
+
+```bash
+scripts/test-headroom-dependency-install.sh
+```
+
+The dependency smoke creates a temporary virtual environment, installs the certified dependency spec, verifies imports for `headroom`, `fastapi`, and `uvicorn`, then checks `headroom --help` and `headroom proxy --help`. It must not mutate Hermes config, `HERMES_HOME`, or the caller's system Python.
+
+## Safe Admission Policy
+
+Use Headroom only for eligible bulky intermediates:
+
+```text
+eligible = bulky + intermediate/diagnostic + retained exact source + retrievable/verifiable + non-sensitive + material savings
+exact    = final/canonical/edit-critical/claim-ledger/manifest/hash/final packet
+blocked  = secrets/config/memory/profile/system/developer instructions/protected content
+```
+
+Common classes:
+
+| Class | Policy |
+|---|---|
+| `raw_log`, `worker_trace_raw`, `browser_debug_trace`, `ocr_raw_text`, `research_corpus_raw`, `qa_trace` | compressible candidate |
+| `final_packet`, `final_pdf`, `canonical_html_css`, `manifest_hashes`, `claim_ledger`, `patch_diff` | exact |
+| `memory_profile_instruction`, `secret_or_sensitive`, protected/private contamination | blocked |
+
+Final answers, diffs, manifests, hashes, claim ledgers, rollback instructions, and edit-critical source context remain exact. If unsure, fail closed to exact output.
+
+## Retrieval Workflow
+
+When you see a CCR marker such as `<<ccr:abc123>>` or `<<ccr:abc123,base64,4.5KB>>`:
+
+1. Extract the hash after `ccr:`.
+2. Call `headroom_retrieve` with that hash.
+3. If available, pass a focused query to retrieve only relevant parts.
+4. Verify final claims against retrieved exact content or retained exact source.
+5. Do not compress retrieval output again; marker loops are possible.
+
+Success criterion: the exact source needed for the claim is visible and matches the claim. If retrieval fails, say so and use retained source or exact fallback.
+
+## Metrics and Weekly Savings
+
+Savings must be evidence-backed. Do not invent token savings from examples, screenshots, or expectations.
+
+Generate weekly Monday rollups from JSONL evidence:
+
+```bash
+python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.jsonl --write docs/metrics/weekly-savings.md
+```
+
+Expected JSONL fields include:
+
+```json
+{"timestamp":"2026-06-29T12:00:00Z","lane":"debug","data_class":"raw_log","tokens_before":120000,"tokens_after":18000,"retrieval_verified":true,"fail_closed":false}
+```
+
+If no evidence exists, the metrics page should show placeholders and `pending real data`, not estimates.
+
+## Repository Verification
+
+From a checkout of the plugin repo:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+python3 -m py_compile $(find src tests scripts -name '*.py' | sort)
+bash -n scripts/*.sh
+bash scripts/audit-repo-readiness.sh
+python scripts/test-headroom-dependency-install.py
+```
+
+Clean temp-home plugin load test when Hermes CLI is available:
+
+```bash
+scripts/test-clean-hermes-install.sh --local
+```
+
+A passing clean-home test should prove:
+
+- `headroom_retrieve` is enabled in a temporary `HERMES_HOME`;
+- plugin discovery loads without copying real profile state;
+- tool `headroom_retrieve` and command `/headroom` register;
+- the bundled skill is registered as `headroom_retrieve:headroom-token-cost-evaluation`.
+
+## Packaged vs Local Capability Boundary
+
+Packaged now:
+
+- `headroom_retrieve` tool;
+- `/headroom status`, `/headroom smoke`, `/headroom audit`;
+- conservative policy helpers;
+- dependency and clean-home verification scripts;
+- evidence-backed weekly savings generator;
+- this bundled plugin skill.
+
+Not packaged as active behavior unless repo tests prove otherwise:
+
+- owner-local natural wrappers such as `hr-nav`, `hr-debug`, `hr-research`, or `hr-fanin`;
+- production worker/background/preflight wrapper behavior;
+- global/default provider route mutation;
+- external telemetry.
+
+If another environment has stronger local wrappers, treat them as local overlays, not portable repo guarantees.
+
+## Security and Privacy Rules
+
+- Do not request, print, or store API keys, tokens, cookies, private keys, memory files, profile state, or protected context.
+- Do not copy another machine's Hermes home or profile directories.
+- Do not enable external telemetry.
+- Do not change global/default provider routing during first install.
+- Prefer loopback/local proxy endpoints for smoke tests.
+- State `RUNTIME_PARTIAL` honestly when the plugin works but the proxy is unavailable.
+
+## Rollback
+
+```bash
+hermes plugins disable headroom_retrieve
+hermes plugins remove headroom_retrieve
+hermes gateway restart || true
+```
+
+If installed from a local checkout with a symlink or copy, remove the checkout-installed plugin directory according to the target Hermes home after confirming it is the intended path.
+
+## Common Pitfalls
+
+1. **Confusing install success with runtime success.** `/headroom status` responding is install evidence; `/headroom smoke` passing is runtime evidence.
+2. **Using Bash-only helpers on native Windows.** Prefer Python helpers or run Bash under Git Bash/WSL.
+3. **Publishing estimated savings.** Generate tables from JSONL evidence only.
+4. **Compressing exact/final material.** Final packets, diffs, hashes, manifests, claim ledgers, secrets, and edit-critical context stay exact or blocked.
+5. **Advertising local overlays as packaged features.** If repo tests do not cover a wrapper/route behavior, mark it as pending or local-only.
+6. **Hardcoding version or environment facts.** Inspect live metadata when needed; do not paint a static version in this skill.
+
+## Verification Checklist
+
+- [ ] Plugin appears in `hermes plugins list --enabled --user --plain`.
+- [ ] Fresh session/restart completed before checking slash commands.
+- [ ] `/headroom status` returns without crashing.
+- [ ] Dependency smoke uses a temporary venv and passes before runtime claims.
+- [ ] `/headroom smoke` passes before claiming `RUNTIME_FULL`.
+- [ ] CCR retrieval is verified against exact content before final claims.
+- [ ] Metrics are generated from retained JSONL evidence, or placeholders remain.
+- [ ] No global/default routing, telemetry, secrets, or profile-state copying occurred.

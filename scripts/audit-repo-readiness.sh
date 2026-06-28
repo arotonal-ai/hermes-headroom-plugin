@@ -20,6 +20,7 @@ required=(
   __init__.py
   pyproject.toml
   src/hermes_headroom_plugin/__init__.py
+  src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md
   scripts/install-hermes-plugin.sh
   scripts/verify-hermes-install.sh
   scripts/test-clean-hermes-install.sh
@@ -47,6 +48,7 @@ required_text = {
     'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh', 'weekly metrics'],
     'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.27', 'generate-weekly-savings-table.py'],
     'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],
+    'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/test-headroom-dependency-install.py', 'generate-weekly-savings-table.py', 'Do not print or advertise a plugin/skill version'],
     'ACKNOWLEDGEMENTS.md': ['chopratejas/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
 }
 for rel, needles in required_text.items():
@@ -56,7 +58,7 @@ for rel, needles in required_text.items():
         raise SystemExit(f"FAIL: {rel} missing required text: {missing}")
 print('PASS: required documentation text present')
 missing_links = []
-for rel in ['README.md', 'INSTALL.md', 'AGENTS.md', 'SECURITY.md', 'PRIVACY.md', 'ACKNOWLEDGEMENTS.md', 'docs/AGENT-INSTALL.md', 'docs/metrics/weekly-savings.md']:
+for rel in ['README.md', 'INSTALL.md', 'AGENTS.md', 'SECURITY.md', 'PRIVACY.md', 'ACKNOWLEDGEMENTS.md', 'docs/AGENT-INSTALL.md', 'docs/metrics/weekly-savings.md', 'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md']:
     path = Path(rel)
     text = path.read_text(encoding='utf-8')
     for target in re.findall(r'\[[^\]]+\]\(([^)]+)\)', text):
