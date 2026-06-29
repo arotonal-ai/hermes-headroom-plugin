@@ -35,7 +35,7 @@ Use this skill when you need to:
 - classify payloads as compressible, exact, or blocked;
 - generate weekly savings tables from JSONL evidence.
 
-Do not use this skill to claim packaged worker/background wrappers are production-ready. The installable repo declares stable command names, but full wrapper behavior is still a later migration stage unless tests in this repo prove otherwise.
+Do not use this skill to claim packaged worker/background CLI wrappers are production-ready. The installable repo now includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, but standalone wrapper behavior is still a later migration stage unless tests in this repo prove otherwise.
 
 ## Support Posture
 
@@ -111,7 +111,7 @@ The Hermes plugin and upstream Headroom runtime are separate layers:
 
 | Layer | Installed by | Required for |
 |---|---|---|
-| Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `headroom_retrieve` tool and `/headroom` command. |
+| Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `headroom_retrieve` tool, `/headroom` command, and fail-open `tool_execution` middleware for eligible bulky intermediate results. |
 | Upstream Headroom package | `headroom-ai[proxy]>=0.26,<0.28` | local proxy/backend. |
 | Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787` or configured endpoint | real compress → retrieve smoke. |
 
@@ -212,6 +212,7 @@ Packaged now:
 
 - `headroom_retrieve` tool;
 - `/headroom status`, `/headroom smoke`, `/headroom audit`;
+- fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results such as `delegate_task`, terminal/process, browser/debug, `web_extract`, and `session_search`;
 - conservative policy helpers;
 - dependency and clean-home verification scripts;
 - evidence-backed weekly savings generator;
@@ -220,7 +221,7 @@ Packaged now:
 Not packaged as active behavior unless repo tests prove otherwise:
 
 - owner-local natural wrappers such as `hr-nav`, `hr-debug`, `hr-research`, or `hr-fanin`;
-- production worker/background/preflight wrapper behavior;
+- production worker/background/preflight CLI wrapper scripts;
 - global/default provider route mutation;
 - external telemetry.
 
@@ -251,7 +252,7 @@ If installed from a local checkout with a symlink or copy, remove the checkout-i
 1. **Confusing install success with runtime success.** `/headroom status` responding is install evidence; `/headroom smoke` passing is runtime evidence.
 2. **Using Bash-only helpers on native Windows.** Prefer Python helpers or run Bash under Git Bash/WSL.
 3. **Publishing estimated savings.** Generate tables from JSONL evidence only.
-4. **Compressing exact/final material.** Final packets, diffs, hashes, manifests, claim ledgers, secrets, and edit-critical context stay exact or blocked.
+4. **Compressing exact/final material.** The result middleware is for bulky intermediates only; final packets, diffs, hashes, manifests, claim ledgers, secrets, and edit-critical context stay exact or blocked.
 5. **Advertising local overlays as packaged features.** If repo tests do not cover a wrapper/route behavior, mark it as pending or local-only.
 6. **Hardcoding version or environment facts.** Inspect live metadata when needed; do not paint a static version in this skill.
 

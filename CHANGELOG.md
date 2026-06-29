@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, while preserving exact/blocked classes.
+- Added marker extraction for both `<<ccr:...>>` and Headroom `hash=...` forms in result compression paths.
+- Updated docs to distinguish packaged result middleware from owner-local wrapper scripts and to keep global/default provider routing unchanged.
+
+
 ## v0.1.1 — 2026-06-29
 
 Compatibility and observability polish.

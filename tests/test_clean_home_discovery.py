@@ -36,6 +36,7 @@ class CleanHomeDiscoveryTest(unittest.TestCase):
                     'error': getattr(loaded, 'error', None) if loaded else None,
                     'tools': getattr(loaded, 'tools_registered', []) if loaded else [],
                     'commands': getattr(loaded, 'commands_registered', []) if loaded else [],
+                    'middleware': getattr(loaded, 'middleware_registered', []) if loaded else [],
                 }, sort_keys=True))
             """)
             env = os.environ.copy()
@@ -49,6 +50,8 @@ class CleanHomeDiscoveryTest(unittest.TestCase):
             self.assertIsNone(data["error"], data)
             self.assertIn("headroom_retrieve", data["tools"])
             self.assertIn("headroom", data["commands"])
+            self.assertIn("llm_request", data["middleware"])
+            self.assertIn("tool_execution", data["middleware"])
 
 
 if __name__ == "__main__":

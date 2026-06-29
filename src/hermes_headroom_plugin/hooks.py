@@ -1,7 +1,6 @@
 """Plugin hooks.
 
-P0 keeps hooks conservative. Compression hooks should only become active after the
-P1 wrapper/health tests are green; until then they fail closed to exact output.
+Hooks stay conservative. Live compression is handled by tool_execution middleware for eligible bulky intermediate tool/lane results; these hooks fail closed to exact output except for a small first-turn availability hint.
 """
 from __future__ import annotations
 

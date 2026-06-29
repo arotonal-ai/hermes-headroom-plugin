@@ -53,13 +53,13 @@ for p in py_files:
     ast.parse(p.read_text(encoding='utf-8'), filename=str(p))
 print(f"PASS: python syntax ok ({len(py_files)} files)")
 required_text = {
-    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'scripts/test-headroom-runtime-smoke.py', 'docs/metrics/weekly-savings.md', 'docs/compatibility.md', 'future-runtime-monitor.yml', 'headroom-ai[proxy]>=0.26,<0.28', 'HEADROOM_ALLOW_REMOTE_PROXY'],
-    'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'headroom proxy --host 127.0.0.1 --port 28787', 'python3 -m venv ~/.cache/hermes-headroom-venv', 'docs/compatibility.md', 'HEADROOM_ALLOW_REMOTE_PROXY'],
-    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh', 'weekly metrics', 'python3 -m venv ~/.cache/hermes-headroom-venv'],
-    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.28', 'Python 3.13/3.14', 'generate-weekly-savings-table.py'],
+    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'scripts/test-headroom-runtime-smoke.py', 'docs/metrics/weekly-savings.md', 'docs/compatibility.md', 'future-runtime-monitor.yml', 'headroom-ai[proxy]>=0.26,<0.28', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task'],
+    'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'headroom proxy --host 127.0.0.1 --port 28787', 'python3 -m venv ~/.cache/hermes-headroom-venv', 'docs/compatibility.md', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task'],
+    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh', 'weekly metrics', 'python3 -m venv ~/.cache/hermes-headroom-venv', 'tool_execution', 'delegate_task'],
+    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.28', 'Python 3.13/3.14', 'generate-weekly-savings-table.py', 'tool_execution'],
     'docs/compatibility.md': ['Certified runtime matrix', 'Future Runtime Monitor', 'Python 3.13', 'Python 3.14', 'headroom-ai[proxy]>=0.26,<0.28'],
     'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],
-    'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'generate-weekly-savings-table.py', 'Python 3.13/3.14', 'Do not print or advertise a plugin/skill version', 'HEADROOM_ALLOW_REMOTE_PROXY'],
+    'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'generate-weekly-savings-table.py', 'Python 3.13/3.14', 'Do not print or advertise a plugin/skill version', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task'],
     'ACKNOWLEDGEMENTS.md': ['chopratejas/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
 }
 for rel, needles in required_text.items():
@@ -73,7 +73,7 @@ mermaid = re.search(r'```mermaid\n(.*?)\n```', readme, re.S)
 if not mermaid:
     raise SystemExit('FAIL: README missing mermaid architecture block')
 diagram = mermaid.group(1)
-for needle in ['H["Hermes Agent"]', 'C["/headroom status, smoke, audit"]', 'R["global/default provider routing unchanged"]']:
+for needle in ['H["Hermes Agent"]', 'C["/headroom status, smoke, audit"]', 'M["tool_execution middleware for bulky intermediate lane results"]', 'R["global/default provider routing unchanged"]']:
     if needle not in diagram:
         raise SystemExit(f'FAIL: README mermaid architecture missing GitHub-safe label: {needle}')
 for bad in ['[/headroom status|smoke|audit]', '-. does not mutate .->']:

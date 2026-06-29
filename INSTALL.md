@@ -83,7 +83,7 @@ Then verify inside Hermes:
 /headroom smoke
 ```
 
-Expected: smoke PASS with sentinel retrieval. This repo does **not** enable global/default provider routing by default.
+Expected: smoke PASS with sentinel retrieval. With a healthy proxy, the plugin can compress eligible bulky intermediate `tool_execution` results such as `delegate_task`, terminal/process, browser/debug, `web_extract`, and `session_search`. Exact/edit-critical/sensitive outputs still fail closed to the original result. This repo does **not** enable global/default provider routing by default.
 
 ## 3. Acceptance matrix
 

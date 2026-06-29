@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .commands import handle_headroom_command
 from .hooks import on_pre_llm_call, on_transform_llm_output, on_transform_terminal_output
-from .middleware import on_llm_request
+from .middleware import on_llm_request, on_tool_execution
 from .schemas import HEADROOM_RETRIEVE_SCHEMA
 from .tools import handle_headroom_retrieve
 
@@ -44,6 +44,7 @@ def register(ctx) -> None:
     register_middleware = getattr(ctx, "register_middleware", None)
     if callable(register_middleware):
         register_middleware("llm_request", on_llm_request)
+        register_middleware("tool_execution", on_tool_execution)
 
     skill_path = Path(__file__).parent / "skills" / "headroom-token-cost-evaluation" / "SKILL.md"
     if skill_path.exists() and hasattr(ctx, "register_skill"):

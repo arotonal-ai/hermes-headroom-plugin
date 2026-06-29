@@ -4,7 +4,7 @@ Use this when another Hermes/AI agent is given only this repository URL and aske
 
 ## Goal
 
-Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing.
+Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing. With a healthy local proxy, the plugin may compress eligible bulky intermediate `tool_execution` results; exact/edit-critical/sensitive content remains exact or blocked.
 
 ## Platform note
 
@@ -74,7 +74,8 @@ PASS if:
 - `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`;
 - `/headroom status` responds after restart/new session;
 - no secrets are requested or printed;
-- global/default provider routing is unchanged.
+- global/default provider routing is unchanged;
+- if proxy/runtime is enabled, eligible bulky intermediate tool/lane result compression is available via `tool_execution` middleware.
 
 PARTIAL if:
 
@@ -83,7 +84,8 @@ PARTIAL if:
 FULL if:
 
 - `scripts/test-headroom-dependency-install.sh` or the Python equivalent passes for `headroom-ai[proxy]>=0.26,<0.28`;
-- install succeeds and `/headroom smoke` returns PASS with sentinel retrieval.
+- install succeeds and `/headroom smoke` returns PASS with sentinel retrieval;
+- optional result-compression checks preserve exact/blocked tools such as `read_file`, `patch`, and `git diff`.
 
 Windows native `FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11/3.12, but still require target-host evidence when diagnosing a specific machine. Python 3.13/3.14 are experimental monitor paths, not certified support.
 

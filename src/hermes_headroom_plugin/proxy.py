@@ -21,7 +21,7 @@ except Exception:  # pragma: no cover - package can still report env/default sta
 
 DEFAULT_PROXY_URL = "http://127.0.0.1:28787"
 DEFAULT_SERVICE = "hermes-context-reduction.service"
-SMOKE_SENTINEL = "SYNTHETIC_SENTINEL_HEADROOM_PLUGIN_P0"
+SMOKE_SENTINEL = "SYNTHETIC_SENTINEL_HEADROOM_PLUGIN"
 _MARKER_RE = re.compile(r"<<ccr:([^,>]+)")
 
 
