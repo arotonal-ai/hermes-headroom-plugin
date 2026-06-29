@@ -22,7 +22,9 @@ Repository = "https://github.com/arotonal-ai/hermes-headroom-plugin"
 "headroom-ai on PyPI" = "https://pypi.org/project/headroom-ai/"
 
 [project.optional-dependencies]
-proxy = ["headroom-ai[proxy]>=0.26,<0.27"]
+# headroom-ai[proxy]: tested with 0.26.x and 0.27.x
+# Pin excludes 0.28+ until API compatibility is verified
+proxy = ["headroom-ai[proxy]>=0.26,<0.28"]
 test = []
 
 [project.entry-points."hermes_agent.plugins"]

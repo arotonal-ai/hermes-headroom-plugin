@@ -27,6 +27,7 @@ required=(
   scripts/test-headroom-dependency-install.sh
   scripts/test-headroom-dependency-install.py
   scripts/generate-weekly-savings-table.py
+  scripts/python-resolver.sh
 )
 
 for f in "${required[@]}"; do
@@ -34,7 +35,12 @@ for f in "${required[@]}"; do
 done
 pass "required files present"
 
-python3 - <<'PY'
+# Use cross-platform Python resolver
+# shellcheck source=scripts/python-resolver.sh
+source "$ROOT/scripts/python-resolver.sh"
+resolve_python || exit $?
+
+"${PY_CMD[@]}" - <<'PY'
 from pathlib import Path
 import ast, re, sys
 root = Path('.')
@@ -43,10 +49,10 @@ for p in py_files:
     ast.parse(p.read_text(encoding='utf-8'), filename=str(p))
 print(f"PASS: python syntax ok ({len(py_files)} files)")
 required_text = {
-    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'docs/metrics/weekly-savings.md', 'headroom-ai[proxy]>=0.26,<0.27'],
+    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'docs/metrics/weekly-savings.md', 'headroom-ai[proxy]>=0.26,<0.28'],
     'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'python scripts/test-headroom-dependency-install.py', 'headroom proxy --host 127.0.0.1 --port 28787', 'python3 -m venv ~/.cache/hermes-headroom-venv'],
     'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh', 'weekly metrics', 'python3 -m venv ~/.cache/hermes-headroom-venv'],
-    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.27', 'generate-weekly-savings-table.py'],
+    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.28', 'generate-weekly-savings-table.py'],
     'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],
     'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/test-headroom-dependency-install.py', 'generate-weekly-savings-table.py', 'Do not print or advertise a plugin/skill version'],
     'ACKNOWLEDGEMENTS.md': ['chopratejas/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
@@ -87,7 +93,7 @@ PY
 bash -n scripts/*.sh
 pass "shell syntax ok"
 
-python3 - <<'PY'
+"${PY_CMD[@]}" - <<'PY'
 from pathlib import Path
 import os, re, sys
 skip = {'.git','__pycache__','.pytest_cache','.mypy_cache','.venv','build','dist'}

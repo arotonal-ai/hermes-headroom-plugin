@@ -51,7 +51,7 @@ The plugin can be used for `/headroom status` and `headroom_retrieve` without in
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv
 ~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 ~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -60,9 +60,22 @@ python3 -m venv ~/.cache/hermes-headroom-venv
 ```powershell
 py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
 ```
+
+### Windows Git Bash / MSYS
+
+Do not rely on `python3` on native Windows; it may be the broken Microsoft Store alias. Use `python`, `py -3`, or set `PYTHON_BIN` for the Bash helpers.
+
+```bash
+python -m venv "$HOME/.cache/hermes-headroom-venv"
+"$HOME/.cache/hermes-headroom-venv/Scripts/python.exe" -m pip install --upgrade pip
+"$HOME/.cache/hermes-headroom-venv/Scripts/python.exe" -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
+"$HOME/.cache/hermes-headroom-venv/Scripts/headroom.exe" proxy --host 127.0.0.1 --port 28787
+```
+
+Windows `RUNTIME_FULL` is expected, but not certified by CI. Claim it only after the dependency helper and `/headroom smoke` pass on the target Windows host.
 
 Then verify inside Hermes:
 
@@ -70,13 +83,7 @@ Then verify inside Hermes:
 /headroom smoke
 ```
 
-Expected successful smoke:
-
-```text
-Headroom smoke PASS ... sentinel_found=True
-```
-
-This repo intentionally does **not** enable global/default provider routing by default.
+Expected: smoke PASS with sentinel retrieval. This repo does **not** enable global/default provider routing by default.
 
 ## 3. Acceptance matrix
 
@@ -119,7 +126,11 @@ After native Hermes install, the dependency helper is also available from the in
 "${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
 ```
 
+On Windows, local `--local` development install may copy the repo instead of creating a symlink if symlink privileges are unavailable. That fallback is expected.
+
 The helper proves that the upstream package installs in an isolated venv, imports `headroom`, `fastapi`, and `uvicorn`, and exposes `headroom --help` plus `headroom proxy --help`.
+
+Compatibility: this repo currently accepts `headroom-ai[proxy]>=0.26,<0.28`. Do not widen beyond that range until dependency smoke and `/headroom smoke` pass.
 
 ## 5. Proxy endpoint configuration
 
@@ -143,6 +154,8 @@ context_reduction:
 ```
 
 Restart/fresh-session before rechecking `/headroom status`.
+
+**Remote proxy warning:** prefer loopback (`127.0.0.1` / `localhost`). A non-loopback `HEADROOM_PROXY_URL` may receive compressible intermediate content once compression wrappers are enabled. Use only a controlled, trusted endpoint; do not point this at an untrusted or shared service.
 
 ## 6. Update
 

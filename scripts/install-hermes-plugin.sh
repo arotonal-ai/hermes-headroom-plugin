@@ -44,7 +44,12 @@ need() {
 
 need hermes
 need git
-need python3
+
+# Source the cross-platform Python resolver instead of hardcoding python3.
+# shellcheck source=scripts/python-resolver.sh
+SCRIPT_DIR_RESOLVER="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR_RESOLVER/python-resolver.sh"
+resolve_python
 
 printf 'Hermes: '; hermes --version
 printf 'Target HERMES_HOME: %s\n' "$HERMES_HOME_EFFECTIVE"

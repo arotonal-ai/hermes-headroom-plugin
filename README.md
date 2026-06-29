@@ -39,6 +39,7 @@ Acknowledgement: this plugin builds on the Headroom project's context-reduction 
 | Bundled Headroom operating skill | ✅ included | Registered when Hermes supports plugin skills |
 | Worker/background/preflight wrappers | 🚧 pending P1 | Console entry points exist, implementation intentionally not migrated yet |
 | Cost/provider route mutation | 🚧 pending P3 | Current repo does **not** change global/default routing |
+| Automatic live Hermes traffic compression | 🚧 not active in P0 | Current P0 exposes retrieval/status/smoke/audit/policy scaffolding; wrappers are pending migration |
 | External telemetry | ❌ not included | Off by design |
 
 ## Install for a target Hermes instance
@@ -71,7 +72,7 @@ Unix/macOS/WSL example:
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv
 ~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 ~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -80,7 +81,7 @@ Windows PowerShell example:
 ```powershell
 py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -115,6 +116,8 @@ The plugin is platform-neutral Python/Hermes code. Bash helpers are Unix-shell f
 
 Legend: ✅ tested/certified here, 🟡 expected but still needs target evidence, ❌ not claimed.
 
+Windows native plugin load is covered by the cross-platform unit/syntax/helper matrix, but Windows `RUNTIME_FULL` is not certified by CI. Claim it only after `python scripts/test-headroom-dependency-install.py` passes on the target host and `/headroom smoke` passes with a local proxy.
+
 ## Prerequisites and dependency layers
 
 | Requirement | Needed for | Note | Link |
@@ -131,14 +134,21 @@ Layer split:
 | Layer | Command | Required for |
 |---|---|---|
 | Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `INSTALL_PASS`: Hermes can load `headroom_retrieve` and `/headroom status` |
-| Upstream Headroom package | `python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'` | local proxy/backend |
+| Upstream Headroom package | `python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'` | local proxy/backend |
 | Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787` | `RUNTIME_FULL`: `/headroom smoke` can compress → retrieve |
+
+Headroom dependency compatibility:
+
+| `headroom-ai` range | Status | Evidence required |
+|---|---|---|
+| `>=0.26,<0.28` | supported by this repo's dependency smoke | `scripts/test-headroom-dependency-install.py` passes |
+| `>=0.28` | unverified | expand only after dependency smoke and `/headroom smoke` pass |
 
 Validate the dependency layer without touching Hermes or system Python:
 
 ```bash
 python scripts/test-headroom-dependency-install.py
-# or the Unix shell wrapper:
+# or the Unix/Git Bash wrapper, which resolves python3 -> python -> py -3:
 scripts/test-headroom-dependency-install.sh
 ```
 
@@ -170,6 +180,7 @@ not = global/default provider proxy routing
 
 Defaults:
 
+- current P0 does **not** automatically compress live Hermes traffic; it provides retrieval, status/smoke/audit commands, admission policy scaffolding, and a bundled operating skill;
 - plugin disabled until explicitly enabled by Hermes install command;
 - no global/default provider routing;
 - no external telemetry;

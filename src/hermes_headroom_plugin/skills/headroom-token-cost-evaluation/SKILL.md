@@ -75,7 +75,7 @@ Unix/macOS/WSL:
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv
 ~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 ~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -84,7 +84,7 @@ Windows PowerShell:
 ```powershell
 py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -112,7 +112,7 @@ The Hermes plugin and upstream Headroom runtime are separate layers:
 | Layer | Installed by | Required for |
 |---|---|---|
 | Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `headroom_retrieve` tool and `/headroom` command. |
-| Upstream Headroom package | `headroom-ai[proxy]>=0.26,<0.27` | local proxy/backend. |
+| Upstream Headroom package | `headroom-ai[proxy]>=0.26,<0.28` | local proxy/backend. |
 | Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787` or configured endpoint | real compress → retrieve smoke. |
 
 Use the cross-platform dependency smoke before claiming runtime capability:

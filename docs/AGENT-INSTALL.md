@@ -29,7 +29,7 @@ Optional full Headroom runtime on Unix/macOS/WSL:
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv
 ~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 ~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -38,7 +38,7 @@ Optional full Headroom runtime on Windows PowerShell:
 ```powershell
 py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -81,8 +81,10 @@ PARTIAL if:
 
 FULL if:
 
-- `scripts/test-headroom-dependency-install.sh` or the Python equivalent passes for `headroom-ai[proxy]>=0.26,<0.27`;
+- `scripts/test-headroom-dependency-install.sh` or the Python equivalent passes for `headroom-ai[proxy]>=0.26,<0.28`;
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval.
+
+On Windows native, `FULL` is not certified by CI; require target-host evidence.
 
 FAIL if:
 

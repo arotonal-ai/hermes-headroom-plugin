@@ -32,8 +32,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v hermes >/dev/null 2>&1 || { echo "FAIL: hermes not found" >&2; exit 127; }
-command -v python3 >/dev/null 2>&1 || { echo "FAIL: python3 not found" >&2; exit 127; }
 command -v git >/dev/null 2>&1 || { echo "FAIL: git not found" >&2; exit 127; }
+
+# Use the cross-platform Python resolver instead of hardcoding python3.
+RESOLVER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$RESOLVER_DIR/python-resolver.sh"
+resolve_python_with_module hermes_cli
 
 TMP_HOME="$(mktemp -d)"
 cleanup() {
@@ -57,7 +61,12 @@ fi
 hermes plugins list --enabled --user --plain | tee "$TMP_HOME/plugins-list.txt"
 grep -Fq 'headroom_retrieve' "$TMP_HOME/plugins-list.txt" || { echo "FAIL: headroom_retrieve not enabled" >&2; exit 1; }
 
-python3 - <<'PY'
+# Use the cross-platform Python resolver instead of hardcoding python3.
+RESOLVER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/python-resolver.sh
+source "$RESOLVER_DIR/python-resolver.sh"
+resolve_python_with_module hermes_cli
+"${PY_CMD[@]}" - <<'PY'
 import json
 from hermes_cli.plugins import PluginManager
 pm = PluginManager()

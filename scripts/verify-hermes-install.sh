@@ -31,7 +31,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 command -v hermes >/dev/null 2>&1 || { echo "FAIL: hermes not found" >&2; exit 127; }
-command -v python3 >/dev/null 2>&1 || { echo "FAIL: python3 not found" >&2; exit 127; }
+
+# Use the cross-platform Python resolver instead of hardcoding python3.
+RESOLVER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+source "$RESOLVER_DIR/python-resolver.sh"
+resolve_python || exit $?
 
 printf 'Hermes: '; hermes --version
 printf 'HERMES_HOME: %s\n' "$HERMES_HOME_EFFECTIVE"
@@ -49,9 +53,9 @@ echo "PASS: $PLUGIN is enabled."
 if [[ -d "$PLUGIN_DIR/src" ]]; then
   export PYTHONPATH="$PLUGIN_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
   if [[ "$RUN_SMOKE" -eq 1 ]]; then
-    python3 "$PLUGIN_DIR/src/hermes_headroom_plugin/proxy.py" smoke --json
+    "${PY_CMD[@]}" "$PLUGIN_DIR/src/hermes_headroom_plugin/proxy.py" smoke --json
   else
-    python3 "$PLUGIN_DIR/src/hermes_headroom_plugin/proxy.py" status || true
+    "${PY_CMD[@]}" "$PLUGIN_DIR/src/hermes_headroom_plugin/proxy.py" status || true
   fi
 else
   echo "INFO: plugin source directory not found at $PLUGIN_DIR/src; skipping source-level proxy helper."

@@ -10,8 +10,9 @@ Install and enable the plugin in the target Hermes instance without copying owne
 
 - Linux is the primary tested target.
 - macOS/WSL are expected when Hermes, git, and Python are available, but need target evidence before being called certified.
-- Native Windows should use native Hermes commands plus Python helper scripts. Bash helpers require Git Bash/WSL.
+- Native Windows should use native Hermes commands plus Python helper scripts. Bash helpers require Git Bash/WSL and resolve `python3` → `python` → `py -3` to avoid broken Microsoft Store aliases.
 - The packaged worker/background/preflight wrapper entry points are intentionally pending P1 migration; do not advertise owner-local wrapper behavior as packaged behavior.
+- Current P0 does not automatically compress live Hermes traffic; it provides retrieval/status/smoke/audit/policy scaffolding only.
 
 ## Primary command
 
@@ -42,7 +43,7 @@ Unix/macOS/WSL:
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv
 ~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 ~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -51,7 +52,7 @@ Windows PowerShell:
 ```powershell
 py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
 ```
 
@@ -75,11 +76,12 @@ scripts/test-headroom-dependency-install.sh
 |---|---|---|
 | `INSTALL_PASS` | Plugin installed and Hermes can load it | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, but Headroom proxy is unavailable | `/headroom status` reports proxy unavailable or `/headroom smoke` fails at `readyz` |
-| `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]>=0.26,<0.27`, and proxy all work | dependency smoke PASS and `/headroom smoke` returns PASS with compress → retrieve sentinel |
+| `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]>=0.26,<0.28`, and proxy all work | dependency smoke PASS and `/headroom smoke` returns PASS with compress → retrieve sentinel |
 | `FAIL` | Plugin not installed/loaded | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
 
 ## Do not do these things
 
+- Do **not** point `HEADROOM_PROXY_URL` at a non-loopback host unless the endpoint is controlled and trusted; future compression wrappers may send compressible intermediate content to that endpoint.
 - Do **not** copy another machine's `~/.hermes` directory. Do not copy another machine or owner-local Hermes state.
 - Do **not** request, print, or store API keys/tokens/passwords.
 - Do **not** change global/default provider routing.

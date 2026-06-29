@@ -16,6 +16,12 @@ def register(ctx) -> None:
     This function intentionally does not start services or mutate Hermes config.
     Installation/setup must be explicit and reversible.
     """
+    # check_fn=readyz is intentionally NOT set here.
+    # headroom_retrieve remains visible to the model even when the proxy is
+    # unavailable (RUNTIME_PARTIAL). The handler returns a clear error instead of
+    # the tool silently disappearing from the tool list. This makes it easier
+    # to diagnose install/proxy issues. Operators preferring strict service-gated
+    # behavior can wrap the handler with check_fn=_readyz and register_tool.
     ctx.register_tool(
         name="headroom_retrieve",
         toolset="headroom",
@@ -33,7 +39,11 @@ def register(ctx) -> None:
     ctx.register_hook("transform_terminal_output", on_transform_terminal_output)
     ctx.register_hook("transform_llm_output", on_transform_llm_output)
     ctx.register_hook("pre_llm_call", on_pre_llm_call)
-    ctx.register_middleware("llm_request", on_llm_request)
+
+    # Guard against older Hermes versions without register_middleware.
+    register_middleware = getattr(ctx, "register_middleware", None)
+    if callable(register_middleware):
+        register_middleware("llm_request", on_llm_request)
 
     skill_path = Path(__file__).parent / "skills" / "headroom-token-cost-evaluation" / "SKILL.md"
     if skill_path.exists() and hasattr(ctx, "register_skill"):

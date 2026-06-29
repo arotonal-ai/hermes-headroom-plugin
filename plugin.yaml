@@ -1,14 +1,11 @@
+manifest_version: 1
 name: headroom_retrieve
-version: 0.1.0
 description: "Installable Headroom controls and CCR retrieval for Hermes; safe defaults, no global provider routing."
 author: Hermes Headroom contributors
+kind: standalone
 provides_tools:
   - headroom_retrieve
-commands:
-  - headroom
-hooks:
+provides_hooks:
   - transform_terminal_output
   - transform_llm_output
   - pre_llm_call
-middleware:
-  - llm_request
