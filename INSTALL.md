@@ -246,4 +246,4 @@ No. The bundled systemd template is Linux-only and optional.
 
 ### Are worker/background wrappers included?
 
-The entry points are declared so downstream commands have stable names, but full wrapper behavior is **pending P1 migration** in this installable repo. Owner-local deployments may have stronger wrappers outside this package. Do not assume packaged wrappers are production-ready until tests cover them.
+Yes. `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` are packaged production wrappers for explicit operator commands. They retain exact stdout/stderr sidecars and exact `worker-final-packet.md`, then compress only eligible bulky intermediate traces through the configured loopback Headroom proxy. They do not mutate Hermes provider/model routing. Natural `hr-*` smart-route aliases are not packaged behavior.

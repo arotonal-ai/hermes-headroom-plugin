@@ -69,8 +69,9 @@ class BundledSkillTest(unittest.TestCase):
         ]
         for needle in forbidden:
             self.assertNotIn(needle, text)
-        self.assertIn("wrapper behavior is still a later migration stage", text)
-        self.assertIn("local overlays, not portable repo guarantees", text)
+        self.assertIn("headroom-worker-lane", text)
+        self.assertIn("headroom-command-preflight", text)
+        self.assertIn("natural `hr-*` aliases and provider-routing helpers remain local-only", text)
 
     @unittest.skipIf(importlib.util.find_spec("hermes_cli") is None, "Hermes CLI package not installed in this Python environment")
     def test_plugin_skill_loads_by_qualified_name_in_temp_home(self):

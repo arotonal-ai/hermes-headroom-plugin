@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.0 — 2026-06-29
+
+- Promoted packaged worker/background/preflight CLI wrappers from placeholders to tested production behavior for explicit operator commands.
+- `headroom-worker-lane` and `headroom-background-lane` retain exact stdout/stderr sidecars and exact worker final packets, then compress only eligible bulky intermediate traces through the configured loopback proxy.
+- `headroom-command-preflight` recommends direct vs wrapped execution without mutating Hermes runtime/provider/model config.
+- Removed packaged explicit provider-route console scripts from the product surface; global/default provider routing remains unchanged.
+
 ## v0.2.0 — 2026-06-29
 
 - Added fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, while preserving exact/blocked classes.

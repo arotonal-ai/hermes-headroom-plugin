@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-headroom-plugin"
-version = "0.2.0"
+version = "0.3.0"
 description = "Hermes Agent plugin for safe Headroom context reduction, CCR retrieval, proxy smoke tests, and loopback-first runtime guardrails."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,8 +37,6 @@ headroom-proxy-start = "hermes_headroom_plugin.proxy:main"
 headroom-worker-lane = "hermes_headroom_plugin.wrappers:worker_main"
 headroom-background-lane = "hermes_headroom_plugin.wrappers:background_main"
 headroom-command-preflight = "hermes_headroom_plugin.wrappers:preflight_main"
-headroom-smart-route = "hermes_headroom_plugin.routing:smart_route_main"
-headroom-cost-route = "hermes_headroom_plugin.routing:cost_route_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

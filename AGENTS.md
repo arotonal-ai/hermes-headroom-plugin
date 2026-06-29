@@ -13,7 +13,7 @@ Install and enable the plugin in the target Hermes instance without copying owne
 - Windows `RUNTIME_FULL` is certified in GitHub Runtime Smoke for Python 3.11/3.12, but target-host evidence still matters when diagnosing local shell/Python drift.
 - Python 3.13/3.14 are monitored by the non-blocking Future Runtime Monitor; do not claim them as certified until promoted in `docs/compatibility.md`.
 - The packaged plugin includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, when the loopback Headroom proxy is healthy.
-- The packaged worker/background/preflight CLI wrapper entry points are still pending migration; do not advertise owner-local wrapper scripts as packaged behavior until repo tests cover them.
+- The packaged worker/background/preflight CLI wrappers (`headroom-worker-lane`, `headroom-background-lane`, `headroom-command-preflight`) are production behavior for explicit operator commands: they retain exact sidecars/final packets and optionally compress only bulky intermediate traces through the loopback Headroom proxy. They do not change provider/model routing.
 - The package does not change global/default provider routing; exact/edit-critical/sensitive outputs remain exact or blocked.
 
 ## Primary command

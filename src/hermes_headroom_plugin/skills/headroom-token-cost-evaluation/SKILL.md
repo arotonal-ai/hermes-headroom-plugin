@@ -35,7 +35,7 @@ Use this skill when you need to:
 - classify payloads as compressible, exact, or blocked;
 - generate weekly savings tables from JSONL evidence.
 
-Do not use this skill to claim packaged worker/background CLI wrappers are production-ready. The installable repo now includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, but standalone wrapper behavior is still a later migration stage unless tests in this repo prove otherwise.
+The installable repo includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, plus packaged `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` wrappers for explicit operator commands. These wrappers retain exact sidecars/final packets and compress only eligible bulky intermediate traces; they do not change provider/model routing.
 
 ## Support Posture
 
@@ -218,10 +218,16 @@ Packaged now:
 - evidence-backed weekly savings generator;
 - this bundled plugin skill.
 
-Not packaged as active behavior unless repo tests prove otherwise:
+Packaged as active behavior:
+
+- `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` for explicit operator commands;
+- exact sidecar/final-packet retention plus optional compression of bulky intermediate traces;
+- no provider/model routing mutation.
+
+Not packaged as active behavior:
 
 - owner-local natural wrappers such as `hr-nav`, `hr-debug`, `hr-research`, or `hr-fanin`;
-- production worker/background/preflight CLI wrapper scripts;
+- smart-route/provider-routing helpers;
 - global/default provider route mutation;
 - external telemetry.
 
@@ -253,7 +259,7 @@ If installed from a local checkout with a symlink or copy, remove the checkout-i
 2. **Using Bash-only helpers on native Windows.** Prefer Python helpers or run Bash under Git Bash/WSL.
 3. **Publishing estimated savings.** Generate tables from JSONL evidence only.
 4. **Compressing exact/final material.** The result middleware is for bulky intermediates only; final packets, diffs, hashes, manifests, claim ledgers, secrets, and edit-critical context stay exact or blocked.
-5. **Advertising local overlays as packaged features.** If repo tests do not cover a wrapper/route behavior, mark it as pending or local-only.
+5. **Advertising local overlays as packaged features.** Packaged worker/background/preflight wrappers are covered; natural `hr-*` aliases and provider-routing helpers remain local-only unless tests/release promote them.
 6. **Hardcoding version or environment facts.** Inspect live metadata when needed; do not paint a static version in this skill.
 
 ## Verification Checklist

@@ -109,6 +109,18 @@ scripts/audit-repo-readiness.sh
 scripts/test-clean-hermes-install.sh --local
 ```
 
+## Packaged wrappers
+
+When a target has `RUNTIME_FULL`, the package also provides explicit command wrappers:
+
+```bash
+headroom-command-preflight --expected-chars 80000 -- pytest tests
+headroom-worker-lane --lane tests --query "failures warnings verification" -- pytest tests
+headroom-background-lane --lane build -- npm test
+```
+
+PASS if wrappers retain exact sidecars/final packets and only compress eligible bulky intermediate traces. FAIL if a wrapper changes global/default provider routing or requires owner-local scripts.
+
 ## Metrics
 
 Weekly savings tables must be generated from retained JSONL evidence:

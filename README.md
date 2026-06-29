@@ -173,6 +173,19 @@ scripts/test-headroom-dependency-install.sh
 
 The runtime smoke creates a temporary venv, installs `headroom-ai[proxy]`, starts a local proxy on a free loopback port, then runs plugin compress/retrieve sentinel verification.
 
+## Packaged command wrappers
+
+For explicit operator commands that may emit bulky intermediate logs, use the packaged wrappers:
+
+```bash
+headroom-command-preflight --expected-chars 80000 -- pytest tests
+headroom-command-preflight --run --expected-chars 80000 -- pytest tests
+headroom-worker-lane --lane tests --query "failures warnings verification" -- pytest tests
+headroom-background-lane --lane build -- npm test
+```
+
+`headroom-worker-lane` and `headroom-background-lane` retain exact stdout/stderr sidecars and exact `worker-final-packet.md`; only eligible bulky intermediate traces are compressed through the configured loopback proxy. They do not change Hermes provider/model routing. Natural `hr-*` smart-route aliases and provider-routing helpers are not part of the packaged product surface.
+
 ## Configuration
 
 Default plugin proxy URL:
