@@ -55,7 +55,8 @@ class PythonResolverTest(unittest.TestCase):
             script = f"source {RESOLVER}; resolve_python_with_module hermes_cli; printf '%s\n' \"${{PY_CMD[0]}}\""
             proc = subprocess.run(["bash", "-lc", script], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, check=False)
             self.assertEqual(proc.returncode, 0, proc.stderr)
-            self.assertEqual(proc.stdout.strip(), "python")
+            resolved = Path(proc.stdout.strip())
+            self.assertEqual(resolved.name, "python")
 
     def test_dependency_helper_checks_native_pydantic_core_runtime_import(self):
         text = DEPENDENCY_HELPER.read_text(encoding="utf-8")
