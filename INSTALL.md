@@ -75,7 +75,7 @@ python -m venv "$HOME/.cache/hermes-headroom-venv"
 "$HOME/.cache/hermes-headroom-venv/Scripts/headroom.exe" proxy --host 127.0.0.1 --port 28787
 ```
 
-Windows `RUNTIME_FULL` is expected, but not certified by CI. Claim it only after the dependency helper and `/headroom smoke` pass on the target Windows host.
+Windows `RUNTIME_FULL` is expected, but not certified by CI. Claim it only after the dependency helper and `/headroom smoke` pass on the target Windows host. Prefer Python 3.11/3.12 for the proxy venv on Windows; newer global Python versions may install but still fail native runtime imports.
 
 Then verify inside Hermes:
 
@@ -128,7 +128,7 @@ After native Hermes install, the dependency helper is also available from the in
 
 On Windows, local `--local` development install may copy the repo instead of creating a symlink if symlink privileges are unavailable. That fallback is expected.
 
-The helper proves that the upstream package installs in an isolated venv, imports `headroom`, `fastapi`, and `uvicorn`, and exposes `headroom --help` plus `headroom proxy --help`.
+The helper proves that the upstream package installs in an isolated venv, imports `headroom`, `fastapi`, `uvicorn`, and `pydantic_core._pydantic_core`, and exposes `headroom --help` plus `headroom proxy --help`.
 
 Compatibility: this repo currently accepts `headroom-ai[proxy]>=0.26,<0.28`. Do not widen beyond that range until dependency smoke and `/headroom smoke` pass.
 
@@ -216,7 +216,7 @@ git ls-remote https://github.com/arotonal-ai/hermes-headroom-plugin.git HEAD
 
 ### Dependency install fails
 
-This is a backend/runtime issue, not a Hermes plugin install issue. Capture the environment and rerun with kept temp files:
+This is a backend/runtime issue, not a Hermes plugin install issue. On Windows, prefer a Hermes-compatible Python 3.11/3.12 venv for `RUNTIME_FULL`; if using a newer global Python, verify native imports before trusting proxy startup. Capture the environment and rerun with kept temp files:
 
 ```bash
 python --version

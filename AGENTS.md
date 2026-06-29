@@ -10,7 +10,7 @@ Install and enable the plugin in the target Hermes instance without copying owne
 
 - Linux is the primary tested target.
 - macOS/WSL are expected when Hermes, git, and Python are available, but need target evidence before being called certified.
-- Native Windows should use native Hermes commands plus Python helper scripts. Bash helpers require Git Bash/WSL and resolve `python3` → `python` → `py -3` to avoid broken Microsoft Store aliases.
+- Native Windows should use native Hermes commands plus Python helper scripts. Bash helpers require Git Bash/WSL and resolve `PYTHON_BIN`, Hermes' own Python, `python3`, `python`, then `py -3` to avoid broken Microsoft Store aliases and global Python/venv drift.
 - The packaged worker/background/preflight wrapper entry points are intentionally pending P1 migration; do not advertise owner-local wrapper behavior as packaged behavior.
 - Current P0 does not automatically compress live Hermes traffic; it provides retrieval/status/smoke/audit/policy scaffolding only.
 
@@ -76,7 +76,7 @@ scripts/test-headroom-dependency-install.sh
 |---|---|---|
 | `INSTALL_PASS` | Plugin installed and Hermes can load it | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, but Headroom proxy is unavailable | `/headroom status` reports proxy unavailable or `/headroom smoke` fails at `readyz` |
-| `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]>=0.26,<0.28`, and proxy all work | dependency smoke PASS and `/headroom smoke` returns PASS with compress → retrieve sentinel |
+| `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]>=0.26,<0.28`, and proxy all work | dependency smoke PASS and `/headroom smoke` returns PASS with compress → retrieve sentinel; prefer Python 3.11/3.12 on Windows until newer runtimes pass target smoke |
 | `FAIL` | Plugin not installed/loaded | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
 
 ## Do not do these things

@@ -76,9 +76,13 @@ def main(argv: list[str] | None = None) -> int:
         code = """
 import importlib.metadata as md
 import importlib.util
-missing = [name for name in ['headroom', 'fastapi', 'uvicorn'] if importlib.util.find_spec(name) is None]
+import sys
+modules = ['headroom', 'fastapi', 'uvicorn', 'pydantic_core._pydantic_core']
+missing = [name for name in modules if importlib.util.find_spec(name) is None]
 if missing:
-    raise SystemExit(f'missing modules: {missing}')
+    raise SystemExit(f'missing runtime modules: {missing}')
+if sys.version_info >= (3, 13):
+    print(f'WARN: Python {sys.version.split()[0]} is newer than the currently smoke-tested Windows runtime path; prefer 3.11/3.12 if proxy startup fails')
 print(md.version('headroom-ai'))
 """.strip()
         proc = run([str(python), "-c", code], timeout=60, log=log)
@@ -97,7 +101,7 @@ print(md.version('headroom-ai'))
                 return proc.returncode or 1
 
         print(f"PASS: headroom-ai dependency installed and verified version={version}")
-        print("PASS: imports available: headroom, fastapi, uvicorn")
+        print("PASS: imports available: headroom, fastapi, uvicorn, pydantic_core._pydantic_core")
         print("PASS: CLI available: headroom --help and headroom proxy --help")
         print(f"PASS: upstream Headroom dependency smoke complete ({args.spec})")
         return 0
