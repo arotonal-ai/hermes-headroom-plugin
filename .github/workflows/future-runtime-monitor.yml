@@ -6,7 +6,7 @@ on:
       headroom_spec:
         description: "headroom-ai package spec to test"
         required: false
-        default: "headroom-ai[proxy]>=0.26,<0.28"
+        default: "headroom-ai[proxy]"
   schedule:
     # Monthly non-blocking drift monitor for newer Python runtimes.
     - cron: "37 9 1 * *"
@@ -31,7 +31,7 @@ jobs:
       - name: Experimental upstream proxy + plugin runtime smoke (non-blocking)
         shell: bash
         env:
-          HEADROOM_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]>=0.26,<0.28' }}
+          HEADROOM_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]' }}
         run: |
           set +e
           python scripts/test-headroom-runtime-smoke.py --spec "$HEADROOM_SPEC" --install-timeout 600 > future-runtime-smoke.log 2>&1

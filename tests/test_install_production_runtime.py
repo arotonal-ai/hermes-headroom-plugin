@@ -15,7 +15,8 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
         self.assertIn('DEFAULT_PORT = 28787', text)
         self.assertIn('RUNTIME_FULL', text)
         self.assertIn('headroom proxy', text)
-        self.assertNotIn('>=0.26,<0.28', text)
+        old_pin = '>=0.26,' + '<0.28'
+        self.assertNotIn(old_pin, text)
 
     def test_help_documents_runtime_controls(self):
         proc = subprocess.run(
@@ -37,6 +38,18 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             self.assertIn("RUNTIME_FULL", text, rel)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertRegex(readme, re.compile(r"127\.0\.0\.1:28787", re.I))
+
+    def test_repo_no_longer_defaults_to_old_headroom_runtime_pin(self):
+        offenders = []
+        candidates = list(ROOT.rglob("*.py")) + list(ROOT.rglob("*.md")) + list(ROOT.rglob("*.yml")) + [ROOT / "pyproject.toml"]
+        for path in candidates:
+            if ".git" in path.parts or "__pycache__" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            old_pin = ">=0.26," + "<0.28"
+            if old_pin in text:
+                offenders.append(str(path.relative_to(ROOT)))
+        self.assertEqual(offenders, [])
 
 
 if __name__ == "__main__":

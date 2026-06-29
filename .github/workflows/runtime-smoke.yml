@@ -6,7 +6,7 @@ on:
       headroom_spec:
         description: "headroom-ai package spec to test"
         required: false
-        default: "headroom-ai[proxy]>=0.26,<0.28"
+        default: "headroom-ai[proxy]"
   schedule:
     # Weekly certification smoke. Keep push CI fast; use this for real proxy runtime drift.
     - cron: "17 9 * * 1"
@@ -27,4 +27,4 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Full upstream proxy + plugin runtime smoke
-        run: python scripts/test-headroom-runtime-smoke.py --spec "${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]>=0.26,<0.28' }}" --install-timeout 600
+        run: python scripts/test-headroom-runtime-smoke.py --spec "${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]' }}" --install-timeout 600
