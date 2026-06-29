@@ -51,16 +51,11 @@ Do not print or advertise a plugin/skill version from this skill. If a version, 
 
 ## Install and Reload
 
-Recommended plugin install:
+Run on the owner/target Hermes instance:
 
 ```bash
 hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
 hermes plugins list --enabled --user --plain
-```
-
-Then reload discovery:
-
-```bash
 hermes gateway restart   # gateway/platform sessions
 # or start /new in an active CLI/chat session
 ```
@@ -71,7 +66,29 @@ Verify in Hermes:
 /headroom status
 ```
 
-If a proxy is running, also verify:
+If this command responds, plugin install succeeded. A missing proxy is `RUNTIME_PARTIAL`, not a failed install.
+
+For real compression, install and run the optional upstream Headroom proxy in an isolated venv.
+
+Unix/macOS/WSL:
+
+```bash
+python3 -m venv ~/.cache/hermes-headroom-venv
+~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+```
+
+Windows PowerShell:
+
+```powershell
+py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
+```
+
+Then verify in Hermes:
 
 ```text
 /headroom smoke

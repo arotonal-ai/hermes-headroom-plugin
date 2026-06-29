@@ -44,8 +44,8 @@ for p in py_files:
 print(f"PASS: python syntax ok ({len(py_files)} files)")
 required_text = {
     'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'chopratejas/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'docs/metrics/weekly-savings.md', 'headroom-ai[proxy]>=0.26,<0.27'],
-    'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'python scripts/test-headroom-dependency-install.py', 'headroom proxy --host 127.0.0.1 --port 28787'],
-    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh', 'weekly metrics'],
+    'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'python scripts/test-headroom-dependency-install.py', 'headroom proxy --host 127.0.0.1 --port 28787', 'python3 -m venv ~/.cache/hermes-headroom-venv'],
+    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/test-headroom-dependency-install.sh', 'weekly metrics', 'python3 -m venv ~/.cache/hermes-headroom-venv'],
     'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]>=0.26,<0.27', 'generate-weekly-savings-table.py'],
     'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],
     'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/test-headroom-dependency-install.py', 'generate-weekly-savings-table.py', 'Do not print or advertise a plugin/skill version'],
@@ -57,6 +57,18 @@ for rel, needles in required_text.items():
     if missing:
         raise SystemExit(f"FAIL: {rel} missing required text: {missing}")
 print('PASS: required documentation text present')
+readme = Path('README.md').read_text(encoding='utf-8')
+mermaid = re.search(r'```mermaid\n(.*?)\n```', readme, re.S)
+if not mermaid:
+    raise SystemExit('FAIL: README missing mermaid architecture block')
+diagram = mermaid.group(1)
+for needle in ['H["Hermes Agent"]', 'C["/headroom status, smoke, audit"]', 'R["global/default provider routing unchanged"]']:
+    if needle not in diagram:
+        raise SystemExit(f'FAIL: README mermaid architecture missing GitHub-safe label: {needle}')
+for bad in ['[/headroom status|smoke|audit]', '-. does not mutate .->']:
+    if bad in diagram:
+        raise SystemExit(f'FAIL: README mermaid architecture contains unsafe syntax: {bad}')
+print('PASS: README mermaid architecture syntax guard ok')
 missing_links = []
 for rel in ['README.md', 'INSTALL.md', 'AGENTS.md', 'SECURITY.md', 'PRIVACY.md', 'ACKNOWLEDGEMENTS.md', 'docs/AGENT-INSTALL.md', 'docs/metrics/weekly-savings.md', 'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md']:
     path = Path(rel)

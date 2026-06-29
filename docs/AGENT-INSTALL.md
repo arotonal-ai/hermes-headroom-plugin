@@ -12,6 +12,8 @@ Linux is the primary tested path. macOS/WSL are expected when Hermes, git, and P
 
 ## Commands
 
+Plugin install on the target Hermes instance:
+
 ```bash
 hermes --version
 git --version
@@ -21,6 +23,24 @@ hermes gateway restart || true
 ```
 
 If operating inside an active Hermes chat instead of gateway shell, start a fresh session with `/new` after install.
+
+Optional full Headroom runtime on Unix/macOS/WSL:
+
+```bash
+python3 -m venv ~/.cache/hermes-headroom-venv
+~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+```
+
+Optional full Headroom runtime on Windows PowerShell:
+
+```powershell
+py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
+```
 
 ## Verify
 

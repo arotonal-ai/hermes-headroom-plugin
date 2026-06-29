@@ -1,20 +1,8 @@
 # Install Hermes Headroom Plugin
 
-This guide is self-contained for a fresh Hermes instance. It separates **plugin install** from the optional **Headroom proxy/backend runtime** so an operator does not confuse “Hermes loaded the plugin” with “compression is running”.
+This guide is the shortest safe path for a fresh Hermes instance. It separates the **Hermes plugin** from the optional **Headroom proxy/backend** so operators do not confuse “plugin loaded” with “compression runtime running”.
 
-## Support posture
-
-The plugin itself is Python/Hermes code and is intended to be platform-neutral. Current Bash helper scripts are Unix-shell first; Python helper scripts are provided for cross-platform checks. Do not claim a target OS is certified until the relevant checks pass on that OS.
-
-| Platform | Plugin install | Helper scripts | Notes |
-|---|---:|---:|---|
-| Linux | ✅ tested | ✅ Bash + Python | Primary validated path |
-| WSL2 | 🟡 expected | 🟡 Bash + Python | Needs explicit target run |
-| macOS | 🟡 expected | 🟡 Bash + Python | CI target planned/maintained when enabled |
-| Windows native | 🟡 possible via Hermes | 🟡 Python helpers; Bash requires Git Bash/WSL | Prefer `python scripts/...` commands |
-| Termux | 🟡 expected | 🟡 Bash + Python | Depends on Hermes/Python/git availability |
-
-## Prerequisites
+## 0. Prerequisites
 
 On the target machine:
 
@@ -24,24 +12,19 @@ git --version
 python --version  # or python3 --version
 ```
 
-If `hermes` is not installed or not on `PATH`, install/fix Hermes first. This repository does not install Hermes Agent itself.
+If `hermes` is missing, install/fix Hermes Agent first: <https://hermes-agent.nousresearch.com/docs/getting-started/installation>.
 
-| Requirement | Needed for | Version / note | Link |
-|---|---|---|---|
-| Hermes Agent | Plugin install/load | Installed and on `PATH` | <https://hermes-agent.nousresearch.com/docs/getting-started/installation> |
-| Git | `hermes plugins install owner/repo` | Any modern Git | <https://git-scm.com/downloads> |
-| Python | Plugin package/scripts | Plugin package: `>=3.11`; upstream Headroom: `>=3.10` | <https://www.python.org/downloads/> |
-| PyYAML | Plugin runtime dependency | `>=6,<7` | <https://pypi.org/project/PyYAML/> |
-| `headroom-ai[proxy]` | Full compression runtime | Certified here: `>=0.26,<0.27`; run smoke before using newer upstream versions | <https://pypi.org/project/headroom-ai/> |
-| API keys | Not required | Do not paste secrets into shell commands or issues | [SECURITY.md](SECURITY.md) |
+| Requirement | Needed for | Note |
+|---|---|---|
+| Hermes Agent | plugin install/load | must be on `PATH` |
+| Git | `hermes plugins install owner/repo` | required by native plugin install |
+| Python | helper scripts and optional proxy venv | use a Python supported by Hermes and upstream Headroom |
+| `headroom-ai[proxy]` | full compression runtime | optional; not required for plugin load |
+| API keys | not needed | do not paste secrets into install commands or issues |
 
-Important distinction:
+## 1. Install the Hermes plugin
 
-- **Hermes plugin install** does not require `headroom-ai`; it only needs Hermes + git.
-- **Full compression runtime** requires the upstream Headroom Python package/proxy.
-- This guide verifies both layers separately.
-
-## Recommended install
+Run on the owner/target Hermes instance:
 
 ```bash
 hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
@@ -49,23 +32,39 @@ hermes plugins list --enabled --user --plain
 hermes gateway restart
 ```
 
-For a non-gateway CLI-only session, use `/new` instead of restarting the gateway.
+For a CLI-only or active chat session, start a fresh session with `/new` instead of restarting the gateway.
 
-## Verify in Hermes
-
-In a fresh Hermes session:
+Verify inside Hermes:
 
 ```text
 /headroom status
 ```
 
-Expected behavior:
+Expected: the command exists and returns proxy status. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
 
-- command exists;
-- it returns proxy status;
-- if no Headroom proxy is running, it may report `ok=False` or connection failure, but the plugin should not crash.
+## 2. Optional: install Headroom runtime for real compression
 
-If a Headroom proxy is already running at `http://127.0.0.1:28787` or `HEADROOM_PROXY_URL`, run:
+The plugin can be used for `/headroom status` and `headroom_retrieve` without installing the upstream Headroom runtime. Install the runtime only when the owner/instance wants `RUNTIME_FULL`.
+
+### Unix/macOS/WSL
+
+```bash
+python3 -m venv ~/.cache/hermes-headroom-venv
+~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+```
+
+### Windows PowerShell
+
+```powershell
+py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
+```
+
+Then verify inside Hermes:
 
 ```text
 /headroom smoke
@@ -77,7 +76,9 @@ Expected successful smoke:
 Headroom smoke PASS ... sentinel_found=True
 ```
 
-## Acceptance matrix
+This repo intentionally does **not** enable global/default provider routing by default.
+
+## 3. Acceptance matrix
 
 | State | Meaning | Evidence |
 |---|---|---|
@@ -86,99 +87,49 @@ Headroom smoke PASS ... sentinel_found=True
 | `RUNTIME_FULL` | Plugin, dependency, and proxy all work | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
 
-## One-command install script
+## 4. Optional validation helpers
 
-Unix shell path:
+Use these from a repo checkout when you want evidence without mutating real environments.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/arotonal-ai/hermes-headroom-plugin/main/scripts/install-hermes-plugin.sh | bash
-```
-
-Options when running from a clone:
+Analyze without installing:
 
 ```bash
-scripts/install-hermes-plugin.sh --local      # symlink/copy this checkout into HERMES_HOME/plugins/headroom_retrieve
-scripts/install-hermes-plugin.sh --force      # reinstall existing git plugin
-scripts/install-hermes-plugin.sh --no-restart-hint
+git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
+cd hermes-headroom-plugin
+scripts/audit-repo-readiness.sh
 ```
 
-Windows/native-shell operators should prefer the native Hermes command directly:
-
-```powershell
-hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
-hermes plugins list --enabled --user --plain
-```
-
-## What gets installed
-
-Native Hermes install clones this repository into:
-
-```text
-$HERMES_HOME/plugins/headroom_retrieve
-```
-
-Usually `HERMES_HOME` is `~/.hermes` on Unix-like systems. On Windows, use the Hermes-reported home/config path rather than assuming a Unix path.
-
-The plugin registers:
-
-```text
-tool:    headroom_retrieve
-command: /headroom status|smoke|audit
-```
-
-## Optional proxy/backend setup
-
-The plugin can be installed without a running Headroom proxy. In that state, `/headroom status` should report that the proxy is unavailable. That is `RUNTIME_PARTIAL`, not a failed plugin install.
-
-### Step 1 — Verify the upstream Headroom dependency safely
-
-Cross-platform Python helper:
+Validate upstream Headroom dependency in a temporary Python venv:
 
 ```bash
 python scripts/test-headroom-dependency-install.py
-```
-
-Unix shell wrapper:
-
-```bash
+# Unix wrapper:
 scripts/test-headroom-dependency-install.sh
 ```
 
-Or, after native Hermes install:
+Validate plugin install in a temporary Hermes home:
+
+```bash
+scripts/test-clean-hermes-install.sh --local
+```
+
+After native Hermes install, the dependency helper is also available from the installed plugin directory:
 
 ```bash
 "${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
 ```
 
-What this proves:
+The helper proves that the upstream package installs in an isolated venv, imports `headroom`, `fastapi`, and `uvicorn`, and exposes `headroom --help` plus `headroom proxy --help`.
 
-- `headroom-ai[proxy]>=0.26,<0.27` installs in a clean temporary virtualenv;
-- Python can import the Headroom package and proxy dependencies;
-- the `headroom` CLI exists;
-- `headroom proxy --help` exposes proxy startup options.
+## 5. Proxy endpoint configuration
 
-Equivalent manual check:
+Default plugin target:
 
-```bash
-TMP_DIR="$(mktemp -d)"
-python3 -m venv "$TMP_DIR/venv"
-"$TMP_DIR/venv/bin/python" -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
-"$TMP_DIR/venv/bin/headroom" --help
-"$TMP_DIR/venv/bin/headroom" proxy --help
-rm -rf "$TMP_DIR"
+```text
+http://127.0.0.1:28787
 ```
 
-On Windows PowerShell, use the Python helper instead of translating venv paths by hand.
-
-### Step 2 — Run or point to a Headroom proxy
-
-To use real compression/retrieval, run a compatible Headroom proxy and point the plugin to it. The plugin default is `http://127.0.0.1:28787`; upstream Headroom's CLI default may differ, so be explicit:
-
-```bash
-headroom proxy --host 127.0.0.1 --port 28787
-```
-
-Or point Hermes to an already-running proxy:
+To point Hermes at another local/controlled endpoint:
 
 ```bash
 export HEADROOM_PROXY_URL="http://127.0.0.1:28787"
@@ -191,64 +142,16 @@ context_reduction:
   proxy_url: http://127.0.0.1:28787
 ```
 
-Then restart/fresh-session and run:
+Restart/fresh-session before rechecking `/headroom status`.
 
-```text
-/headroom smoke
-```
-
-This repo intentionally does **not** enable global provider routing by default.
-
-Backend note: this repository installs the Hermes plugin and provides a dependency smoke test. For deeper Headroom backend/proxy lifecycle behavior, follow upstream Headroom documentation rather than duplicating it here:
-
-- <https://github.com/chopratejas/headroom>
-- <https://headroom-docs.vercel.app/docs>
-- <https://pypi.org/project/headroom-ai/>
-
-## Analyze without installing
-
-```bash
-git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
-cd hermes-headroom-plugin
-scripts/audit-repo-readiness.sh
-```
-
-This checks metadata, docs, syntax, shell scripts, markdown links, and obvious secret patterns without mutating Hermes.
-
-## Validate dependency and install without touching real environments
-
-Validate upstream Headroom dependency in a temporary Python venv:
-
-```bash
-python scripts/test-headroom-dependency-install.py
-```
-
-Validate plugin install in a temporary Hermes home:
-
-```bash
-scripts/test-clean-hermes-install.sh --local
-```
-
-The first script removes its temporary virtualenv. The second creates a temporary `HERMES_HOME`, installs/enables the plugin there, verifies that Hermes loads `headroom_retrieve` and `/headroom`, then removes the temp home.
-
-## Metrics and savings table
-
-Savings tables are generated from JSONL evidence, grouped by Monday. They are intentionally blank until real evidence exists:
-
-```bash
-python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.jsonl --write docs/metrics/weekly-savings.md
-```
-
-See [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md).
-
-## Update
+## 6. Update
 
 ```bash
 hermes plugins update headroom_retrieve
 hermes gateway restart
 ```
 
-## Disable / remove / rollback
+## 7. Disable / remove / rollback
 
 Disable but keep files:
 
@@ -264,13 +167,23 @@ hermes plugins remove headroom_retrieve
 hermes gateway restart
 ```
 
-If installed from a local checkout with `--local`, remove the plugin directory/symlink manually if needed:
+If installed from a local checkout with `--local`, remove the plugin directory/symlink manually only after confirming it is the intended target:
 
 ```bash
 rm -rf "${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
 ```
 
-## Troubleshooting
+## 8. Metrics and savings table
+
+Savings tables are generated from JSONL evidence, grouped by Monday. If no evidence exists, the table stays as placeholders rather than estimated numbers.
+
+```bash
+python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.jsonl --write docs/metrics/weekly-savings.md
+```
+
+See [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md).
+
+## 9. Troubleshooting
 
 ### `hermes plugins install` works but `/headroom` is unknown
 
@@ -282,15 +195,15 @@ hermes gateway restart
 
 ### GitHub page works but install fails
 
-Check that the target machine has `git` and can reach GitHub:
+Check network/Git access from the target machine:
 
 ```bash
 git ls-remote https://github.com/arotonal-ai/hermes-headroom-plugin.git HEAD
 ```
 
-### `headroom-ai` dependency install fails
+### Dependency install fails
 
-This is a dependency/backend issue, not a Hermes plugin install issue. Capture:
+This is a backend/runtime issue, not a Hermes plugin install issue. Capture the environment and rerun with kept temp files:
 
 ```bash
 python --version
@@ -298,29 +211,34 @@ python -m pip --version
 python scripts/test-headroom-dependency-install.py --keep
 ```
 
-Then inspect the kept temporary venv/logs and compare against upstream Headroom docs.
+Then compare against upstream Headroom docs:
 
-### Plugin is enabled but smoke fails at `readyz`
+- <https://github.com/chopratejas/headroom>
+- <https://headroom-docs.vercel.app/docs>
+- <https://pypi.org/project/headroom-ai/>
 
-The plugin is installed; the Headroom proxy is not reachable. Start/configure the proxy, or set:
+### Smoke fails at `readyz`
+
+The plugin is installed; the proxy is not reachable. Start/configure the proxy, or set:
 
 ```bash
 export HEADROOM_PROXY_URL="http://host:port"
 ```
 
-### I need a clean proof without touching my real profile
+### Native Windows shell
 
-```bash
-TMP_HOME="$(mktemp -d)"
-HERMES_HOME="$TMP_HOME" hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
-HERMES_HOME="$TMP_HOME" hermes plugins list --enabled --user --plain
-rm -rf "$TMP_HOME"
+Use native `hermes` commands and Python helpers. Bash helpers require Git Bash or WSL.
+
+```powershell
+hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
+hermes plugins list --enabled --user --plain
+python scripts/test-headroom-dependency-install.py
 ```
+
+### Is systemd required?
+
+No. The bundled systemd template is Linux-only and optional. It is only a convenience for running a local proxy as a user service on compatible Linux hosts.
 
 ### Are worker/background wrappers included?
 
 The entry points are declared so downstream commands have stable names, but full wrapper behavior is **pending P1 migration** in this installable repo. Owner-local deployments may have stronger wrappers outside this package. Do not assume packaged wrappers are production-ready until tests cover them.
-
-### Is systemd required?
-
-No. The bundled systemd template is Linux-only and optional. It is not required for plugin install or `/headroom status`; it is only a convenience for running a local proxy as a user service on compatible Linux hosts.

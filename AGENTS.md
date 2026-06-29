@@ -15,6 +15,8 @@ Install and enable the plugin in the target Hermes instance without copying owne
 
 ## Primary command
 
+Install the Hermes plugin on the target instance:
+
 ```bash
 hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
 hermes plugins list --enabled --user --plain
@@ -33,20 +35,38 @@ Verify in Hermes:
 /headroom status
 ```
 
-If full runtime verification is requested, verify the upstream Headroom dependency first:
+For full compression runtime, install upstream Headroom in an isolated venv and start the local proxy.
+
+Unix/macOS/WSL:
 
 ```bash
-python scripts/test-headroom-dependency-install.py
-# or Unix wrapper:
-bash scripts/test-headroom-dependency-install.sh
-# or, after native Hermes install:
-"${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
+python3 -m venv ~/.cache/hermes-headroom-venv
+~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+```
+
+Windows PowerShell:
+
+```powershell
+py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.27'
+& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
 ```
 
 If a Headroom proxy is running, also verify:
 
 ```text
 /headroom smoke
+```
+
+For dependency evidence without starting the proxy, use the repo helper:
+
+```bash
+python scripts/test-headroom-dependency-install.py
+# Unix wrapper:
+scripts/test-headroom-dependency-install.sh
 ```
 
 ## Acceptance states
