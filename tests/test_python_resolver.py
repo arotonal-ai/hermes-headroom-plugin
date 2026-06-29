@@ -43,13 +43,16 @@ class PythonResolverTest(unittest.TestCase):
             hermes = fakebin / "hermes"
             hermes.write_text("#!/usr/bin/env bash\necho fake hermes\n", encoding="utf-8")
             hermes.chmod(0o755)
+            fakepkg = fakebin / "fakepkg"
+            (fakepkg / "hermes_cli").mkdir(parents=True)
+            (fakepkg / "hermes_cli" / "__init__.py").write_text("", encoding="utf-8")
             python = fakebin / "python"
-            python.write_text(f"#!/usr/bin/env bash\nexec {sys.executable!r} \"$@\"\n", encoding="utf-8")
+            python.write_text(f"#!/usr/bin/env bash\nPYTHONPATH={str(fakepkg)!r} exec {sys.executable!r} \"$@\"\n", encoding="utf-8")
             python.chmod(0o755)
 
             env = os.environ.copy()
             env["PATH"] = f"{fakebin}:/usr/bin:/bin"
-            script = f"source {RESOLVER}; resolve_python_with_module json; printf '%s\n' \"${{PY_CMD[0]}}\""
+            script = f"source {RESOLVER}; resolve_python_with_module hermes_cli; printf '%s\n' \"${{PY_CMD[0]}}\""
             proc = subprocess.run(["bash", "-lc", script], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, check=False)
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertEqual(proc.stdout.strip(), "python")
