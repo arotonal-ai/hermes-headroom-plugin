@@ -11,6 +11,7 @@ Install and enable the plugin in the target Hermes instance without copying owne
 - Linux, macOS, and native Windows are covered by CI/runtime smoke paths in this repo; WSL/Termux still require target evidence.
 - Native Windows should use native Hermes commands plus Python helper scripts. Bash helpers require Git Bash/WSL and resolve `PYTHON_BIN`, Hermes' own Python, `python3`, `python`, then `py -3` to avoid broken Microsoft Store aliases and global Python/venv drift.
 - Windows `RUNTIME_FULL` is certified in GitHub Runtime Smoke for Python 3.11/3.12, but target-host evidence still matters when diagnosing local shell/Python drift.
+- Python 3.13/3.14 are monitored by the non-blocking Future Runtime Monitor; do not claim them as certified until promoted in `docs/compatibility.md`.
 - The packaged worker/background/preflight wrapper entry points are intentionally pending P1 migration; do not advertise owner-local wrapper behavior as packaged behavior.
 - Current P0 does not automatically compress live Hermes traffic; it provides retrieval/status/smoke/audit/policy scaffolding only.
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.1 — 2026-06-29
+
+Compatibility and observability polish.
+
+### Added
+
+- Non-blocking Future Runtime Monitor workflow for Python 3.13/3.14 drift signals.
+- `docs/compatibility.md` separating certified support from experimental monitoring.
+
+### Changed
+
+- Documented that future Python versions are capability-monitored, not accepted by optimistic version widening.
+- Bumped package metadata version to `0.1.1`.
+
 ## v0.1.0 — 2026-06-29
 
 Initial stable public Hermes Headroom plugin release.

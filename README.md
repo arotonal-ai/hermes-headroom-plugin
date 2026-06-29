@@ -129,7 +129,7 @@ The normal CI validates plugin load/tests. The separate Runtime Smoke workflow s
 | WSL2 | target evidence required | 🟡 expected | 🟡 expected |
 | Termux | target evidence required | 🟡 expected | 🟡 expected |
 
-Legend: ✅ verified in this repo/workflow, 🟡 expected but not certified here.
+Legend: ✅ verified in this repo/workflow, 🟡 expected but not certified here. Python 3.13/3.14 are tracked by the non-blocking Future Runtime Monitor and are not certified until promoted through Runtime Smoke. See [docs/compatibility.md](docs/compatibility.md).
 
 ## Agent quick contract
 
@@ -256,12 +256,14 @@ python scripts/test-headroom-runtime-smoke.py
 - [INSTALL.md](INSTALL.md) — full install, update, rollback, proxy config, troubleshooting.
 - [AGENTS.md](AGENTS.md) — repository-level instructions for AI/Hermes agents.
 - [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md) — compact agent install brief.
+- [docs/compatibility.md](docs/compatibility.md) — certified vs experimental OS/Python/runtime support.
 - [SECURITY.md](SECURITY.md) — security reporting and secret-handling policy.
 - [PRIVACY.md](PRIVACY.md) — privacy and telemetry posture.
 - [CHANGELOG.md](CHANGELOG.md) — release notes.
 - [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md) — evidence-backed savings rollups.
 - `scripts/test-headroom-runtime-smoke.py` — real loopback proxy + plugin compress/retrieve smoke.
 - `.github/workflows/runtime-smoke.yml` — manual/weekly real proxy runtime certification across OS/Python matrix.
+- `.github/workflows/future-runtime-monitor.yml` — non-blocking Python 3.13/3.14 drift monitor.
 
 ## Non-goals in this repo stage
 

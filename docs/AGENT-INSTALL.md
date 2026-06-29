@@ -85,7 +85,7 @@ FULL if:
 - `scripts/test-headroom-dependency-install.sh` or the Python equivalent passes for `headroom-ai[proxy]>=0.26,<0.28`;
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval.
 
-Windows native `FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11/3.12, but still require target-host evidence when diagnosing a specific machine.
+Windows native `FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11/3.12, but still require target-host evidence when diagnosing a specific machine. Python 3.13/3.14 are experimental monitor paths, not certified support.
 
 FAIL if:
 

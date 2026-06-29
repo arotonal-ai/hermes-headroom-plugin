@@ -1,0 +1,62 @@
+name: Future Runtime Monitor
+
+on:
+  workflow_dispatch:
+    inputs:
+      headroom_spec:
+        description: "headroom-ai package spec to test"
+        required: false
+        default: "headroom-ai[proxy]>=0.26,<0.28"
+  schedule:
+    # Monthly non-blocking drift monitor for newer Python runtimes.
+    - cron: "37 9 1 * *"
+
+jobs:
+  future-runtime-monitor:
+    name: future-runtime-monitor (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+      - name: Experimental upstream proxy + plugin runtime smoke (non-blocking)
+        shell: bash
+        env:
+          HEADROOM_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]>=0.26,<0.28' }}
+        run: |
+          set +e
+          python scripts/test-headroom-runtime-smoke.py --spec "$HEADROOM_SPEC" --install-timeout 600 > future-runtime-smoke.log 2>&1
+          status=$?
+          cat future-runtime-smoke.log
+          {
+            echo "### Future runtime monitor"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| OS | ${{ matrix.os }} |"
+            echo "| Python | ${{ matrix.python-version }} |"
+            echo "| Spec | \`$HEADROOM_SPEC\` |"
+            echo "| Smoke exit code | \`$status\` |"
+            echo ""
+            if [ "$status" -eq 0 ]; then
+              echo "Result: experimental PASS. This is monitoring evidence only; promote to certified matrix after repeated green runs and docs update."
+            else
+              echo "Result: experimental FAIL. This is allowed and does not block certified 3.11/3.12 support."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: future-runtime-smoke-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: future-runtime-smoke.log
+          if-no-files-found: ignore

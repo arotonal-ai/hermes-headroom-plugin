@@ -131,7 +131,7 @@ On Windows, local `--local` development install may copy the repo instead of cre
 
 The helper proves that the upstream package installs in an isolated venv, imports `headroom`, `fastapi`, `uvicorn`, and `pydantic_core._pydantic_core`, and exposes `headroom --help` plus `headroom proxy --help`.
 
-Compatibility: this repo currently accepts `headroom-ai[proxy]>=0.26,<0.28`. Do not widen beyond that range until dependency smoke and runtime smoke pass.
+Compatibility: this repo currently accepts `headroom-ai[proxy]>=0.26,<0.28`. Do not widen beyond that range until dependency smoke and runtime smoke pass. See [docs/compatibility.md](docs/compatibility.md) for certified vs experimental runtime support; Python 3.13/3.14 are monitored separately and are not certified by default.
 
 ## 5. Proxy endpoint configuration
 

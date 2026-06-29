@@ -128,7 +128,7 @@ Unix-compatible wrapper:
 scripts/test-headroom-dependency-install.sh
 ```
 
-The dependency smoke creates a temporary virtual environment, installs the certified dependency spec, verifies imports for `headroom`, `fastapi`, and `uvicorn`, then checks `headroom --help` and `headroom proxy --help`. It must not mutate Hermes config, `HERMES_HOME`, or the caller's system Python.
+The dependency smoke creates a temporary virtual environment, installs the certified dependency spec, verifies imports for `headroom`, `fastapi`, `uvicorn`, and `pydantic_core._pydantic_core`, then checks `headroom --help` and `headroom proxy --help`. It must not mutate Hermes config, `HERMES_HOME`, or the caller's system Python. Treat Python 3.13/3.14 as experimental monitor paths until `docs/compatibility.md` promotes them.
 
 ## Safe Admission Policy
 

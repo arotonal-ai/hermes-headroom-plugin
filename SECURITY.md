@@ -2,7 +2,7 @@
 
 ## Supported status
 
-This repository is currently `0.1.0` / pre-release hardening for Hermes plugin installation.
+This repository is in stable public-plugin hardening. Supported releases start at `v0.1.0`; inspect GitHub Releases and `pyproject.toml` for the current package version.
 
 ## Reporting vulnerabilities
 
