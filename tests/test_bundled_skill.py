@@ -49,7 +49,7 @@ class BundledSkillTest(unittest.TestCase):
             "generate-weekly-savings-table.py",
             "docs/metrics/weekly-savings.md",
             "headroom_retrieve",
-            "headroom-ai[proxy]>=0.26,<0.28",
+            "headroom-ai[proxy]",
             "Do not print or advertise a plugin/skill version",
             "global/default routing",
         ]

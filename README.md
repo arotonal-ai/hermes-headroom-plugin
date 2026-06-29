@@ -77,26 +77,33 @@ Expected first verification:
 
 If this responds, the plugin has loaded. A missing proxy is `RUNTIME_PARTIAL`, not an install failure.
 
-### Optional: install the Headroom proxy runtime
+### Production: install the Headroom proxy runtime
 
-The plugin loads without the upstream runtime. Install the proxy only for `RUNTIME_FULL`.
+`hermes plugins install ... --enable` installs only the Hermes surface. It does **not** install or supervise the upstream Headroom runtime. For `RUNTIME_FULL`, run the production runtime installer from a repo/plugin checkout:
 
-Unix/macOS/WSL:
+```bash
+python scripts/install-production-runtime.py
+# or on Unix/Git Bash:
+scripts/install-production-runtime.sh
+```
+
+The installer creates/updates a persistent venv at `~/.cache/hermes-headroom-venv`, installs the latest available `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, waits for `/readyz`, and runs a real plugin compress → retrieve smoke. It reports `RUNTIME_FULL` only when that end-to-end check passes.
+
+Windows PowerShell uses the same Python helper:
+
+```powershell
+python scripts\install-production-runtime.py
+# or, if python is not resolved correctly:
+py -3 scripts\install-production-runtime.py
+```
+
+Manual fallback:
 
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv
 ~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]'
 ~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
-```
-
-Windows PowerShell:
-
-```powershell
-py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
 ```
 
 Then in Hermes:
@@ -155,6 +162,7 @@ scripts/audit-repo-readiness.sh
 scripts/test-clean-hermes-install.sh --local
 python scripts/test-headroom-dependency-install.py
 python scripts/test-headroom-runtime-smoke.py
+python scripts/install-production-runtime.py --no-start
 ```
 
 Unix/Git Bash wrapper for dependency smoke:
@@ -163,15 +171,17 @@ Unix/Git Bash wrapper for dependency smoke:
 scripts/test-headroom-dependency-install.sh
 ```
 
-The runtime smoke creates a temporary venv, installs `headroom-ai[proxy]>=0.26,<0.28`, starts a local proxy on a free loopback port, then runs plugin compress/retrieve sentinel verification.
+The runtime smoke creates a temporary venv, installs `headroom-ai[proxy]`, starts a local proxy on a free loopback port, then runs plugin compress/retrieve sentinel verification.
 
 ## Configuration
 
-Default proxy URL:
+Default plugin proxy URL:
 
 ```text
 http://127.0.0.1:28787
 ```
+
+This is the Hermes plugin/runtime convention used by this integration. Do not rely on the upstream `headroom proxy` default port; production commands pass `--port 28787` explicitly so `/headroom status`, `tool_execution`, and `/headroom smoke` all target the same endpoint.
 
 Environment override:
 

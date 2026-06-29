@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 — 2026-06-29
 
 - Added fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, while preserving exact/blocked classes.
 - Added marker extraction for both `<<ccr:...>>` and Headroom `hash=...` forms in result compression paths.
-- Updated docs to distinguish packaged result middleware from owner-local wrapper scripts and to keep global/default provider routing unchanged.
+- Added production runtime installer (`scripts/install-production-runtime.py` / `.sh`) that creates a persistent venv, installs latest `headroom-ai[proxy]` by default, starts the loopback proxy on `127.0.0.1:28787`, verifies `/readyz`, and reports `RUNTIME_FULL` only after compress → retrieve smoke passes.
+- Changed runtime dependency default from a historical version range to unpinned `headroom-ai[proxy]`; `--spec` / `HEADROOM_AI_SPEC` remain available for explicit rollback diagnostics.
 
 
 ## v0.1.1 — 2026-06-29
@@ -33,7 +34,7 @@ Initial stable public Hermes Headroom plugin release.
 - Bundled `headroom-token-cost-evaluation` operating skill.
 - Portable install/audit/test helpers for humans and agents.
 - Temporary `HERMES_HOME` install smoke for local and remote plugin paths.
-- Upstream dependency smoke for `headroom-ai[proxy]>=0.26,<0.28`.
+- Upstream dependency smoke for `headroom-ai[proxy]`.
 - Full runtime smoke that starts a real loopback proxy and validates compress → retrieve sentinel recovery.
 - Runtime Smoke GitHub workflow across Ubuntu/macOS/Windows and Python 3.11/3.12.
 - Remote proxy guardrail: non-loopback `HEADROOM_PROXY_URL` is blocked unless explicitly allowed.

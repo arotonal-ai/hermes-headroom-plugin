@@ -30,8 +30,9 @@ class MarkdownDocsTest(unittest.TestCase):
             "hermes plugins install arotonal-ai/hermes-headroom-plugin --enable",
             "hermes gateway restart",
             "/headroom status",
+            "python scripts/install-production-runtime.py",
             "python3 -m venv ~/.cache/hermes-headroom-venv",
-            "py -m venv $env:USERPROFILE\\.cache\\hermes-headroom-venv",
+            "py -3 -m venv $env:USERPROFILE\\.cache\\hermes-headroom-venv",
             "headroom proxy --host 127.0.0.1 --port 28787",
             "/headroom smoke",
         ]

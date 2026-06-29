@@ -1,10 +1,10 @@
 # Compatibility
 
-This page separates **certified support** from **experimental monitoring**. Do not widen dependency or Python support claims just because a package installs; runtime certification requires a real proxy smoke.
+This page separates **certified support** from **experimental monitoring**. The production installer intentionally uses latest available `headroom-ai[proxy]` by default; runtime certification still requires a real proxy smoke, not just a successful pip install.
 
 ## Certified runtime matrix
 
-Certified means the repository's Runtime Smoke workflow installed `headroom-ai[proxy]>=0.26,<0.28`, started a loopback Headroom proxy, and verified plugin compress → retrieve sentinel recovery.
+Certified means the repository's Runtime Smoke workflow installed `headroom-ai[proxy]`, started a loopback Headroom proxy, and verified plugin compress → retrieve sentinel recovery.
 
 Evidence baseline:
 
@@ -37,14 +37,14 @@ That workflow is intentionally **non-blocking**:
 |---|---|---|
 | Python 3.13 | experimental monitor | Runtime Smoke PASS on Ubuntu/macOS/Windows and no known upstream native dependency failures |
 | Python 3.14 | experimental monitor | Runtime Smoke PASS on Ubuntu/macOS/Windows and no known upstream native dependency failures |
-| `headroom-ai[proxy]>=0.28` | not accepted | dependency smoke + runtime smoke PASS before widening `pyproject.toml` |
+| Upstream `headroom-ai[proxy]` latest | production default | dependency smoke + runtime smoke PASS; rollback with explicit `--spec` only if upstream regresses |
 
-## Policy for version ranges
+## Policy for runtime versions
 
 Use capability checks before pins:
 
 1. Keep plugin install/load independent from the optional proxy runtime.
-2. Prefer explicit smoke tests over broad version promises.
-3. Use lower bounds for required APIs and upper bounds where upstream compatibility is unverified.
-4. Promote a runtime only after **dependency smoke** and **real proxy runtime smoke** pass.
+2. Default production install to current `headroom-ai[proxy]`, not a stale pinned release.
+3. Use `--spec` / `HEADROOM_AI_SPEC` only as an explicit incident rollback or target-host diagnostic override.
+4. Promote or demote support only after **dependency smoke** and **real proxy runtime smoke** pass/fail with evidence.
 5. Document target-host drift honestly, especially on native Windows where global Python aliases can differ from the Hermes Python.

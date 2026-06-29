@@ -42,38 +42,47 @@ Verify inside Hermes:
 
 Expected: the command exists and returns proxy status. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
 
-## 2. Optional: install Headroom runtime for real compression
+## 2. Install Headroom runtime for real compression
 
-The plugin can be used for `/headroom status` and `headroom_retrieve` without installing the upstream Headroom runtime. Install the runtime only when the owner/instance wants `RUNTIME_FULL`.
+The plugin can be used for `/headroom status` and `headroom_retrieve` without the upstream runtime. That state is `RUNTIME_PARTIAL`. For production `RUNTIME_FULL`, run the bundled installer from a repo/plugin checkout:
 
-### Unix/macOS/WSL
+```bash
+python scripts/install-production-runtime.py
+# Unix/Git Bash wrapper:
+scripts/install-production-runtime.sh
+```
+
+Windows PowerShell:
+
+```powershell
+python scripts\install-production-runtime.py
+# or:
+py -3 scripts\install-production-runtime.py
+```
+
+What the installer does:
+
+1. Creates/updates a persistent venv: `~/.cache/hermes-headroom-venv`.
+2. Installs latest available `headroom-ai[proxy]` by default; override only for rollback with `--spec` or `HEADROOM_AI_SPEC`.
+3. Starts `headroom proxy --host 127.0.0.1 --port 28787` when no proxy is ready.
+4. Verifies `/readyz`.
+5. Runs real plugin compress → retrieve smoke.
+6. Prints `RUNTIME_FULL` only when all checks pass.
+
+Manual fallback on Unix/macOS/WSL:
 
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv
 ~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
+~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]'
 ~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
 ```
 
-### Windows PowerShell
-
-```powershell
-py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
-```
+Manual Windows fallback: use `py -3 -m venv $env:USERPROFILE\.cache\hermes-headroom-venv`, install `headroom-ai[proxy]` with the venv Python, then run `Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787`.
 
 ### Windows Git Bash / MSYS
 
-Do not rely on `python3` on native Windows; it may be the broken Microsoft Store alias. Use `python`, `py -3`, or set `PYTHON_BIN` for the Bash helpers.
-
-```bash
-python -m venv "$HOME/.cache/hermes-headroom-venv"
-"$HOME/.cache/hermes-headroom-venv/Scripts/python.exe" -m pip install --upgrade pip
-"$HOME/.cache/hermes-headroom-venv/Scripts/python.exe" -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-"$HOME/.cache/hermes-headroom-venv/Scripts/headroom.exe" proxy --host 127.0.0.1 --port 28787
-```
+Do not rely on `python3` on native Windows; it may be the broken Microsoft Store alias. Use the Python installer helper above, `python`, `py -3`, or set `PYTHON_BIN` for Bash wrappers.
 
 Windows `RUNTIME_FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11 and 3.12. Still require target-host evidence when diagnosing a user machine, because global Python installs and shell aliases can drift. Prefer Python 3.11/3.12 for the proxy venv on Windows; newer global Python versions may install but still fail native runtime imports.
 
@@ -121,25 +130,17 @@ Validate plugin install in a temporary Hermes home:
 scripts/test-clean-hermes-install.sh --local
 ```
 
-After native Hermes install, the dependency helper is also available from the installed plugin directory:
-
-```bash
-"${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
-```
-
-On Windows, local `--local` development install may copy the repo instead of creating a symlink if symlink privileges are unavailable. That fallback is expected.
-
-The helper proves that the upstream package installs in an isolated venv, imports `headroom`, `fastapi`, `uvicorn`, and `pydantic_core._pydantic_core`, and exposes `headroom --help` plus `headroom proxy --help`.
-
-Compatibility: this repo currently accepts `headroom-ai[proxy]>=0.26,<0.28`. Do not widen beyond that range until dependency smoke and runtime smoke pass. See [docs/compatibility.md](docs/compatibility.md) for certified vs experimental runtime support; Python 3.13/3.14 are monitored separately and are not certified by default.
+Compatibility: production install defaults to latest available `headroom-ai[proxy]` rather than pinning a historical version. If upstream releases regress, use `--spec` / `HEADROOM_AI_SPEC` as an explicit rollback override and capture dependency + runtime smoke evidence before changing the documented default. See [docs/compatibility.md](docs/compatibility.md) for certified vs experimental runtime support; Python 3.13/3.14 are monitored separately and are not certified by default.
 
 ## 5. Proxy endpoint configuration
 
-Default plugin target:
+Default plugin/runtime target:
 
 ```text
 http://127.0.0.1:28787
 ```
+
+This integration intentionally uses `28787` for the Hermes-facing Headroom proxy. Upstream Headroom may have a different CLI default; do not rely on that default. Start production runtime with `headroom proxy --host 127.0.0.1 --port 28787` or use `scripts/install-production-runtime.py`, which passes the port explicitly.
 
 To point Hermes at another local/controlled endpoint:
 
@@ -237,16 +238,6 @@ The plugin is installed; the proxy is not reachable. Start/configure the proxy, 
 
 ```bash
 export HEADROOM_PROXY_URL="http://host:port"
-```
-
-### Native Windows shell
-
-Use native `hermes` commands and Python helpers. Bash helpers require Git Bash or WSL.
-
-```powershell
-hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
-hermes plugins list --enabled --user --plain
-python scripts/test-headroom-dependency-install.py
 ```
 
 ### Is systemd required?

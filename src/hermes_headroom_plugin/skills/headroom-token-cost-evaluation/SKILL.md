@@ -68,25 +68,23 @@ Verify in Hermes:
 
 If this command responds, plugin install succeeded. A missing proxy is `RUNTIME_PARTIAL`, not a failed install.
 
-For real compression, install and run the optional upstream Headroom proxy in an isolated venv.
-
-Unix/macOS/WSL:
+For real compression / `RUNTIME_FULL`, run the production runtime installer from a repo/plugin checkout:
 
 ```bash
-python3 -m venv ~/.cache/hermes-headroom-venv
-~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+python scripts/install-production-runtime.py
+# Unix/Git Bash wrapper:
+scripts/install-production-runtime.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
+python scripts\install-production-runtime.py
+# or:
+py -3 scripts\install-production-runtime.py
 ```
+
+The installer creates/updates `~/.cache/hermes-headroom-venv`, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, verifies `/readyz`, and runs real compress → retrieve smoke. Manual install is acceptable only if those same checks pass.
 
 Then verify in Hermes:
 
@@ -100,7 +98,7 @@ Then verify in Hermes:
 |---|---|---|
 | `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds after restart/new session. |
 | `RUNTIME_PARTIAL` | Plugin loads, but no proxy is reachable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; plugin does not crash. |
-| `RUNTIME_FULL` | Plugin, dependency, and proxy work | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval. |
+| `RUNTIME_FULL` | Plugin, dependency, and proxy work | `scripts/install-production-runtime.py` reports `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval. |
 | `FAIL` | Plugin cannot be used | plugin not enabled, `/headroom` unavailable after reload, or install required copying another machine/profile state. |
 
 Never call proxy-down `RUNTIME_PARTIAL` a failed install. It is a valid degraded state.
@@ -112,12 +110,13 @@ The Hermes plugin and upstream Headroom runtime are separate layers:
 | Layer | Installed by | Required for |
 |---|---|---|
 | Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `headroom_retrieve` tool, `/headroom` command, and fail-open `tool_execution` middleware for eligible bulky intermediate results. |
-| Upstream Headroom package | `headroom-ai[proxy]>=0.26,<0.28` | local proxy/backend. |
+| Upstream Headroom package | `headroom-ai[proxy]` | local proxy/backend. |
 | Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787` or configured endpoint | real compress → retrieve smoke. |
 
-Use the cross-platform dependency smoke before claiming runtime capability:
+Use the production installer or cross-platform smoke helpers before claiming runtime capability:
 
 ```bash
+python scripts/install-production-runtime.py
 python scripts/test-headroom-dependency-install.py
 python scripts/test-headroom-runtime-smoke.py
 ```
@@ -128,7 +127,7 @@ Unix-compatible wrapper:
 scripts/test-headroom-dependency-install.sh
 ```
 
-The dependency smoke creates a temporary virtual environment, installs the certified dependency spec, verifies imports for `headroom`, `fastapi`, `uvicorn`, and `pydantic_core._pydantic_core`, then checks `headroom --help` and `headroom proxy --help`. It must not mutate Hermes config, `HERMES_HOME`, or the caller's system Python. Treat Python 3.13/3.14 as experimental monitor paths until `docs/compatibility.md` promotes them.
+The dependency smoke creates a temporary virtual environment, installs `headroom-ai[proxy]` using the current default unless `--spec`/`HEADROOM_AI_SPEC` overrides it, verifies imports for `headroom`, `fastapi`, `uvicorn`, and `pydantic_core._pydantic_core`, then checks `headroom --help` and `headroom proxy --help`. It must not mutate Hermes config, `HERMES_HOME`, or the caller's system Python. Treat Python 3.13/3.14 as experimental monitor paths until `docs/compatibility.md` promotes them.
 
 ## Safe Admission Policy
 
@@ -189,6 +188,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m py_compile $(find src tests scripts -name '*.py' | sort)
 bash -n scripts/*.sh
 bash scripts/audit-repo-readiness.sh
+python scripts/install-production-runtime.py --no-start
 python scripts/test-headroom-dependency-install.py
 python scripts/test-headroom-runtime-smoke.py
 ```

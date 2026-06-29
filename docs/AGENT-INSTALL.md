@@ -24,23 +24,23 @@ hermes gateway restart || true
 
 If operating inside an active Hermes chat instead of gateway shell, start a fresh session with `/new` after install.
 
-Optional full Headroom runtime on Unix/macOS/WSL:
+Production runtime for `RUNTIME_FULL`:
 
 ```bash
-python3 -m venv ~/.cache/hermes-headroom-venv
-~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+python scripts/install-production-runtime.py
+# Unix/Git Bash wrapper:
+scripts/install-production-runtime.sh
 ```
 
-Optional full Headroom runtime on Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
-py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
+python scripts\install-production-runtime.py
+# or:
+py -3 scripts\install-production-runtime.py
 ```
+
+The installer creates/updates `~/.cache/hermes-headroom-venv`, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if needed, verifies `/readyz`, and runs real compress → retrieve smoke. Manual install is acceptable only if those same checks pass.
 
 ## Verify
 
@@ -83,7 +83,7 @@ PARTIAL if:
 
 FULL if:
 
-- `scripts/test-headroom-dependency-install.sh` or the Python equivalent passes for `headroom-ai[proxy]>=0.26,<0.28`;
+- `scripts/install-production-runtime.py` returns `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval;
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval;
 - optional result-compression checks preserve exact/blocked tools such as `read_file`, `patch`, and `git diff`.
 

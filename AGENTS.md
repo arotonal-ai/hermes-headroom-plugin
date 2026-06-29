@@ -38,25 +38,23 @@ Verify in Hermes:
 /headroom status
 ```
 
-For full compression runtime, install upstream Headroom in an isolated venv and start the local proxy.
-
-Unix/macOS/WSL:
+For `RUNTIME_FULL`, prefer the production runtime installer from a repo/plugin checkout:
 
 ```bash
-python3 -m venv ~/.cache/hermes-headroom-venv
-~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+python scripts/install-production-runtime.py
+# Unix/Git Bash wrapper:
+scripts/install-production-runtime.sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install --upgrade pip
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\python.exe -m pip install 'headroom-ai[proxy]>=0.26,<0.28'
-& $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
+python scripts\install-production-runtime.py
+# or:
+py -3 scripts\install-production-runtime.py
 ```
+
+The installer creates/updates `~/.cache/hermes-headroom-venv`, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if needed, verifies `/readyz`, and runs real compress → retrieve smoke. Manual fallback is allowed only if it performs those same checks.
 
 If a Headroom proxy is running, also verify:
 
@@ -79,7 +77,7 @@ scripts/test-headroom-dependency-install.sh
 |---|---|---|
 | `INSTALL_PASS` | Plugin installed and Hermes can load it | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, but Headroom proxy is unavailable | `/headroom status` reports proxy unavailable or `/headroom smoke` fails at `readyz` |
-| `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]>=0.26,<0.28`, and proxy all work | dependency smoke PASS and `/headroom smoke` or runtime smoke returns PASS with compress → retrieve sentinel; Python 3.11/3.12 are certified in Runtime Smoke |
+| `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]`, and proxy all work | dependency smoke PASS and `/headroom smoke` or runtime smoke returns PASS with compress → retrieve sentinel; Python 3.11/3.12 are certified in Runtime Smoke |
 | `FAIL` | Plugin not installed/loaded | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
 
 ## Do not do these things
