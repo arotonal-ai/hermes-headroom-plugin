@@ -16,7 +16,7 @@ This repository is a Hermes Agent integration layer. It adds:
 
 - native Hermes plugin installation via `hermes plugins install`;
 - `headroom_retrieve` tool registration;
-- `/headroom status`, `/headroom smoke`, and `/headroom audit` commands;
+- `/headroom status`, `/headroom on`, `/headroom smoke`, and `/headroom audit` commands;
 - conservative exact/compress/blocked policy defaults;
 - agent/human installation docs and clean-home test harnesses.
 

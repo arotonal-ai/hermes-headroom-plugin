@@ -17,7 +17,7 @@ class MarkdownDocsTest(unittest.TestCase):
         assert match is not None
         diagram = match.group(1)
         self.assertIn('H["Hermes Agent"]', diagram)
-        self.assertIn('C["/headroom status, smoke, audit"]', diagram)
+        self.assertIn('C["/headroom status, smoke, audit, on"]', diagram)
         self.assertIn('R["global/default provider routing unchanged"]', diagram)
         self.assertNotIn('[/headroom status|smoke|audit]', diagram)
         self.assertNotIn('-. does not mutate .->', diagram)

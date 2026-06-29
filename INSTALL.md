@@ -38,9 +38,10 @@ Verify inside Hermes:
 
 ```text
 /headroom status
+/headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
-Expected: the command exists and returns proxy status. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
+Expected: the commands exist and return proxy/status guidance. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
 
 ## 2. Install Headroom runtime for real compression
 
@@ -98,7 +99,7 @@ Expected: smoke PASS with sentinel retrieval. With a healthy proxy, the plugin c
 
 | State | Meaning | Evidence |
 |---|---|---|
-| `INSTALL_PASS` | Plugin installed and Hermes can load it | `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`; `/headroom status` responds after restart/new session |
+| `INSTALL_PASS` | Plugin installed and Hermes can load it | `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`; `/headroom status` and `/headroom on` respond after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz` |
 | `RUNTIME_FULL` | Plugin, dependency, and proxy all work | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
@@ -155,7 +156,7 @@ context_reduction:
   proxy_url: http://127.0.0.1:28787
 ```
 
-Restart/fresh-session before rechecking `/headroom status`.
+Restart/fresh-session before rechecking `/headroom status` and `/headroom on`.
 
 **Remote proxy guardrail:** loopback (`127.0.0.1` / `localhost`) is allowed by default. Non-loopback `HEADROOM_PROXY_URL` is blocked unless you explicitly set `HEADROOM_ALLOW_REMOTE_PROXY=1` or `context_reduction.allow_remote_proxy: true`; use that only for controlled, trusted endpoints.
 

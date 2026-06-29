@@ -27,9 +27,18 @@ class CleanHomeDiscoveryTest(unittest.TestCase):
             code = textwrap.dedent("""
                 import json
                 from hermes_cli.plugins import PluginManager
+                from unittest.mock import patch
+                from hermes_headroom_plugin.commands import handle_headroom_command
                 pm = PluginManager()
                 pm.discover_and_load(force=True)
                 loaded = pm._plugins.get('headroom_retrieve')
+                with patch('hermes_headroom_plugin.commands.readyz', return_value={
+                    'ok': True,
+                    'proxy_url': 'http://127.0.0.1:28787',
+                    'status': 200,
+                    'body': {'ready': True},
+                }):
+                    on_text = handle_headroom_command('on')
                 print(json.dumps({
                     'seen': loaded is not None,
                     'enabled': bool(getattr(loaded, 'enabled', False)) if loaded else False,
@@ -37,6 +46,7 @@ class CleanHomeDiscoveryTest(unittest.TestCase):
                     'tools': getattr(loaded, 'tools_registered', []) if loaded else [],
                     'commands': getattr(loaded, 'commands_registered', []) if loaded else [],
                     'middleware': getattr(loaded, 'middleware_registered', []) if loaded else [],
+                    'headroom_on_text': on_text,
                 }, sort_keys=True))
             """)
             env = os.environ.copy()
@@ -50,6 +60,8 @@ class CleanHomeDiscoveryTest(unittest.TestCase):
             self.assertIsNone(data["error"], data)
             self.assertIn("headroom_retrieve", data["tools"])
             self.assertIn("headroom", data["commands"])
+            self.assertIn("already active", data["headroom_on_text"])
+            self.assertIn("/headroom smoke", data["headroom_on_text"])
             self.assertIn("llm_request", data["middleware"])
             self.assertIn("tool_execution", data["middleware"])
 

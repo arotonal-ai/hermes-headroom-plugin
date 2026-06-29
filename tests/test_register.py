@@ -55,6 +55,11 @@ class RegisterTest(unittest.TestCase):
         self.assertEqual(ctx.tools[0]["toolset"], "headroom")
         self.assertNotIn("check_fn", ctx.tools[0])
         self.assertEqual(ctx.commands[0][0][0], "headroom")
+        command_handler = ctx.commands[0][0][1]
+        command_kwargs = ctx.commands[0][1]
+        self.assertEqual(command_handler("unknown"), "Usage: /headroom status|smoke|audit|on")
+        self.assertIn("on", command_kwargs.get("args_hint", ""))
+        self.assertIn("/headroom status|smoke|audit|on", command_kwargs.get("description", ""))
         self.assertIn(("llm_request", ctx.middleware[0][1]), ctx.middleware)
         self.assertIn(("tool_execution", ctx.middleware[1][1]), ctx.middleware)
         self.assertTrue(ctx.skills)

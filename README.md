@@ -19,6 +19,7 @@ Then in Hermes:
 
 ```text
 /headroom status
+/headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
 If a local Headroom proxy is running:
@@ -53,7 +54,7 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | Full upstream proxy runtime smoke | ✅ included | `scripts/test-headroom-runtime-smoke.py` and GitHub Runtime Smoke workflow |
 | Remote proxy guardrail | ✅ included | non-loopback blocked unless explicitly allowed |
 | Eligible bulky tool/lane result compression | ✅ included | `tool_execution` middleware compresses large intermediate results such as `delegate_task`, terminal/process, browser/debug, web_extract, and session_search when proxy is healthy |
-| Worker/background/preflight CLI wrappers | 🚧 pending | owner-local wrapper scripts are not claimed as packaged behavior until migrated/tested here |
+| Worker/background/preflight CLI wrappers | ✅ included | `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` retain exact sidecars/final packets and compress only eligible bulky intermediates |
 | Global/default provider route mutation | ❌ not included | install does not change model/provider defaults |
 | External telemetry/API keys | ❌ not included | no telemetry, no keys required |
 
@@ -230,7 +231,7 @@ Use remote proxies only for controlled, trusted endpoints; future compression wr
 ```mermaid
 flowchart LR
   H["Hermes Agent"] --> P["headroom_retrieve plugin"]
-  P --> C["/headroom status, smoke, audit"]
+  P --> C["/headroom status, smoke, audit, on"]
   P --> T["headroom_retrieve tool"]
   P --> M["tool_execution middleware for bulky intermediate lane results"]
   C --> X["Headroom proxy on 127.0.0.1:28787"]

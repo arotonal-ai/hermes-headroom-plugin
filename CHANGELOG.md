@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.1 — 2026-06-29
+
+- Added read-only `/headroom on` / `/headroom enable` compatibility response so installs coming from owner-local muscle memory do not fall through to generic usage. The command does not mutate gateway/provider/runtime state; it reports whether the current proxy is already active and points operators to `/headroom smoke` for full verification.
+- Expanded `/headroom status` failure output with bounded detail to make transient readyz failures diagnosable when smoke later passes.
+- Added regression coverage for slash-command contract drift: registration metadata, unit handler behavior, directory-plugin discovery, and clean temp-home install now validate `/headroom on` compatibility.
+
 ## v0.3.0 — 2026-06-29
 
 - Promoted packaged worker/background/preflight CLI wrappers from placeholders to tested production behavior for explicit operator commands.

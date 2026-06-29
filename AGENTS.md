@@ -36,6 +36,7 @@ Verify in Hermes:
 
 ```text
 /headroom status
+/headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
 For `RUNTIME_FULL`, prefer the production runtime installer from a repo/plugin checkout:
@@ -75,7 +76,7 @@ scripts/test-headroom-dependency-install.sh
 
 | State | Meaning | Required evidence |
 |---|---|---|
-| `INSTALL_PASS` | Plugin installed and Hermes can load it | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds after restart/new session |
+| `INSTALL_PASS` | Plugin installed and Hermes can load it | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom on` respond after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, but Headroom proxy is unavailable | `/headroom status` reports proxy unavailable or `/headroom smoke` fails at `readyz` |
 | `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]`, and proxy all work | dependency smoke PASS and `/headroom smoke` or runtime smoke returns PASS with compress → retrieve sentinel; Python 3.11/3.12 are certified in Runtime Smoke |
 | `FAIL` | Plugin not installed/loaded | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |

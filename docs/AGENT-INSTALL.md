@@ -48,6 +48,7 @@ In Hermes:
 
 ```text
 /headroom status
+/headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
 If full runtime/proxy validation is requested, verify the upstream Headroom dependency/runtime without touching the real environment:
@@ -72,7 +73,7 @@ If a proxy is running:
 PASS if:
 
 - `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`;
-- `/headroom status` responds after restart/new session;
+- `/headroom status` and `/headroom on` respond after restart/new session;
 - no secrets are requested or printed;
 - global/default provider routing is unchanged;
 - if proxy/runtime is enabled, eligible bulky intermediate tool/lane result compression is available via `tool_execution` middleware.

@@ -33,6 +33,22 @@ class SmokeTest(unittest.TestCase):
         self.assertIn('Headroom smoke FAIL', text)
         self.assertIn('readyz', text)
 
+    def test_command_on_reports_active_without_mutating_runtime(self):
+        with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
+            text = handle_headroom_command('on')
+        self.assertIn('already active', text)
+        self.assertIn('/headroom smoke', text)
+
+    def test_command_on_reports_no_slash_toggle_when_proxy_down(self):
+        with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": False, "proxy_url": "http://127.0.0.1:28787", "status": None, "body": "connection refused"}):
+            text = handle_headroom_command('on')
+        self.assertIn('no slash-side toggle', text)
+        self.assertIn('not ready', text)
+
+    def test_unknown_command_usage_mentions_on_compatibility(self):
+        text = handle_headroom_command('some')
+        self.assertIn('status|smoke|audit|on', text)
+
 
 if __name__ == '__main__':
     unittest.main()

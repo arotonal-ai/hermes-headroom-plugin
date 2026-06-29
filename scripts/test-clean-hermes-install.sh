@@ -66,16 +66,26 @@ grep -Fq 'headroom_retrieve' "$TMP_HOME/plugins-list.txt" || { echo "FAIL: headr
 
 "${PY_CMD[@]}" - <<'PY'
 import json
+from unittest.mock import patch
 from hermes_cli.plugins import PluginManager
 pm = PluginManager()
 pm.discover_and_load(force=True)
+from hermes_headroom_plugin.commands import handle_headroom_command
 loaded = pm._plugins.get('headroom_retrieve')
+with patch('hermes_headroom_plugin.commands.readyz', return_value={
+    'ok': True,
+    'proxy_url': 'http://127.0.0.1:28787',
+    'status': 200,
+    'body': {'ready': True},
+}):
+    headroom_on_text = handle_headroom_command('on')
 data = {
     'seen': loaded is not None,
     'enabled': bool(getattr(loaded, 'enabled', False)) if loaded else False,
     'error': getattr(loaded, 'error', None) if loaded else None,
     'tools': getattr(loaded, 'tools_registered', []) if loaded else [],
     'commands': getattr(loaded, 'commands_registered', []) if loaded else [],
+    'headroom_on_text': headroom_on_text,
 }
 print(json.dumps(data, sort_keys=True))
 assert data['seen'], data
@@ -83,6 +93,8 @@ assert data['enabled'], data
 assert data['error'] is None, data
 assert 'headroom_retrieve' in data['tools'], data
 assert 'headroom' in data['commands'], data
+assert 'already active' in data['headroom_on_text'], data
+assert '/headroom smoke' in data['headroom_on_text'], data
 PY
 
 echo "PASS: clean Hermes temp-home install/load works ($MODE)"

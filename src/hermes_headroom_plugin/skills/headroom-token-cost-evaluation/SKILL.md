@@ -31,7 +31,7 @@ Use this skill when you need to:
 - decide whether a Headroom result is `INSTALL_PASS`, `RUNTIME_PARTIAL`, `RUNTIME_FULL`, or `FAIL`;
 - use `headroom_retrieve` to resolve an exact CCR marker;
 - validate the upstream `headroom-ai[proxy]` dependency without touching the real Python environment;
-- check `/headroom status`, `/headroom smoke`, or `/headroom audit`;
+- check `/headroom status`, `/headroom on`, `/headroom smoke`, or `/headroom audit`;
 - classify payloads as compressible, exact, or blocked;
 - generate weekly savings tables from JSONL evidence.
 
@@ -64,6 +64,7 @@ Verify in Hermes:
 
 ```text
 /headroom status
+/headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
 If this command responds, plugin install succeeded. A missing proxy is `RUNTIME_PARTIAL`, not a failed install.
@@ -96,7 +97,7 @@ Then verify in Hermes:
 
 | State | Meaning | Required evidence |
 |---|---|---|
-| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` responds after restart/new session. |
+| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom on` respond after restart/new session. |
 | `RUNTIME_PARTIAL` | Plugin loads, but no proxy is reachable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; plugin does not crash. |
 | `RUNTIME_FULL` | Plugin, dependency, and proxy work | `scripts/install-production-runtime.py` reports `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval. |
 | `FAIL` | Plugin cannot be used | plugin not enabled, `/headroom` unavailable after reload, or install required copying another machine/profile state. |
@@ -211,7 +212,7 @@ A passing clean-home test should prove:
 Packaged now:
 
 - `headroom_retrieve` tool;
-- `/headroom status`, `/headroom smoke`, `/headroom audit`;
+- `/headroom status`, `/headroom on`, `/headroom smoke`, `/headroom audit`;
 - fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results such as `delegate_task`, terminal/process, browser/debug, `web_extract`, and `session_search`;
 - conservative policy helpers;
 - dependency and clean-home verification scripts;
@@ -266,7 +267,7 @@ If installed from a local checkout with a symlink or copy, remove the checkout-i
 
 - [ ] Plugin appears in `hermes plugins list --enabled --user --plain`.
 - [ ] Fresh session/restart completed before checking slash commands.
-- [ ] `/headroom status` returns without crashing.
+- [ ] `/headroom status` and `/headroom on` return without crashing.
 - [ ] Dependency smoke uses a temporary venv and passes before runtime claims.
 - [ ] `/headroom smoke` passes before claiming `RUNTIME_FULL`.
 - [ ] CCR retrieval is verified against exact content before final claims.
