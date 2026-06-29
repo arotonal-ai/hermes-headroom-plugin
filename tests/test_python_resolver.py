@@ -31,6 +31,7 @@ class PythonResolverTest(unittest.TestCase):
         text = RESOLVER.read_text(encoding="utf-8")
         for needle in ["PYTHON_BIN", "python3", "python", "py -3", "hermes", "python.exe"]:
             self.assertIn(needle, text)
+        self.assertNotIn("@Q", text, "macOS ships old Bash; avoid modern Bash parameter transforms")
 
     @unittest.skipUnless(os.name == "posix", "uses POSIX shell wrappers")
     def test_resolver_can_use_python_colocated_with_hermes_launcher(self):

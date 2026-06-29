@@ -17,7 +17,7 @@ _python_ok() {
 _python_has_module() {
   local module="$1"
   shift
-  "$@" -c "import importlib.util, sys; raise SystemExit(0 if importlib.util.find_spec(${module@Q}) else 1)" >/dev/null 2>&1
+  HERMES_HEADROOM_MODULE="$module" "$@" -c 'import importlib.util, os, sys; raise SystemExit(0 if importlib.util.find_spec(os.environ["HERMES_HEADROOM_MODULE"]) else 1)' >/dev/null 2>&1
 }
 
 _set_python_cmd() {
