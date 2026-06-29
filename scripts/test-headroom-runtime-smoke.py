@@ -115,7 +115,14 @@ def main(argv: list[str] | None = None) -> int:
         port = args.port or free_loopback_port()
         proxy_url = f"http://127.0.0.1:{port}"
         proxy_cmd = [str(headroom), "proxy", "--host", "127.0.0.1", "--port", str(port)]
-        proxy_proc = subprocess.Popen(proxy_cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        proxy_proc = subprocess.Popen(
+            proxy_cmd,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+        )
         ready, detail = wait_readyz(proxy_url, timeout=args.ready_timeout, log=log)
         if not ready:
             print(f"FAIL: proxy did not become ready at {proxy_url}; last={detail}; log={log}", file=sys.stderr)
