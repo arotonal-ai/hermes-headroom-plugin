@@ -27,6 +27,11 @@ class SmokeTest(unittest.TestCase):
         self.assertEqual(result['marker'], 'abc123')
         self.assertTrue(result['sentinel_found'])
 
+    def test_command_status_reports_visible_marker_state(self):
+        with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
+            text = handle_headroom_command('status')
+        self.assertIn('visible_marker=on:[HR✓]', text)
+
     def test_command_smoke_proxy_down(self):
         with patch('hermes_headroom_plugin.commands.smoke', return_value={"ok": False, "phase": "readyz", "proxy_url": "http://x", "error": "proxy not ready"}):
             text = handle_headroom_command('smoke')
@@ -38,12 +43,14 @@ class SmokeTest(unittest.TestCase):
             text = handle_headroom_command('on')
         self.assertIn('already active', text)
         self.assertIn('/headroom smoke', text)
+        self.assertIn('visible_marker=on:[HR✓]', text)
 
     def test_command_on_reports_no_slash_toggle_when_proxy_down(self):
         with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": False, "proxy_url": "http://127.0.0.1:28787", "status": None, "body": "connection refused"}):
             text = handle_headroom_command('on')
         self.assertIn('no slash-side toggle', text)
         self.assertIn('not ready', text)
+        self.assertIn('visible_marker=on:[HR!]', text)
 
     def test_unknown_command_usage_mentions_on_compatibility(self):
         text = handle_headroom_command('some')

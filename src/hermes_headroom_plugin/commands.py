@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from .health import audit
+from .hooks import headroom_status_marker, visible_status_marker_enabled
 from .proxy import readyz, smoke
 
 USAGE = "Usage: /headroom status|smoke|audit|on"
@@ -28,7 +29,9 @@ def _render_status(health: dict) -> str:
         if len(detail_text) > 180:
             detail_text = detail_text[:177] + "..."
         detail = f" · detail={detail_text}"
-    return f"Headroom status · ok={health['ok']} · proxy={health['proxy_url']} · status={health['status']}{detail}"
+    marker_state = "on" if visible_status_marker_enabled() else "off"
+    marker = headroom_status_marker(health) if marker_state == "on" else "disabled"
+    return f"Headroom status · ok={health['ok']} · proxy={health['proxy_url']} · status={health['status']} · visible_marker={marker_state}:{marker}{detail}"
 
 
 def _render_on() -> str:
@@ -45,11 +48,13 @@ def _render_on() -> str:
         return (
             "Headroom on · already active · "
             f"proxy={health['proxy_url']} · status={health['status']} · "
+            f"visible_marker={'on:' + headroom_status_marker(health) if visible_status_marker_enabled() else 'off:disabled'} · "
             "use /headroom smoke for compress→retrieve verification"
         )
     return (
         "Headroom on · no slash-side toggle in the packaged plugin · "
         f"proxy={health['proxy_url']} not ready · status={health['status']} · "
+        f"visible_marker={'on:' + headroom_status_marker(health) if visible_status_marker_enabled() else 'off:disabled'} · "
         "run the production runtime installer or restart the external Headroom service, then /headroom smoke"
     )
 

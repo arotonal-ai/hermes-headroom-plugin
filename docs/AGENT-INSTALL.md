@@ -62,6 +62,8 @@ scripts/test-headroom-dependency-install.sh
 "${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
 ```
 
+Normal final answers may show `[HR✓]` when visible marker is enabled and proxy readiness is healthy (`[HR!]` when readiness fails). The marker is readiness-only, not proof that a specific answer was compressed.
+
 If a proxy is running:
 
 ```text

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.2 — 2026-06-29
+
+- Added compact visible final-answer status marker via `transform_llm_output`: `[HR✓]` when Headroom proxy readiness is healthy and `[HR!]` when the marker is enabled but runtime readiness fails.
+- The marker reports runtime readiness only; it does not claim that a specific final answer was compressed.
+- Marker is enabled by default for parity with the owner-local product contract and can be disabled with `context_reduction.visible_status_marker: false` or `HEADROOM_VISIBLE_STATUS_MARKER=0`.
+- `/headroom status` and `/headroom on` now show `visible_marker=...` so operators can distinguish runtime readiness from visible UX.
+
 ## v0.3.1 — 2026-06-29
 
 - Added read-only `/headroom on` / `/headroom enable` compatibility response so installs coming from owner-local muscle memory do not fall through to generic usage. The command does not mutate gateway/provider/runtime state; it reports whether the current proxy is already active and points operators to `/headroom smoke` for full verification.

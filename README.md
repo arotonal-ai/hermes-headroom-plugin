@@ -8,7 +8,7 @@
 
 **Installable Hermes Agent plugin for safe Headroom context reduction and exact CCR retrieval.**
 
-Use it when a Hermes instance needs a conservative bridge to Headroom: install the Hermes plugin surface first, verify the optional local proxy separately, compress only eligible bulky intermediate tool/lane results, and keep finals, secrets, patches, manifests, memory, and protected content exact or blocked.
+Use it when a Hermes instance needs a conservative bridge to Headroom: install the Hermes plugin surface first, verify the optional local proxy separately, show compact `[HR✓]`/`[HR!]` readiness in final answers, compress only eligible bulky intermediate tool/lane results, and keep finals, secrets, patches, manifests, memory, and protected content exact or blocked.
 
 ```bash
 hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
@@ -49,6 +49,7 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | `/headroom status` | ✅ included | reports configured proxy URL and readiness |
 | `/headroom smoke` | ✅ included | real compress → retrieve sentinel check when proxy is available |
 | `/headroom audit` | ✅ included | local policy/runtime posture summary |
+| Visible `[HR✓]` / `[HR!]` final-answer marker | ✅ included | reports proxy readiness only; disable with `context_reduction.visible_status_marker: false` if desired |
 | Conservative admission policy | ✅ included | exact/compressible/blocked classification scaffolding |
 | Bundled operating skill | ✅ included | `headroom_retrieve:headroom-token-cost-evaluation` when plugin skills are supported |
 | Full upstream proxy runtime smoke | ✅ included | `scripts/test-headroom-runtime-smoke.py` and GitHub Runtime Smoke workflow |

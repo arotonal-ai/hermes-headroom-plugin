@@ -41,7 +41,7 @@ Verify inside Hermes:
 /headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
-Expected: the commands exist and return proxy/status guidance. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
+Expected: the commands exist and return proxy/status guidance, including `visible_marker=on:[HR✓]` when the marker is enabled and proxy readiness is healthy. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
 
 ## 2. Install Headroom runtime for real compression
 
@@ -140,6 +140,8 @@ Default plugin/runtime target:
 ```text
 http://127.0.0.1:28787
 ```
+
+By default, assistant final answers include `[HR✓]` when proxy readiness is healthy and `[HR!]` when the visible marker is enabled but readiness fails. This reports runtime readiness only, not per-message compression. Disable it with `context_reduction.visible_status_marker: false` or `HEADROOM_VISIBLE_STATUS_MARKER=0`.
 
 This integration intentionally uses `28787` for the Hermes-facing Headroom proxy. Upstream Headroom may have a different CLI default; do not rely on that default. Start production runtime with `headroom proxy --host 127.0.0.1 --port 28787` or use `scripts/install-production-runtime.py`, which passes the port explicitly.
 

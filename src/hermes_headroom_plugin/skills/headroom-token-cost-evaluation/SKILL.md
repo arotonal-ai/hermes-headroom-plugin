@@ -35,7 +35,7 @@ Use this skill when you need to:
 - classify payloads as compressible, exact, or blocked;
 - generate weekly savings tables from JSONL evidence.
 
-The installable repo includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, plus packaged `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` wrappers for explicit operator commands. These wrappers retain exact sidecars/final packets and compress only eligible bulky intermediate traces; they do not change provider/model routing.
+The installable repo includes a compact visible final-answer marker (`[HR✓]` proxy ready / `[HR!]` not ready) via `transform_llm_output`; this marker reports runtime readiness only, not per-message compression, and can be disabled with `context_reduction.visible_status_marker: false`. The installable repo includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, plus packaged `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` wrappers for explicit operator commands. These wrappers retain exact sidecars/final packets and compress only eligible bulky intermediate traces; they do not change provider/model routing.
 
 ## Support Posture
 
@@ -213,6 +213,7 @@ Packaged now:
 
 - `headroom_retrieve` tool;
 - `/headroom status`, `/headroom on`, `/headroom smoke`, `/headroom audit`;
+- visible `[HR✓]` / `[HR!]` readiness marker for final answers;
 - fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results such as `delegate_task`, terminal/process, browser/debug, `web_extract`, and `session_search`;
 - conservative policy helpers;
 - dependency and clean-home verification scripts;
