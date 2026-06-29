@@ -110,7 +110,8 @@ Validate upstream Headroom dependency in a temporary Python venv:
 
 ```bash
 python scripts/test-headroom-dependency-install.py
-# Unix wrapper:
+python scripts/test-headroom-runtime-smoke.py  # starts real loopback proxy + plugin smoke
+# Unix wrappers:
 scripts/test-headroom-dependency-install.sh
 ```
 
@@ -155,7 +156,7 @@ context_reduction:
 
 Restart/fresh-session before rechecking `/headroom status`.
 
-**Remote proxy warning:** prefer loopback (`127.0.0.1` / `localhost`). A non-loopback `HEADROOM_PROXY_URL` may receive compressible intermediate content once compression wrappers are enabled. Use only a controlled, trusted endpoint; do not point this at an untrusted or shared service.
+**Remote proxy guardrail:** loopback (`127.0.0.1` / `localhost`) is allowed by default. Non-loopback `HEADROOM_PROXY_URL` is blocked unless you explicitly set `HEADROOM_ALLOW_REMOTE_PROXY=1` or `context_reduction.allow_remote_proxy: true`; use that only for controlled, trusted endpoints.
 
 ## 6. Update
 
@@ -250,7 +251,7 @@ python scripts/test-headroom-dependency-install.py
 
 ### Is systemd required?
 
-No. The bundled systemd template is Linux-only and optional. It is only a convenience for running a local proxy as a user service on compatible Linux hosts.
+No. The bundled systemd template is Linux-only and optional.
 
 ### Are worker/background wrappers included?
 

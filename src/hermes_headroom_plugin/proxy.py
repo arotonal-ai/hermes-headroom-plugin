@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -22,6 +23,10 @@ DEFAULT_PROXY_URL = "http://127.0.0.1:28787"
 DEFAULT_SERVICE = "hermes-context-reduction.service"
 SMOKE_SENTINEL = "SYNTHETIC_SENTINEL_HEADROOM_PLUGIN_P0"
 _MARKER_RE = re.compile(r"<<ccr:([^,>]+)")
+
+
+class ProxyConfigurationError(ValueError):
+    """Raised when proxy configuration is unsafe or invalid."""
 
 
 def utc_now() -> str:
@@ -49,8 +54,42 @@ def load_context_reduction_config(home: Path | None = None) -> dict[str, Any]:
     return cr if isinstance(cr, dict) else {}
 
 
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def is_loopback_proxy_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").strip().lower()
+    if host in {"localhost", "localhost.localdomain"}:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def remote_proxy_allowed(config: dict[str, Any] | None = None) -> bool:
+    config = config or {}
+    return _truthy(os.environ.get("HEADROOM_ALLOW_REMOTE_PROXY")) or _truthy(config.get("allow_remote_proxy"))
+
+
+def validate_proxy_url(proxy_url: str, config: dict[str, Any] | None = None) -> str:
+    proxy_url = str(proxy_url or "").strip().rstrip("/")
+    parsed = urlparse(proxy_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ProxyConfigurationError(f"invalid HEADROOM proxy URL: {proxy_url!r}")
+    if not is_loopback_proxy_url(proxy_url) and not remote_proxy_allowed(config):
+        raise ProxyConfigurationError(
+            "remote Headroom proxy URL blocked by default; use loopback or set "
+            "HEADROOM_ALLOW_REMOTE_PROXY=1 / context_reduction.allow_remote_proxy: true "
+            "only for a controlled, trusted endpoint"
+        )
+    return proxy_url
+
+
 def resolve_proxy_url(config: dict[str, Any] | None = None) -> str:
-    """Resolve the Headroom proxy URL without requiring owner-local paths."""
+    """Resolve and validate the Headroom proxy URL without owner-local paths."""
     config = config or load_context_reduction_config()
     cfg_url = str(config.get("proxy_url") or DEFAULT_PROXY_URL).strip().rstrip("/")
     parsed = urlparse(cfg_url)
@@ -60,11 +99,11 @@ def resolve_proxy_url(config: dict[str, Any] | None = None) -> str:
     host = os.environ.get("HEADROOM_HOST")
     port = os.environ.get("HEADROOM_PORT")
     if host or port:
-        return f"http://{(host or cfg_host).strip()}:{int(port or cfg_port)}"
+        return validate_proxy_url(f"http://{(host or cfg_host).strip()}:{int(port or cfg_port)}", config)
     explicit = os.environ.get("HEADROOM_PROXY_URL")
     if explicit:
-        return explicit.strip().rstrip("/")
-    return f"http://{cfg_host}:{cfg_port}"
+        return validate_proxy_url(explicit, config)
+    return validate_proxy_url(f"http://{cfg_host}:{cfg_port}", config)
 
 
 def http_json(url: str, payload: dict[str, Any] | None = None, timeout: int = 15) -> tuple[int | None, dict[str, Any] | None, str]:
@@ -87,14 +126,22 @@ def http_json(url: str, payload: dict[str, Any] | None = None, timeout: int = 15
 
 
 def readyz(proxy_url: str | None = None) -> dict[str, Any]:
-    proxy_url = (proxy_url or resolve_proxy_url()).rstrip("/")
+    try:
+        proxy_url = validate_proxy_url(proxy_url) if proxy_url else resolve_proxy_url()
+    except ProxyConfigurationError as exc:
+        return {"ok": False, "status": None, "proxy_url": proxy_url, "body": str(exc), "error": "proxy_configuration_blocked"}
+    proxy_url = proxy_url.rstrip("/")
     status, data, body = http_json(f"{proxy_url}/readyz", timeout=5)
     ok = status == 200 and isinstance(data, dict) and bool(data.get("ready", True))
     return {"ok": ok, "status": status, "proxy_url": proxy_url, "body": data or body}
 
 
 def retrieve(hash_key: str, query: str = "", proxy_url: str | None = None) -> dict[str, Any]:
-    proxy_url = (proxy_url or resolve_proxy_url()).rstrip("/")
+    try:
+        proxy_url = validate_proxy_url(proxy_url) if proxy_url else resolve_proxy_url()
+    except ProxyConfigurationError as exc:
+        return {"success": False, "error": f"proxy configuration blocked: {exc}", "proxy_url": proxy_url}
+    proxy_url = proxy_url.rstrip("/")
     payload = {"hash": hash_key}
     if query:
         payload["query"] = query
@@ -136,7 +183,11 @@ def _result_text(retrieved: dict[str, Any]) -> str:
 
 
 def compress_messages(messages: list[dict[str, Any]], model: str = "gpt-5.5", proxy_url: str | None = None) -> dict[str, Any]:
-    proxy_url = (proxy_url or resolve_proxy_url()).rstrip("/")
+    try:
+        proxy_url = validate_proxy_url(proxy_url) if proxy_url else resolve_proxy_url()
+    except ProxyConfigurationError as exc:
+        return {"ok": False, "error": f"proxy configuration blocked: {exc}", "proxy_url": proxy_url}
+    proxy_url = proxy_url.rstrip("/")
     status, data, body = http_json(f"{proxy_url}/v1/compress", {"model": model, "messages": messages}, timeout=60)
     if status != 200 or not isinstance(data, dict):
         return {"ok": False, "error": f"compress failed status={status} body={body}", "proxy_url": proxy_url}
@@ -146,7 +197,11 @@ def compress_messages(messages: list[dict[str, Any]], model: str = "gpt-5.5", pr
 
 
 def smoke(proxy_url: str | None = None, *, require_marker: bool = True) -> dict[str, Any]:
-    proxy_url = (proxy_url or resolve_proxy_url()).rstrip("/")
+    try:
+        proxy_url = validate_proxy_url(proxy_url) if proxy_url else resolve_proxy_url()
+    except ProxyConfigurationError as exc:
+        return {"ok": False, "phase": "config", "proxy_url": proxy_url, "error": f"proxy configuration blocked: {exc}"}
+    proxy_url = proxy_url.rstrip("/")
     health = readyz(proxy_url)
     if not health.get("ok"):
         return {"ok": False, "phase": "readyz", "proxy_url": proxy_url, "readyz": health, "error": "proxy not ready"}

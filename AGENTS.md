@@ -66,6 +66,7 @@ For dependency evidence without starting the proxy, use the repo helper:
 
 ```bash
 python scripts/test-headroom-dependency-install.py
+python scripts/test-headroom-runtime-smoke.py  # real proxy + plugin smoke
 # Unix wrapper:
 scripts/test-headroom-dependency-install.sh
 ```
@@ -81,7 +82,7 @@ scripts/test-headroom-dependency-install.sh
 
 ## Do not do these things
 
-- Do **not** point `HEADROOM_PROXY_URL` at a non-loopback host unless the endpoint is controlled and trusted; future compression wrappers may send compressible intermediate content to that endpoint.
+- Do **not** point `HEADROOM_PROXY_URL` at a non-loopback host unless the endpoint is controlled and trusted; the plugin blocks this by default unless `HEADROOM_ALLOW_REMOTE_PROXY=1` or `context_reduction.allow_remote_proxy: true` is set.
 - Do **not** copy another machine's `~/.hermes` directory. Do not copy another machine or owner-local Hermes state.
 - Do **not** request, print, or store API keys/tokens/passwords.
 - Do **not** change global/default provider routing.

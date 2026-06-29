@@ -40,6 +40,7 @@ RESOLVER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/python-resolver.sh
 source "$RESOLVER_DIR/python-resolver.sh"
 resolve_python_with_module hermes_cli
+echo "Using Python for Hermes inspection: ${PY_CMD[*]}" >&2
 
 TMP_HOME="$(mktemp -d)"
 cleanup() {

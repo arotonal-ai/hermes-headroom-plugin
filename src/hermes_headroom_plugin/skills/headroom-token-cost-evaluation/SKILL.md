@@ -119,6 +119,7 @@ Use the cross-platform dependency smoke before claiming runtime capability:
 
 ```bash
 python scripts/test-headroom-dependency-install.py
+python scripts/test-headroom-runtime-smoke.py
 ```
 
 Unix-compatible wrapper:
@@ -189,6 +190,7 @@ python3 -m py_compile $(find src tests scripts -name '*.py' | sort)
 bash -n scripts/*.sh
 bash scripts/audit-repo-readiness.sh
 python scripts/test-headroom-dependency-install.py
+python scripts/test-headroom-runtime-smoke.py
 ```
 
 Clean temp-home plugin load test when Hermes CLI is available:
@@ -227,6 +229,7 @@ If another environment has stronger local wrappers, treat them as local overlays
 ## Security and Privacy Rules
 
 - Do not request, print, or store API keys, tokens, cookies, private keys, memory files, profile state, or protected context.
+- Non-loopback proxy URLs are blocked by default; allow only controlled/trusted endpoints with `HEADROOM_ALLOW_REMOTE_PROXY=1` or `context_reduction.allow_remote_proxy: true`.
 - Do not copy another machine's Hermes home or profile directories.
 - Do not enable external telemetry.
 - Do not change global/default provider routing during first install.

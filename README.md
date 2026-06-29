@@ -291,6 +291,8 @@ python3 src/hermes_headroom_plugin/proxy.py smoke --json
 - [INSTALL.md](INSTALL.md) — complete installation, verification, update, rollback, and troubleshooting guide.
 - [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md) — compact install brief for agents.
 - [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md) — evidence-backed savings rollups.
+- `scripts/test-headroom-runtime-smoke.py` — real loopback proxy + plugin compress/retrieve smoke.
+- `.github/workflows/runtime-smoke.yml` — manual/weekly real proxy runtime certification across OS/Python matrix.
 - [SECURITY.md](SECURITY.md) — security reporting and secret-handling policy.
 - [PRIVACY.md](PRIVACY.md) — privacy and telemetry posture.
 
@@ -299,4 +301,5 @@ python3 src/hermes_headroom_plugin/proxy.py smoke --json
 - No default/global provider proxy route.
 - No owner profile/session/memory/project evidence copied into package payload.
 - No external telemetry.
+- Non-loopback proxy URLs are blocked unless explicitly allowed with `HEADROOM_ALLOW_REMOTE_PROXY=1` or `context_reduction.allow_remote_proxy: true`.
 - No compression of patches, diffs, manifests, hashes, claim ledgers, final packets, secrets, memory/profile/system/developer instructions, or protected content.
