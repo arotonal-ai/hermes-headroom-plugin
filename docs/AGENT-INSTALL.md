@@ -8,7 +8,7 @@ Install and enable the Hermes Headroom plugin without exposing secrets, copying 
 
 ## Platform note
 
-Linux is the primary tested path. macOS/WSL are expected when Hermes, git, and Python are available. Native Windows should use native Hermes commands and Python helper scripts; Bash helpers require Git Bash/WSL.
+Linux, macOS, and native Windows are covered by this repo's CI/runtime smoke paths. WSL/Termux are expected when Hermes, git, and Python are available but still require target evidence. Native Windows should use native Hermes commands and Python helper scripts; Bash helpers require Git Bash/WSL.
 
 ## Commands
 
@@ -50,10 +50,11 @@ In Hermes:
 /headroom status
 ```
 
-If full runtime/proxy validation is requested, verify the upstream Headroom dependency without touching the real environment:
+If full runtime/proxy validation is requested, verify the upstream Headroom dependency/runtime without touching the real environment:
 
 ```bash
 python scripts/test-headroom-dependency-install.py
+python scripts/test-headroom-runtime-smoke.py
 # Unix wrapper:
 scripts/test-headroom-dependency-install.sh
 # or, after native Hermes install:
@@ -84,7 +85,7 @@ FULL if:
 - `scripts/test-headroom-dependency-install.sh` or the Python equivalent passes for `headroom-ai[proxy]>=0.26,<0.28`;
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval.
 
-On Windows native, `FULL` is not certified by CI; require target-host evidence.
+Windows native `FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11/3.12, but still require target-host evidence when diagnosing a specific machine.
 
 FAIL if:
 

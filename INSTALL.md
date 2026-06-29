@@ -75,7 +75,7 @@ python -m venv "$HOME/.cache/hermes-headroom-venv"
 "$HOME/.cache/hermes-headroom-venv/Scripts/headroom.exe" proxy --host 127.0.0.1 --port 28787
 ```
 
-Windows `RUNTIME_FULL` is expected, but not certified by CI. Claim it only after the dependency helper and `/headroom smoke` pass on the target Windows host. Prefer Python 3.11/3.12 for the proxy venv on Windows; newer global Python versions may install but still fail native runtime imports.
+Windows `RUNTIME_FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11 and 3.12. Still require target-host evidence when diagnosing a user machine, because global Python installs and shell aliases can drift. Prefer Python 3.11/3.12 for the proxy venv on Windows; newer global Python versions may install but still fail native runtime imports.
 
 Then verify inside Hermes:
 
@@ -131,7 +131,7 @@ On Windows, local `--local` development install may copy the repo instead of cre
 
 The helper proves that the upstream package installs in an isolated venv, imports `headroom`, `fastapi`, `uvicorn`, and `pydantic_core._pydantic_core`, and exposes `headroom --help` plus `headroom proxy --help`.
 
-Compatibility: this repo currently accepts `headroom-ai[proxy]>=0.26,<0.28`. Do not widen beyond that range until dependency smoke and `/headroom smoke` pass.
+Compatibility: this repo currently accepts `headroom-ai[proxy]>=0.26,<0.28`. Do not widen beyond that range until dependency smoke and runtime smoke pass.
 
 ## 5. Proxy endpoint configuration
 

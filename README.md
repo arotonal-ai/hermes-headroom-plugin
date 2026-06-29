@@ -1,73 +1,87 @@
 # Hermes Headroom Plugin
 
 [![CI](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/workflows/ci.yml)
+[![Runtime Smoke](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/workflows/runtime-smoke.yml/badge.svg)](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/workflows/runtime-smoke.yml)
 ![Hermes Plugin](https://img.shields.io/badge/Hermes-plugin-purple)
 ![Telemetry](https://img.shields.io/badge/telemetry-off_by_default-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Native Hermes plugin for safe Headroom context reduction: install the Hermes surface first, verify the optional proxy later, and never compress final/sensitive artifacts.
+**Installable Hermes Agent plugin for safe Headroom context reduction and exact CCR retrieval.**
 
-> **Primary install path:** install from another Hermes instance with `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable`.
-
-## Relationship to upstream Headroom
-
-This repository is a **Hermes Agent integration plugin** for Headroom. It is not the upstream Headroom project, not a fork, and not a replacement.
-
-Upstream resources:
-
-| Resource | Link |
-|---|---|
-| Upstream Headroom repo | <https://github.com/chopratejas/headroom> |
-| Upstream docs | <https://headroom-docs.vercel.app/docs> |
-| Alternate/legacy docs | <https://headroomlabs-ai.github.io/headroom/> |
-| Python package | <https://pypi.org/project/headroom-ai/> |
-| Hermes plugin docs | <https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins> |
-| Build a Hermes plugin | <https://hermes-agent.nousresearch.com/docs/guides/build-a-hermes-plugin> |
-| Hermes install docs | <https://hermes-agent.nousresearch.com/docs/getting-started/installation> |
-
-Acknowledgement: this plugin builds on the Headroom project's context-reduction ideas and Python package surface. The Hermes-specific work here is the installable plugin wrapper, safe admission policy, retrieval command, smoke/audit commands, and agent/human installation harnesses. See [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
-
-## What you get
-
-| Capability | Status | Notes |
-|---|---:|---|
-| `headroom_retrieve` Hermes tool | ✅ included | Retrieves exact content behind CCR markers |
-| `/headroom status` | ✅ included | Checks configured/local proxy readiness |
-| `/headroom smoke` | ✅ included | Synthetic compress → retrieve sentinel when proxy is available |
-| `/headroom audit` | ✅ included | Local health/policy posture summary |
-| Conservative exact/compress/blocked policy | ✅ included | Fails closed for final/sensitive classes |
-| Bundled Headroom operating skill | ✅ included | Registered when Hermes supports plugin skills |
-| Worker/background/preflight wrappers | 🚧 pending P1 | Console entry points exist, implementation intentionally not migrated yet |
-| Cost/provider route mutation | 🚧 pending P3 | Current repo does **not** change global/default routing |
-| Automatic live Hermes traffic compression | 🚧 not active in P0 | Current P0 exposes retrieval/status/smoke/audit/policy scaffolding; wrappers are pending migration |
-| External telemetry | ❌ not included | Off by design |
-
-## Install for a target Hermes instance
-
-Use this copy/paste path when the owner or target instance wants the plugin enabled first and the optional Headroom runtime verified second.
-
-### 1. Install the Hermes plugin
+Use it when a Hermes instance needs a conservative bridge to Headroom: install the Hermes plugin surface first, verify the optional local proxy separately, and keep finals, secrets, patches, manifests, memory, and protected content exact or blocked.
 
 ```bash
 hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
-hermes plugins list --enabled --user --plain
-hermes gateway restart   # gateway/platform sessions
-# or start a fresh active chat/CLI session with /new
+hermes gateway restart   # or /new in an active session
 ```
 
-Then verify inside Hermes:
+Then in Hermes:
 
 ```text
 /headroom status
 ```
 
-If this command responds, the plugin install succeeded. A missing proxy is a partial runtime state, not a failed plugin install.
+If a local Headroom proxy is running:
 
-### 2. Optional: install and run the Headroom proxy
+```text
+/headroom smoke
+```
 
-The plugin can load without the upstream Headroom runtime. For real compression, install the upstream package in an isolated virtual environment and start a local proxy.
+## Why this exists
 
-Unix/macOS/WSL example:
+Hermes can benefit from context reduction, but a context/cost layer must be safe by default. This plugin packages the useful Headroom integration surfaces without mutating global provider routing or asking for secrets.
+
+| Problem | What this repo provides |
+|---|---|
+| Agents lose exact details behind compressed context | `headroom_retrieve` tool for CCR marker recovery |
+| Operators confuse plugin install with proxy/runtime readiness | explicit `INSTALL_PASS`, `RUNTIME_PARTIAL`, `RUNTIME_FULL` states |
+| Windows/macOS/Linux installs drift by Python/runtime | portable helpers plus real OS/Python runtime smoke workflow |
+| Remote proxy endpoints can leak intermediate content | loopback-only default; remote proxy requires explicit opt-in |
+| Human/agent docs become long and ambiguous | quickstart, install guide, agent brief, audit script, temp-home tests |
+| Cost/savings claims can become hand-wavy | metrics must be generated from JSONL evidence, not invented |
+
+## What you get
+
+| Capability | Status | Notes |
+|---|---:|---|
+| `headroom_retrieve` Hermes tool | ✅ included | retrieves exact content behind CCR markers |
+| `/headroom status` | ✅ included | reports configured proxy URL and readiness |
+| `/headroom smoke` | ✅ included | real compress → retrieve sentinel check when proxy is available |
+| `/headroom audit` | ✅ included | local policy/runtime posture summary |
+| Conservative admission policy | ✅ included | exact/compressible/blocked classification scaffolding |
+| Bundled operating skill | ✅ included | `headroom_retrieve:headroom-token-cost-evaluation` when plugin skills are supported |
+| Full upstream proxy runtime smoke | ✅ included | `scripts/test-headroom-runtime-smoke.py` and GitHub Runtime Smoke workflow |
+| Remote proxy guardrail | ✅ included | non-loopback blocked unless explicitly allowed |
+| Automatic live Hermes traffic compression | 🚧 not active in P0 | current package exposes retrieval/status/smoke/audit/policy scaffolding; wrappers remain future work |
+| Worker/background/preflight wrappers | 🚧 pending P1 | console names are reserved; owner-local wrappers are not claimed as packaged behavior |
+| Global/default provider route mutation | ❌ not included | install does not change model/provider defaults |
+| External telemetry/API keys | ❌ not included | no telemetry, no keys required |
+
+## Installation paths
+
+### Recommended: native Hermes plugin install
+
+```bash
+hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
+hermes plugins list --enabled --user --plain
+hermes gateway restart
+```
+
+For an active CLI/chat session, start a fresh session with `/new` after install.
+
+Expected first verification:
+
+```text
+/headroom status
+```
+
+If this responds, the plugin has loaded. A missing proxy is `RUNTIME_PARTIAL`, not an install failure.
+
+### Optional: install the Headroom proxy runtime
+
+The plugin loads without the upstream runtime. Install the proxy only for `RUNTIME_FULL`.
+
+Unix/macOS/WSL:
 
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv
@@ -76,7 +90,7 @@ python3 -m venv ~/.cache/hermes-headroom-venv
 ~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
 ```
 
-Windows PowerShell example:
+Windows PowerShell:
 
 ```powershell
 py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
@@ -85,78 +99,108 @@ py -m venv $env:USERPROFILE\.cache\hermes-headroom-venv
 & $env:USERPROFILE\.cache\hermes-headroom-venv\Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787
 ```
 
-With the proxy running, verify inside Hermes:
+Then in Hermes:
 
 ```text
 /headroom smoke
 ```
 
-## Expected states
+## Acceptance states
 
-| State | What it means | Expected result |
+| State | Meaning | Evidence |
 |---|---|---|
-| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears enabled; `/headroom status` responds |
-| `RUNTIME_PARTIAL` | Plugin is installed but no Headroom proxy is reachable | `/headroom status` reports unavailable, or `/headroom smoke` fails at `readyz` |
-| `RUNTIME_FULL` | Plugin, upstream dependency, and proxy all work | dependency smoke passes and `/headroom smoke` passes a real compress → retrieve sentinel check |
-| `FAIL` | Plugin cannot be used | plugin is not enabled, `/headroom` is unavailable after restart/new session, or install required copying owner-local state |
+| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` enabled and `/headroom status` responds after restart/new session |
+| `RUNTIME_PARTIAL` | Plugin works, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz` |
+| `RUNTIME_FULL` | Plugin, dependency, and local proxy all work | dependency smoke passes and `/headroom smoke` or runtime-smoke sentinel retrieval passes |
+| `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local state |
 
-See [INSTALL.md](INSTALL.md) for update, rollback, temporary-home testing, and troubleshooting.
+## Certified runtime matrix
 
-## Platform support posture
+The normal CI validates plugin load/tests. The separate Runtime Smoke workflow starts a real loopback Headroom proxy and validates compress → retrieve.
 
-The plugin is platform-neutral Python/Hermes code. Bash helpers are Unix-shell first; Python helpers and native `hermes` commands are preferred for Windows.
+| OS | Python | Plugin CI | Runtime Smoke |
+|---|---:|---:|---:|
+| Ubuntu | 3.11 | ✅ | ✅ |
+| Ubuntu | 3.12 | — | ✅ |
+| macOS | 3.11 | ✅ | ✅ |
+| macOS | 3.12 | — | ✅ |
+| Windows native | 3.11 | ✅ | ✅ |
+| Windows native | 3.12 | — | ✅ |
+| WSL2 | target evidence required | 🟡 expected | 🟡 expected |
+| Termux | target evidence required | 🟡 expected | 🟡 expected |
 
-| Platform | Plugin install | Helper scripts | Proxy runtime | CI status |
-|---|---:|---:|---:|---:|
-| Linux | ✅ tested | ✅ Bash + Python | ✅ expected | ✅ |
-| WSL2 | 🟡 expected | 🟡 Bash + Python | 🟡 expected | ❌ not explicit |
-| macOS | 🟡 expected | 🟡 Bash + Python | 🟡 expected | ✅ syntax/helper matrix |
-| Windows native | 🟡 possible via Hermes | 🟡 Python helpers; Bash needs Git Bash/WSL | 🟡 upstream package is OS-independent | ✅ syntax/helper matrix |
-| Termux | 🟡 expected if Hermes/Python/git work | 🟡 expected | 🟡 expected | ❌ not explicit |
+Legend: ✅ verified in this repo/workflow, 🟡 expected but not certified here.
 
-Legend: ✅ tested/certified here, 🟡 expected but still needs target evidence, ❌ not claimed.
+## Agent quick contract
 
-Windows native plugin load is covered by the cross-platform unit/syntax/helper matrix, but Windows `RUNTIME_FULL` is not certified by CI. Claim it only after `python scripts/test-headroom-dependency-install.py` passes on the target host and `/headroom smoke` passes with a local proxy.
+If you are another Hermes/AI instance installing or auditing this repo:
 
-## Prerequisites and dependency layers
+1. Do **not** copy another machine's `~/.hermes` or owner-local state.
+2. Do **not** ask for API keys; this install does not need them.
+3. Install with native Hermes plugin commands first.
+4. Verify `/headroom status` before claiming `INSTALL_PASS`.
+5. Verify `scripts/test-headroom-runtime-smoke.py` or `/headroom smoke` before claiming `RUNTIME_FULL`.
+6. Keep global/default provider routing unchanged.
+7. Keep remote proxies disabled unless explicitly allowed by the operator.
+8. Do not invent token-savings metrics.
 
-| Requirement | Needed for | Note | Link |
-|---|---|---|---|
-| Hermes Agent | Plugin install/load | Installed and on `PATH` | <https://hermes-agent.nousresearch.com/docs/getting-started/installation> |
-| Git | Native `hermes plugins install owner/repo` | Required by the native plugin install path | <https://git-scm.com/downloads> |
-| Python | Package/scripts/proxy | Use a supported Python for Hermes/plugin and upstream Headroom | <https://www.python.org/downloads/> |
-| `headroom-ai[proxy]` | Actual compression proxy/backend | Install only for `RUNTIME_FULL`; smoke before changing the dependency spec | <https://pypi.org/project/headroom-ai/> |
-| Local proxy | `/headroom smoke` / real compression | Plugin default target: `http://127.0.0.1:28787` | [INSTALL.md](INSTALL.md) |
-| API keys | Not needed | Install should not request secrets | [SECURITY.md](SECURITY.md), [PRIVACY.md](PRIVACY.md) |
+Compact agent brief: [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md). Full install/troubleshooting: [INSTALL.md](INSTALL.md).
 
-Layer split:
+## Validation helpers
 
-| Layer | Command | Required for |
-|---|---|---|
-| Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `INSTALL_PASS`: Hermes can load `headroom_retrieve` and `/headroom status` |
-| Upstream Headroom package | `python -m pip install 'headroom-ai[proxy]>=0.26,<0.28'` | local proxy/backend |
-| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787` | `RUNTIME_FULL`: `/headroom smoke` can compress → retrieve |
-
-Headroom dependency compatibility:
-
-| `headroom-ai` range | Status | Evidence required |
-|---|---|---|
-| `>=0.26,<0.28` | supported by this repo's dependency smoke | `scripts/test-headroom-dependency-install.py` passes |
-| `>=0.28` | unverified | expand only after dependency smoke and `/headroom smoke` pass |
-
-Validate the dependency layer without touching Hermes or system Python:
+From a clone, without touching a real Hermes profile:
 
 ```bash
+scripts/audit-repo-readiness.sh
+scripts/test-clean-hermes-install.sh --local
 python scripts/test-headroom-dependency-install.py
-# or the Unix/Git Bash wrapper, which resolves python3 -> python -> py -3:
+python scripts/test-headroom-runtime-smoke.py
+```
+
+Unix/Git Bash wrapper for dependency smoke:
+
+```bash
 scripts/test-headroom-dependency-install.sh
 ```
 
-After native Hermes install, the same check is available from the installed plugin directory:
+The runtime smoke creates a temporary venv, installs `headroom-ai[proxy]>=0.26,<0.28`, starts a local proxy on a free loopback port, then runs plugin compress/retrieve sentinel verification.
+
+## Configuration
+
+Default proxy URL:
+
+```text
+http://127.0.0.1:28787
+```
+
+Environment override:
 
 ```bash
-"${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
+export HEADROOM_PROXY_URL="http://127.0.0.1:28787"
 ```
+
+Hermes config override:
+
+```yaml
+context_reduction:
+  proxy_url: http://127.0.0.1:28787
+```
+
+Remote proxy guardrail:
+
+```bash
+# Required only for controlled non-loopback proxy endpoints:
+export HEADROOM_ALLOW_REMOTE_PROXY=1
+```
+
+or:
+
+```yaml
+context_reduction:
+  allow_remote_proxy: true
+```
+
+Use remote proxies only for controlled, trusted endpoints; future compression wrappers may send intermediate content to the proxy.
 
 ## Architecture
 
@@ -171,92 +215,25 @@ flowchart LR
   P -.-> R["global/default provider routing unchanged"]
 ```
 
-## Safe defaults
+## Relationship to upstream Headroom
 
-```text
-Headroom = bounded context-reduction for eligible intermediates
-not = global/default provider proxy routing
-```
+This is a **Hermes Agent integration plugin** for Headroom. It is not the upstream Headroom project, not a fork, and not a replacement.
 
-Defaults:
+| Resource | Link |
+|---|---|
+| Upstream Headroom repo | <https://github.com/chopratejas/headroom> |
+| Upstream docs | <https://headroom-docs.vercel.app/docs> |
+| Alternate/legacy docs | <https://headroomlabs-ai.github.io/headroom/> |
+| Python package | <https://pypi.org/project/headroom-ai/> |
+| Hermes plugin docs | <https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins> |
+| Build a Hermes plugin | <https://hermes-agent.nousresearch.com/docs/guides/build-a-hermes-plugin> |
+| Hermes install docs | <https://hermes-agent.nousresearch.com/docs/getting-started/installation> |
 
-- current P0 does **not** automatically compress live Hermes traffic; it provides retrieval, status/smoke/audit commands, admission policy scaffolding, and a bundled operating skill;
-- plugin disabled until explicitly enabled by Hermes install command;
-- no global/default provider routing;
-- no external telemetry;
-- secrets, memory, profile, system/developer instructions, patches, diffs, manifests, hashes, claim ledgers, final packets, and protected content are exact or blocked, not compressed;
-- routing/canary/provider-cost features are opt-in advanced work, not first-install behavior.
-
-## Install paths
-
-### Recommended: native Hermes Git plugin
-
-```bash
-hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
-hermes plugins list --enabled --user --plain
-hermes gateway restart
-```
-
-This clones the repo under the target Hermes home, enables `headroom_retrieve`, and makes the slash command available after a fresh session/restart.
-
-### Local checkout / development
-
-```bash
-git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
-cd hermes-headroom-plugin
-scripts/install-hermes-plugin.sh --local
-scripts/verify-hermes-install.sh
-```
-
-### Python package / entry point path
-
-The package also declares:
-
-```toml
-[project.entry-points."hermes_agent.plugins"]
-headroom_retrieve = "hermes_headroom_plugin"
-```
-
-Use this path only when you intentionally install into the same Python environment that runs Hermes:
-
-```bash
-python -m pip install git+https://github.com/arotonal-ai/hermes-headroom-plugin.git
-hermes plugins enable headroom_retrieve
-hermes gateway restart
-```
-
-For most Hermes users, prefer `hermes plugins install`.
-
-## Verification without touching the real Hermes profile
-
-Read-only repo audit:
-
-```bash
-scripts/audit-repo-readiness.sh
-```
-
-Temporary `HERMES_HOME` install test:
-
-```bash
-scripts/test-clean-hermes-install.sh --local
-```
-
-Maintainers can test the remote install path with a temporary home:
-
-```bash
-TMP_HOME="$(mktemp -d)"
-HERMES_HOME="$TMP_HOME" hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
-HERMES_HOME="$TMP_HOME" hermes plugins list --enabled --user --plain
-rm -rf "$TMP_HOME"
-```
-
-A passing install shows `headroom_retrieve` enabled.
+Acknowledgement: this plugin builds on the Headroom project's context-reduction ideas and Python package surface. The Hermes-specific work here is the installable plugin wrapper, safe admission policy, retrieval command, smoke/audit commands, and human/agent installation harnesses. See [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
 
 ## Metrics and savings
 
-Published savings must come from retained evidence, not hand-entered claims. Weekly rollups start on Monday and live in [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md).
-
-Generate a table from JSONL evidence:
+Published savings must come from retained evidence, not manual estimates. Weekly rollups live in [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md).
 
 ```bash
 python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.jsonl --write docs/metrics/weekly-savings.md
@@ -264,42 +241,31 @@ python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.json
 
 If no evidence exists, the metrics page intentionally shows placeholders instead of invented numbers.
 
-## Local development checks
+## Development checks
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m py_compile $(find src tests scripts -name '*.py' | sort)
 bash -n scripts/*.sh
 scripts/audit-repo-readiness.sh
+python scripts/test-headroom-runtime-smoke.py
 ```
 
-Verify upstream Headroom dependency in a temporary venv:
+## Documentation map
 
-```bash
-python scripts/test-headroom-dependency-install.py
-```
-
-If a local proxy is running:
-
-```bash
-python3 src/hermes_headroom_plugin/proxy.py smoke --json
-```
-
-## Documentation
-
-- [AGENTS.md](AGENTS.md) — root instructions for another Hermes/AI agent.
-- [INSTALL.md](INSTALL.md) — complete installation, verification, update, rollback, and troubleshooting guide.
-- [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md) — compact install brief for agents.
+- [INSTALL.md](INSTALL.md) — full install, update, rollback, proxy config, troubleshooting.
+- [AGENTS.md](AGENTS.md) — repository-level instructions for AI/Hermes agents.
+- [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md) — compact agent install brief.
+- [SECURITY.md](SECURITY.md) — security reporting and secret-handling policy.
+- [PRIVACY.md](PRIVACY.md) — privacy and telemetry posture.
+- [CHANGELOG.md](CHANGELOG.md) — release notes.
 - [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md) — evidence-backed savings rollups.
 - `scripts/test-headroom-runtime-smoke.py` — real loopback proxy + plugin compress/retrieve smoke.
 - `.github/workflows/runtime-smoke.yml` — manual/weekly real proxy runtime certification across OS/Python matrix.
-- [SECURITY.md](SECURITY.md) — security reporting and secret-handling policy.
-- [PRIVACY.md](PRIVACY.md) — privacy and telemetry posture.
 
 ## Non-goals in this repo stage
 
-- No default/global provider proxy route.
-- No owner profile/session/memory/project evidence copied into package payload.
+- No global/default provider proxy routing.
 - No external telemetry.
-- Non-loopback proxy URLs are blocked unless explicitly allowed with `HEADROOM_ALLOW_REMOTE_PROXY=1` or `context_reduction.allow_remote_proxy: true`.
-- No compression of patches, diffs, manifests, hashes, claim ledgers, final packets, secrets, memory/profile/system/developer instructions, or protected content.
+- No automatic compression of final answers, patches/diffs, manifests, hashes, secrets, memory, profile, system/developer instructions, or protected content.
+- No claim that owner-local experimental wrappers are packaged production behavior.

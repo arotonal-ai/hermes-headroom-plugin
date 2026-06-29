@@ -1,6 +1,6 @@
 manifest_version: 1
 name: headroom_retrieve
-description: "Installable Headroom controls and CCR retrieval for Hermes; safe defaults, no global provider routing."
+description: "Safe Headroom integration for Hermes: CCR retrieval, /headroom status/smoke/audit, loopback-first proxy guardrails, no global provider routing."
 author: Hermes Headroom contributors
 kind: standalone
 provides_tools:
