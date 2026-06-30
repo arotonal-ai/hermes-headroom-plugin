@@ -224,6 +224,7 @@ Packaged as active behavior:
 
 - `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` for explicit operator commands;
 - exact sidecar/final-packet retention plus optional compression of bulky intermediate traces;
+- bounded compression input for oversized traces while retaining exact full raw sidecars as source of truth;
 - no provider/model routing mutation.
 
 Not packaged as active behavior:
@@ -262,7 +263,8 @@ If installed from a local checkout with a symlink or copy, remove the checkout-i
 3. **Publishing estimated savings.** Generate tables from JSONL evidence only.
 4. **Compressing exact/final material.** The result middleware is for bulky intermediates only; final packets, diffs, hashes, manifests, claim ledgers, secrets, and edit-critical context stay exact or blocked.
 5. **Advertising local overlays as packaged features.** Packaged worker/background/preflight wrappers are covered; natural `hr-*` aliases and provider-routing helpers remain local-only unless tests/release promote them.
-6. **Hardcoding version or environment facts.** Inspect live metadata when needed; do not paint a static version in this skill.
+6. **Treating bounded compressed traces as exact evidence.** Bounded wrapper compression is triage; verify material claims against the exact raw sidecar or exact final packet.
+7. **Hardcoding version or environment facts.** Inspect live metadata when needed; do not paint a static version in this skill.
 
 ## Verification Checklist
 

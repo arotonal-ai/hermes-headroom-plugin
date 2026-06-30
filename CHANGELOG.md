@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.5 — 2026-06-30
+
+- Bounded worker/background wrapper compression input for oversized traces using deterministic head + query-matching lines + tail windows while retaining the exact full raw sidecar as source of truth.
+- Added `--max-compress-chars` / `--wrapper-max-compress-chars` controls and report metadata for `compression_input.bounded`, `original_chars`, `input_chars`, query terms, and matching line count.
+- Added regression coverage for oversized wrapper compression bounding so selected query-matching evidence remains present in the bounded compression input.
+- No provider/model routing, runtime config, telemetry, global/default routing, or unwrapped Kanban terminal transcript replacement.
+
 ## v0.3.4 — 2026-06-30
 
 - Added structured tool-result handling for Headroom middleware: large string fields inside dictionary-shaped tool outputs can now be compressed while preserving the surrounding metadata exactly.

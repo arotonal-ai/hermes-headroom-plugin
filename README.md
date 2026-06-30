@@ -186,7 +186,7 @@ headroom-worker-lane --lane tests --query "failures warnings verification" -- py
 headroom-background-lane --lane build -- npm test
 ```
 
-`headroom-worker-lane` and `headroom-background-lane` retain exact stdout/stderr sidecars and exact `worker-final-packet.md`; only eligible bulky intermediate traces are compressed through the configured loopback proxy. They do not change Hermes provider/model routing. Natural `hr-*` smart-route aliases and provider-routing helpers are not part of the packaged product surface.
+`headroom-worker-lane` and `headroom-background-lane` retain exact stdout/stderr sidecars and exact `worker-final-packet.md`; only eligible bulky intermediate traces are compressed through the configured loopback proxy. Oversized traces are bounded before compression with deterministic head + query-matching lines + tail input (`--max-compress-chars`, default 250k) while the exact full raw sidecar remains the source of truth. They do not change Hermes provider/model routing. Natural `hr-*` smart-route aliases and provider-routing helpers are not part of the packaged product surface.
 
 ## Configuration
 
