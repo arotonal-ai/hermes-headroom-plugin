@@ -24,6 +24,7 @@ from .proxy import compress_messages, hermes_home, readyz, resolve_proxy_url
 
 DEFAULT_MIN_CHARS = 40_000
 DEFAULT_ALWAYS_CHARS = 120_000
+DEFAULT_MAX_COMPRESS_CHARS = 250_000
 
 OUTPUT_HINTS = (
     "ERROR", "WARNING", "Traceback", "Exception", "failed", "failure",
@@ -94,6 +95,67 @@ def extract_markers(messages: Any) -> list[str]:
     return [m.split()[0] for m in re.findall(r"<<ccr:([^,>]+)", text)]
 
 
+def compression_terms(query: str) -> list[str]:
+    common = {"event", "line", "lines", "error", "errors", "trace", "worker", "final", "status", "query", "focus"}
+    terms = []
+    for term in re.findall(r"[A-Za-z0-9_.:-]{4,}", query.lower()):
+        if term not in common:
+            terms.append(term)
+    return list(dict.fromkeys(terms))[:12]
+
+
+def bound_compression_input(raw: str, query: str, max_chars: int) -> tuple[str, dict[str, Any]]:
+    if max_chars <= 0 or len(raw) <= max_chars:
+        return raw, {"bounded": False, "input_chars": len(raw), "original_chars": len(raw)}
+    reserve = min(4_000, max_chars // 10)
+    head_budget = max_chars // 4
+    tail_budget = max_chars // 4
+    middle_budget = max(0, max_chars - head_budget - tail_budget - reserve)
+    terms = compression_terms(query)
+    match_lines: list[str] = []
+    numeric_terms = [term for term in terms if any(ch.isdigit() for ch in term)]
+    if terms and middle_budget > 0:
+        used = 0
+        for line in raw.splitlines():
+            low = line.lower()
+            if numeric_terms:
+                matched = all(term in low for term in numeric_terms)
+            else:
+                matched = any(term in low for term in terms)
+            if matched:
+                match_lines.append(line)
+                used += len(line) + 1
+            if used >= middle_budget:
+                break
+    matches = "\n".join(match_lines)
+    if len(matches) > middle_budget:
+        matches = matches[:middle_budget]
+    bounded = (
+        "===== HEADROOM BOUNDED COMPRESSION INPUT =====\n"
+        f"original_chars={len(raw)}\n"
+        f"bounded_chars_limit={max_chars}\n"
+        "exact_raw_sidecar_retained=true\n"
+        "compression_input_role=triage_not_source_of_truth\n"
+        f"query_terms={terms}\n"
+        "===== TRACE HEAD =====\n"
+        f"{raw[:head_budget]}\n"
+        "===== QUERY MATCHING LINES =====\n"
+        f"{matches}\n"
+        "===== TRACE TAIL =====\n"
+        f"{raw[-tail_budget:]}\n"
+    )
+    if len(bounded) > max_chars:
+        bounded = bounded[:max_chars]
+    return bounded, {
+        "bounded": True,
+        "original_chars": len(raw),
+        "input_chars": len(bounded),
+        "max_compress_chars": max_chars,
+        "query_terms": terms,
+        "matching_lines_included": len(match_lines),
+    }
+
+
 def compact_health(proxy_url: str | None = None) -> dict[str, Any]:
     health = readyz(proxy_url)
     body = health.get("body") if isinstance(health.get("body"), dict) else {}
@@ -107,14 +169,20 @@ def compact_health(proxy_url: str | None = None) -> dict[str, Any]:
     }
 
 
-def compress_trace(proxy_url: str, lane: str, query: str, raw: str, out_dir: Path) -> dict[str, Any]:
+def compress_trace(proxy_url: str, lane: str, query: str, raw: str, out_dir: Path, max_chars: int) -> dict[str, Any]:
+    compression_input, bounding = bound_compression_input(raw, query, max_chars)
     messages = [
         {"role": "system", "content": f"Worker lane raw trace compression: {lane}. Preserve operational facts, paths, errors, checks, and final status indicators."},
         {"role": "user", "content": f"Compress this raw worker/subagent trace for parent fan-in. Query focus: {query}"},
-        {"role": "tool", "tool_call_id": safe_lane_name(lane), "name": "worker_trace", "content": raw},
+        {"role": "tool", "tool_call_id": safe_lane_name(lane), "name": "worker_trace", "content": compression_input},
     ]
     started = time.perf_counter()
-    result: dict[str, Any] = {"attempted": True, "status": "error", "estimated_tokens_before": estimate_tokens(raw)}
+    result: dict[str, Any] = {
+        "attempted": True,
+        "status": "error",
+        "estimated_tokens_before": estimate_tokens(raw),
+        "compression_input": bounding,
+    }
     data = compress_messages(messages, proxy_url=proxy_url)
     if not data.get("ok"):
         result.update({"error": data.get("error") or data, "duration_s": round(time.perf_counter() - started, 3)})
@@ -201,7 +269,7 @@ def run_worker(args: argparse.Namespace) -> int:
         "estimated_tokens_before": estimate_tokens(redacted),
     }
     if not args.no_compress and eligible and health.get("ok"):
-        compression = compress_trace(proxy_url, lane, args.query, redacted, out_dir)
+        compression = compress_trace(proxy_url, lane, args.query, redacted, out_dir, args.max_compress_chars)
         compression["eligible"] = eligible
 
     base_status = "PASS" if proc.returncode == 0 else "FAIL"
@@ -323,6 +391,7 @@ def worker_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=int, default=600)
     parser.add_argument("--min-chars", type=int, default=DEFAULT_MIN_CHARS)
     parser.add_argument("--always-chars", type=int, default=DEFAULT_ALWAYS_CHARS)
+    parser.add_argument("--max-compress-chars", type=int, default=DEFAULT_MAX_COMPRESS_CHARS)
     parser.add_argument("--no-compress", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     return run_worker(parser.parse_args(argv))
@@ -341,6 +410,7 @@ def preflight_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--always", type=int, default=DEFAULT_ALWAYS_CHARS)
     parser.add_argument("--wrapper-min-chars", type=int, default=DEFAULT_MIN_CHARS)
     parser.add_argument("--wrapper-always-chars", type=int, default=DEFAULT_MIN_CHARS)
+    parser.add_argument("--wrapper-max-compress-chars", type=int, default=DEFAULT_MAX_COMPRESS_CHARS)
     parser.add_argument("--force-wrap", action="store_true")
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -350,7 +420,7 @@ def preflight_main(argv: list[str] | None = None) -> int:
     command = _parse_command(list(args.command))
     lane = safe_lane_name(args.lane or (Path(command[0]).name if command else "command"))
     info = classify_command(command, args.expected_chars, args.threshold, args.always, args.force_wrap, args.no_health)
-    wrapped = ["headroom-worker-lane", "--lane", lane, "--query", args.query, "--min-chars", str(args.wrapper_min_chars), "--always-chars", str(args.wrapper_always_chars), "--", *command]
+    wrapped = ["headroom-worker-lane", "--lane", lane, "--query", args.query, "--min-chars", str(args.wrapper_min_chars), "--always-chars", str(args.wrapper_always_chars), "--max-compress-chars", str(args.wrapper_max_compress_chars), "--", *command]
     info["lane"] = lane
     info["recommended_command"] = wrapped if info["decision"] == "wrap" else command
     info["recommended_command_shell"] = shell_join(info["recommended_command"])
@@ -368,5 +438,5 @@ def preflight_main(argv: list[str] | None = None) -> int:
     if not args.run:
         return 0
     if info["decision"] == "wrap":
-        return worker_main(["--lane", lane, "--query", args.query, "--min-chars", str(args.wrapper_min_chars), "--always-chars", str(args.wrapper_always_chars), "--", *command])
+        return worker_main(["--lane", lane, "--query", args.query, "--min-chars", str(args.wrapper_min_chars), "--always-chars", str(args.wrapper_always_chars), "--max-compress-chars", str(args.wrapper_max_compress_chars), "--", *command])
     return subprocess.run(command, check=False).returncode

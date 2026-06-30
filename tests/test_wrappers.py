@@ -24,6 +24,22 @@ class WrapperCliTest(unittest.TestCase):
         self.assertEqual(info["decision"], "direct")
         self.assertTrue(info["exact_reasons"])
 
+    def test_bounds_oversized_compression_input_with_query_matches(self):
+        raw = "HEAD\n" + "\n".join(
+            f"HEADROOM_OVERSIZED_BOUNDING_SENTINEL event {i:04d} payload payload payload"
+            for i in range(1200)
+        ) + "\nTAIL"
+        bounded, meta = wrappers.bound_compression_input(
+            raw,
+            "HEADROOM_OVERSIZED_BOUNDING_SENTINEL event 0900",
+            max_chars=20_000,
+        )
+        self.assertTrue(meta["bounded"])
+        self.assertLessEqual(len(bounded), 20_000)
+        self.assertIn("exact_raw_sidecar_retained=true", bounded)
+        self.assertIn("HEADROOM_OVERSIZED_BOUNDING_SENTINEL event 0900", bounded)
+        self.assertEqual(meta["original_chars"], len(raw))
+
     def test_worker_wrapper_retains_exact_sidecars_without_compression(self):
         with tempfile.TemporaryDirectory() as td:
             out_root = Path(td) / "runs"
