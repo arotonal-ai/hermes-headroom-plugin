@@ -45,6 +45,41 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertIn("marker=abc123def456", out)
         self.assertIn("headroom_retrieve", out)
 
+    def test_structured_execute_code_output_compresses_output_field(self):
+        with tempfile.TemporaryDirectory() as td:
+            compressed = {
+                "ok": True,
+                "tokens_before": 30000,
+                "tokens_after": 300,
+                "tokens_saved": 29700,
+                "compression_ratio": 0.01,
+                "messages": [
+                    {
+                        "role": "tool",
+                        "name": "worker_trace",
+                        "content": "[execute_code output compressed. Retrieve more: hash=exec123def456]",
+                    }
+                ],
+            }
+            structured = {"status": "success", "output": self._large_result(), "duration_seconds": 0.1}
+            with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
+                "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+            ), patch("hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)):
+                out = middleware.on_tool_execution(
+                    tool_name="execute_code",
+                    args={"code": "print synthetic diagnostics"},
+                    next_call=lambda args: structured,
+                    task_id="t-exec",
+                    tool_call_id="tc-exec",
+                )
+        self.assertIsInstance(out, dict)
+        self.assertEqual(out["status"], "success")
+        self.assertTrue(out["headroom_auto_compressed"])
+        self.assertEqual(out["headroom_compressed_field"], "output")
+        self.assertIn("Headroom auto-compressed tool result", out["output"])
+        self.assertIn("tool=execute_code", out["output"])
+        self.assertIn("marker=exec123def456", out["output"])
+
     def test_exact_tools_remain_exact_even_when_large(self):
         large = self._large_result()
         with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(

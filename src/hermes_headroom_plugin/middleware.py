@@ -660,6 +660,44 @@ def compress_tool_result_for_context(
     return _shorten(payload)
 
 
+def _compress_structured_result_for_context(
+    *,
+    tool_name: str,
+    args: dict[str, Any],
+    result: Any,
+    task_id: str = "",
+    tool_call_id: str = "",
+    duration_ms: Any = None,
+) -> Any | None:
+    """Compress bulky string fields embedded in structured tool results.
+
+    Some Hermes tools, notably ``execute_code``, return dictionaries such as
+    ``{"status": "success", "output": "..."}`` instead of a bare string. Keep
+    the structured metadata exact and replace only the bulky intermediate text.
+    """
+    if not isinstance(result, dict):
+        return None
+    for key in ("output", "content", "result", "text"):
+        value = result.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        transformed = compress_tool_result_for_context(
+            tool_name=tool_name,
+            args=args,
+            result=value,
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            duration_ms=duration_ms,
+        )
+        if transformed:
+            out = dict(result)
+            out[key] = transformed
+            out.setdefault("headroom_auto_compressed", True)
+            out.setdefault("headroom_compressed_field", key)
+            return out
+    return None
+
+
 def on_tool_execution(
     tool_name: str = "",
     args: dict[str, Any] | None = None,
@@ -691,6 +729,16 @@ def on_tool_execution(
             )
             if transformed:
                 return transformed
+        structured = _compress_structured_result_for_context(
+            tool_name=str(tool_name or ""),
+            args=current_args,
+            result=result,
+            task_id=task_id or "",
+            tool_call_id=tool_call_id or "",
+            duration_ms=duration_ms,
+        )
+        if structured is not None:
+            return structured
     except Exception:
         return result
     return result
