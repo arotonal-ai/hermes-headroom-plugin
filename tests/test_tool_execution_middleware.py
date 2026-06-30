@@ -97,9 +97,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(out, large)
         compress.assert_not_called()
 
-    def test_extract_markers_supports_ccr_and_hash_forms(self):
-        messages = [{"content": "<<ccr:abc123,base64,4KB>> and Retrieve more: hash=def4567890."}]
-        self.assertEqual(middleware._extract_markers(messages), ["abc123", "def4567890"])
+    def test_extract_markers_supports_ccr_hash_and_marker_forms(self):
+        messages = [{"content": "<<ccr:abc123,base64,4KB>> and Retrieve more: hash=def4567890 marker=feedface1234."}]
+        self.assertEqual(middleware._extract_markers(messages), ["abc123", "def4567890", "feedface1234"])
 
 
 if __name__ == "__main__":
