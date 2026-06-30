@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.4 — 2026-06-30
+
+- Added structured tool-result handling for Headroom middleware: large string fields inside dictionary-shaped tool outputs can now be compressed while preserving the surrounding metadata exactly.
+- Added regression coverage for structured `execute_code`-style results so eligible bulky `output` fields no longer bypass compression merely because the tool result is a mapping.
+- No provider/model routing, runtime config, telemetry, or product-default/global routing promotion.
+
 ## v0.3.3 — 2026-06-30
 
 - Added data-class exact-header gates for eligible bulky intermediate tool results before compression.
