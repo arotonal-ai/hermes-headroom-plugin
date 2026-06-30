@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.3 — 2026-06-30
+
+- Added data-class exact-header gates for eligible bulky intermediate tool results before compression.
+- Added protected/control fail-closed handling before Headroom sidecar/proxy creation, including full-result scans for late secrets/cookies/control blobs.
+- Made `browser_vision` exact-by-default unless explicitly marked intermediate/debug/OCR/diagnostic/QA.
+- Added deterministic quality-parity tests plus real local-loopback marker/retrieve smoke coverage.
+- Verified GitHub CI on Ubuntu, macOS, and Windows py3.11, remote temp-home install, and a real Windows/other-instance `/headroom smoke` PASS.
+- No provider/model routing, runtime config, or product-default/global routing promotion.
+
 ## v0.3.2 — 2026-06-29
 
 - Added compact visible final-answer status marker via `transform_llm_output`: `[HR✓]` when Headroom proxy readiness is healthy and `[HR!]` when the marker is enabled but runtime readiness fails.
