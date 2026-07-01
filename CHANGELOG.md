@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## v0.3.6 — 2026-07-01
 
 - Added a local release-candidate gate (`scripts/release-candidate-local-gate.py`) that builds wheel/sdist, scans public package surfaces and archives for owner-local paths/secrets, installs the built wheel in a fresh venv, verifies temp `HERMES_HOME` install when Hermes CLI is available, runs real runtime smoke, exercises bulky middleware lanes, and checks no proxy is left running.
 - Added `docs/release-candidate.md` and a manual GitHub Actions workflow for RC evidence upload.
 - Added `test` and `release` optional dependencies for reproducible local gate setup.
+- Remote CI runners without Hermes CLI now record the temp-Hermes install subgate as `skipped: hermes_cli_not_available`; package portability remains covered by wheel/entrypoint and runtime-smoke gates.
 
 ## v0.3.5 — 2026-06-30
 
