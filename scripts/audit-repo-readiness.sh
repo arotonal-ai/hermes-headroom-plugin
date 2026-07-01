@@ -16,6 +16,7 @@ required=(
   ACKNOWLEDGEMENTS.md
   docs/AGENT-INSTALL.md
   docs/compatibility.md
+  docs/release-candidate.md
   docs/metrics/weekly-savings.md
   plugin.yaml
   __init__.py
@@ -30,10 +31,12 @@ required=(
   scripts/test-headroom-dependency-install.sh
   scripts/test-headroom-dependency-install.py
   scripts/test-headroom-runtime-smoke.py
+  scripts/release-candidate-local-gate.py
   scripts/generate-weekly-savings-table.py
   scripts/python-resolver.sh
   .github/workflows/runtime-smoke.yml
   .github/workflows/future-runtime-monitor.yml
+  .github/workflows/release-candidate.yml
 )
 
 for f in "${required[@]}"; do
@@ -103,7 +106,7 @@ pass "shell syntax ok"
 "${PY_CMD[@]}" - <<'PY'
 from pathlib import Path
 import os, re, sys
-skip = {'.git','__pycache__','.pytest_cache','.mypy_cache','.venv','build','dist'}
+skip = {'.git','__pycache__','.pytest_cache','.mypy_cache','.venv','build','dist','release-candidate-runs'}
 patterns = [
     re.compile(r'gho_[A-Za-z0-9_]{20,}'),
     re.compile(r'github_pat_[A-Za-z0-9_]{20,}'),

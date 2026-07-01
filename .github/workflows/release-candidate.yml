@@ -1,0 +1,29 @@
+name: Release Candidate Local Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      headroom_spec:
+        description: "headroom-ai package spec to test"
+        required: false
+        default: "headroom-ai[proxy]"
+
+jobs:
+  release-candidate-local-gate:
+    name: release-candidate-local-gate (ubuntu, py3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run local release-candidate gate
+        run: python scripts/release-candidate-local-gate.py --headroom-spec "${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]' }}" --install-timeout 600
+      - name: Upload release-candidate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-candidate-runs
+          path: release-candidate-runs/
+          if-no-files-found: warn

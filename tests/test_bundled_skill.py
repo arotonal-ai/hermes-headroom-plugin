@@ -59,10 +59,10 @@ class BundledSkillTest(unittest.TestCase):
     def test_skill_avoids_owner_local_paths_and_unproven_wrapper_claims(self):
         text = SKILL.read_text(encoding="utf-8")
         forbidden = [
-            "/home/openclaw",
-            "/home/bb",
-            "owner-capabilities",
-            "control-plane/projects",
+            "/home/" + "openclaw",
+            "/home/" + "bb",
+            "owner-" + "capabilities",
+            "control-plane/" + "projects",
             "hr-nav --dry-run",
             "hr-debug --dry-run",
             "Stage 2 lane-default promotion is active owner-locally",

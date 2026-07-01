@@ -9,3 +9,4 @@ dist/
 .coverage
 .env
 *.log
+release-candidate-runs/

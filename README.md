@@ -167,6 +167,14 @@ python scripts/test-headroom-runtime-smoke.py
 python scripts/install-production-runtime.py --no-start
 ```
 
+Before owner review as a portable release candidate, run the local RC gate:
+
+```bash
+python scripts/release-candidate-local-gate.py
+```
+
+This writes evidence under `release-candidate-runs/` and must end with `PLUGIN_RELEASE_CANDIDATE_LOCAL_PASS` before any public release decision. See [docs/release-candidate.md](docs/release-candidate.md).
+
 Unix/Git Bash wrapper for dependency smoke:
 
 ```bash

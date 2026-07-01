@@ -98,6 +98,7 @@ If asked to analyze rather than install:
 ```bash
 git ls-remote https://github.com/arotonal-ai/hermes-headroom-plugin.git HEAD
 bash scripts/audit-repo-readiness.sh
+python scripts/release-candidate-local-gate.py  # local RC only; no push/tag/release
 ```
 
 Report:
