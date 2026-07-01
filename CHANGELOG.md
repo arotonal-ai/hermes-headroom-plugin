@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added a local release-candidate gate (`scripts/release-candidate-local-gate.py`) that builds wheel/sdist, scans public package surfaces and archives for owner-local paths/secrets, installs the built wheel in a fresh venv, verifies temp `HERMES_HOME` install, runs real runtime smoke, exercises bulky middleware lanes, and checks no proxy is left running.
+- Added a local release-candidate gate (`scripts/release-candidate-local-gate.py`) that builds wheel/sdist, scans public package surfaces and archives for owner-local paths/secrets, installs the built wheel in a fresh venv, verifies temp `HERMES_HOME` install when Hermes CLI is available, runs real runtime smoke, exercises bulky middleware lanes, and checks no proxy is left running.
 - Added `docs/release-candidate.md` and a manual GitHub Actions workflow for RC evidence upload.
 - Added `test` and `release` optional dependencies for reproducible local gate setup.
 
