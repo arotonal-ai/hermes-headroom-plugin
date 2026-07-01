@@ -26,7 +26,8 @@ Repository = "https://github.com/arotonal-ai/hermes-headroom-plugin"
 # runtime installer with --spec/HEADROOM_AI_SPEC for incident rollback, but the
 # packaged extra is intentionally not pinned to a historical Headroom release.
 proxy = ["headroom-ai[proxy]"]
-test = []
+test = ["pytest>=8,<10"]
+release = ["build>=1,<2"]
 
 [project.entry-points."hermes_agent.plugins"]
 headroom_retrieve = "hermes_headroom_plugin"
