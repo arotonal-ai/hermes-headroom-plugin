@@ -28,7 +28,7 @@ Do **not** treat this bundled skill as an owner-local deployment manual. It must
 Use this skill when you need to:
 
 - install or verify `arotonal-ai/hermes-headroom-plugin` in a Hermes instance;
-- decide whether a Headroom result is `INSTALL_PASS`, `RUNTIME_PARTIAL`, `RUNTIME_FULL`, or `FAIL`;
+- decide whether a Headroom result is `INSTALL_PASS`, `RUNTIME_PARTIAL`, `RUNTIME_FULL`, `RUNTIME_FULL_DURABLE`, or `FAIL`;
 - use `headroom_retrieve` to resolve an exact CCR marker;
 - validate the upstream `headroom-ai[proxy]` dependency without touching the real Python environment;
 - check `/headroom status`, `/headroom on`, `/headroom smoke`, or `/headroom audit`;
@@ -69,7 +69,7 @@ Verify in Hermes:
 
 If this command responds, plugin install succeeded. A missing proxy is `RUNTIME_PARTIAL`, not a failed install.
 
-For real compression / `RUNTIME_FULL`, run the production runtime installer from a repo/plugin checkout:
+For process-level real compression / `RUNTIME_FULL`, run the production runtime installer from a repo/plugin checkout:
 
 ```bash
 python scripts/install-production-runtime.py
@@ -85,7 +85,7 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv`, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, verifies `/readyz`, and runs real compress → retrieve smoke. Manual install is acceptable only if those same checks pass.
+The installer creates/updates `~/.cache/hermes-headroom-venv`, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, verifies `/readyz`, and runs real compress → retrieve smoke. Manual install is acceptable only if those same checks pass. For Linux gateway/default-cockpit durability, use `python scripts/install-production-runtime.py --systemd-user` and require `RUNTIME_FULL_DURABLE` plus `hermes-context-reduction.service` enabled + active before claiming survival across gateway restart/logout.
 
 Then verify in Hermes:
 
@@ -99,7 +99,8 @@ Then verify in Hermes:
 |---|---|---|
 | `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom on` respond after restart/new session. |
 | `RUNTIME_PARTIAL` | Plugin loads, but no proxy is reachable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; plugin does not crash. |
-| `RUNTIME_FULL` | Plugin, dependency, and proxy work | `scripts/install-production-runtime.py` reports `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval. |
+| `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | `scripts/install-production-runtime.py` reports `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval. |
+| `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes. |
 | `FAIL` | Plugin cannot be used | plugin not enabled, `/headroom` unavailable after reload, or install required copying another machine/profile state. |
 
 Never call proxy-down `RUNTIME_PARTIAL` a failed install. It is a valid degraded state.
@@ -112,7 +113,7 @@ The Hermes plugin and upstream Headroom runtime are separate layers:
 |---|---|---|
 | Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `headroom_retrieve` tool, `/headroom` command, and fail-open `tool_execution` middleware for eligible bulky intermediate results. |
 | Upstream Headroom package | `headroom-ai[proxy]` | local proxy/backend. |
-| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787` or configured endpoint | real compress → retrieve smoke. |
+| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
 
 Use the production installer or cross-platform smoke helpers before claiming runtime capability:
 

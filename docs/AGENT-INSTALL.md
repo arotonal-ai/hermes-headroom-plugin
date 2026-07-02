@@ -24,13 +24,23 @@ hermes gateway restart || true
 
 If operating inside an active Hermes chat instead of gateway shell, start a fresh session with `/new` after install.
 
-Production runtime for `RUNTIME_FULL`:
+Production runtime for process-level `RUNTIME_FULL`:
 
 ```bash
 python scripts/install-production-runtime.py
 # Unix/Git Bash wrapper:
 scripts/install-production-runtime.sh
 ```
+
+Linux durable gateway/default-cockpit runtime:
+
+```bash
+python scripts/install-production-runtime.py --systemd-user
+systemctl --user is-enabled hermes-context-reduction.service
+systemctl --user is-active hermes-context-reduction.service
+```
+
+This must return `RUNTIME_FULL_DURABLE` before claiming restart/logout durability.
 
 Windows PowerShell:
 
@@ -90,7 +100,13 @@ FULL if:
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval;
 - optional result-compression checks preserve exact/blocked tools such as `read_file`, `patch`, and `git diff`.
 
-Windows native `FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11/3.12, but still require target-host evidence when diagnosing a specific machine. Python 3.13/3.14 are experimental monitor paths, not certified support.
+DURABLE on Linux if:
+
+- `scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`;
+- `hermes-context-reduction.service` is enabled + active;
+- `/headroom smoke` still returns PASS after gateway restart/logout.
+
+Windows native `FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11/3.12, but still require target-host evidence when diagnosing a specific machine. Python 3.13/3.14 are experimental monitor paths, not certified support. Durable Windows supervision is not bundled; use an operator-approved Task Scheduler/service wrapper if restart durability is required.
 
 FAIL if:
 

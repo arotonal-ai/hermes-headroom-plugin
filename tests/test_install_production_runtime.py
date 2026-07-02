@@ -14,6 +14,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
         self.assertIn('DEFAULT_SPEC = "headroom-ai[proxy]"', text)
         self.assertIn('DEFAULT_PORT = 28787', text)
         self.assertIn('RUNTIME_FULL', text)
+        self.assertIn('RUNTIME_FULL_DURABLE', text)
         self.assertIn('headroom proxy', text)
         old_pin = '>=0.26,' + '<0.28'
         self.assertNotIn(old_pin, text)
@@ -28,8 +29,14 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stdout)
-        for needle in ["--spec", "--port", "--no-start", "--no-smoke", "--stop-existing"]:
+        for needle in ["--spec", "--port", "--no-start", "--no-smoke", "--stop-existing", "--systemd-user", "--service-name"]:
             self.assertIn(needle, proc.stdout)
+
+    def test_linux_durable_runtime_state_is_documented_in_installer(self):
+        text = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("systemctl", text)
+        self.assertIn("hermes-context-reduction.service", text)
+        self.assertIn("systemd --user", text)
 
     def test_docs_reference_production_installer(self):
         for rel in ["README.md", "INSTALL.md", "AGENTS.md", "docs/AGENT-INSTALL.md"]:
@@ -38,6 +45,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             self.assertIn("RUNTIME_FULL", text, rel)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertRegex(readme, re.compile(r"127\.0\.0\.1:28787", re.I))
+        self.assertIn("RUNTIME_FULL_DURABLE", readme)
 
     def test_repo_no_longer_defaults_to_old_headroom_runtime_pin(self):
         offenders = []

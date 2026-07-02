@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.7 — 2026-07-02
+
+- Added Linux durable runtime installation mode: `scripts/install-production-runtime.py --systemd-user` writes/enables/starts `hermes-context-reduction.service` and reports `RUNTIME_FULL_DURABLE` only when the user service is enabled + active and real compress → retrieve smoke passes.
+- Clarified that plain `RUNTIME_FULL` is process/session-level evidence, not proof that the proxy survives gateway restart/logout.
+- Updated README, INSTALL, AGENTS, and compact agent install docs with Linux durable verification and Windows durability boundaries.
+- Added regression coverage for durable installer flags, state naming, and documentation contract.
+
 ## v0.3.6 — 2026-07-01
 
 - Added a local release-candidate gate (`scripts/release-candidate-local-gate.py`) that builds wheel/sdist, scans public package surfaces and archives for owner-local paths/secrets, installs the built wheel in a fresh venv, verifies temp `HERMES_HOME` install when Hermes CLI is available, runs real runtime smoke, exercises bulky middleware lanes, and checks no proxy is left running.

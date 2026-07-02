@@ -12,6 +12,10 @@ Default behavior:
 - start `headroom proxy --host 127.0.0.1 --port 28787` when not already ready
 - run the plugin smoke against that endpoint
 - exit 0 only for RUNTIME_FULL unless --no-smoke/--no-start is requested
+
+Linux durable mode:
+- add `--systemd-user` to write, enable, and start a durable user service
+- exit state becomes RUNTIME_FULL_DURABLE when systemd + smoke both pass
 """
 from __future__ import annotations
 
@@ -31,6 +35,7 @@ from typing import Any
 DEFAULT_SPEC = "headroom-ai[proxy]"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 28787
+DEFAULT_SERVICE_NAME = "hermes-context-reduction.service"
 
 
 def default_venv() -> Path:
@@ -107,6 +112,60 @@ def start_proxy(headroom: Path, host: str, port: int, log: Path, pid_file: Path)
     return int(proc.pid)
 
 
+def run_systemctl(args: list[str], *, log: Path, timeout: int = 60) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run(["systemctl", "--user", *args], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=False)
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write(f"\n$ systemctl --user {' '.join(args)}\n")
+        fh.write(proc.stdout)
+    return proc
+
+
+def write_systemd_user_unit(headroom: Path, host: str, port: int, service_name: str, log: Path) -> Path:
+    if os.name == "nt" or shutil.which("systemctl") is None:
+        raise RuntimeError("systemd --user is available only on Linux hosts with systemctl")
+    unit_dir = Path.home() / ".config" / "systemd" / "user"
+    unit_dir.mkdir(parents=True, exist_ok=True)
+    unit_path = unit_dir / service_name
+    unit_path.write_text(
+        f"""[Unit]
+Description=Hermes Context Reduction Layer (Headroom proxy)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart={headroom} proxy --host {host} --port {port} --no-telemetry
+Restart=on-failure
+RestartSec=5
+Environment=HEADROOM_TELEMETRY=off
+Environment=HEADROOM_DISABLE_UPDATE_CHECK=1
+Environment=HEADROOM_HOST={host}
+Environment=HEADROOM_PORT={port}
+
+[Install]
+WantedBy=default.target
+""",
+        encoding="utf-8",
+    )
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write(f"\nwrote systemd user unit: {unit_path}\n")
+    return unit_path
+
+
+def enable_systemd_user_service(headroom: Path, host: str, port: int, service_name: str, log: Path) -> dict[str, Any]:
+    unit_path = write_systemd_user_unit(headroom, host, port, service_name, log)
+    out: dict[str, Any] = {"service": service_name, "unit_path": str(unit_path), "ok": False}
+    for args in (["daemon-reload"], ["enable", "--now", service_name]):
+        proc = run_systemctl(list(args), log=log)
+        if proc.returncode != 0:
+            out.update({"phase": "systemctl", "command": " ".join(args), "returncode": proc.returncode, "output_tail": proc.stdout[-2000:]})
+            return out
+    active = run_systemctl(["is-active", service_name], log=log)
+    enabled = run_systemctl(["is-enabled", service_name], log=log)
+    out.update({"active": active.stdout.strip(), "enabled": enabled.stdout.strip()})
+    out["ok"] = active.returncode == 0 and enabled.returncode == 0 and out["active"] == "active" and out["enabled"] == "enabled"
+    return out
+
+
 def smoke(repo_root: Path, python: Path, proxy_url: str, log: Path) -> tuple[bool, dict[str, Any] | None, str]:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(repo_root / "src")
@@ -165,6 +224,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-start", action="store_true", help="install/check dependency only; do not start proxy")
     parser.add_argument("--no-smoke", action="store_true", help="skip plugin compress/retrieve smoke after readyz")
     parser.add_argument("--stop-existing", action="store_true", help="stop PID recorded in the venv pid file before starting")
+    parser.add_argument("--systemd-user", action="store_true", help="Linux only: write, enable, and start a durable systemd --user service instead of a detached helper process")
+    parser.add_argument("--service-name", default=os.environ.get("HEADROOM_SERVICE", DEFAULT_SERVICE_NAME), help=f"systemd --user service name for --systemd-user; default {DEFAULT_SERVICE_NAME}")
     parser.add_argument("--json", action="store_true", help="emit machine-readable result")
     args = parser.parse_args(argv)
 
@@ -206,10 +267,17 @@ def main(argv: list[str] | None = None) -> int:
                 else:
                     if args.stop_existing:
                         stop_pid(pid_file, log)
-                    already_ready, detail = readyz(proxy_url)
                     started_pid = None
-                    if not already_ready:
-                        started_pid = start_proxy(headroom, args.host, args.port, log, pid_file)
+                    systemd_result = None
+                    if args.systemd_user:
+                        systemd_result = enable_systemd_user_service(headroom, args.host, args.port, args.service_name, log)
+                        result["systemd_user"] = systemd_result
+                        if not systemd_result.get("ok"):
+                            result.update({"state": "RUNTIME_PARTIAL", "phase": "systemd_user", "ok": False})
+                    else:
+                        already_ready, _detail = readyz(proxy_url)
+                        if not already_ready:
+                            started_pid = start_proxy(headroom, args.host, args.port, log, pid_file)
                     ready, detail = wait_readyz(proxy_url, timeout=args.ready_timeout, log=log)
                     result.update({"readyz": detail, "started_pid": started_pid})
                     if not ready:
@@ -220,7 +288,8 @@ def main(argv: list[str] | None = None) -> int:
                         ok, smoke_result, output_tail = smoke(repo_root, python, proxy_url, log)
                         result.update({"smoke": smoke_result, "output_tail": output_tail if not ok else ""})
                         if ok:
-                            result.update({"state": "RUNTIME_FULL", "phase": "smoke", "ok": True})
+                            state = "RUNTIME_FULL_DURABLE" if args.systemd_user and (systemd_result or {}).get("ok") else "RUNTIME_FULL"
+                            result.update({"state": state, "phase": "smoke", "ok": True})
                         else:
                             result.update({"state": "RUNTIME_PARTIAL", "phase": "smoke", "ok": False})
     except Exception as exc:
@@ -230,13 +299,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(f"{result.get('state')}: proxy={result.get('proxy_url')} venv={result.get('venv')} log={result.get('log')}")
-        if result.get("state") == "RUNTIME_FULL":
+        if result.get("state") in {"RUNTIME_FULL", "RUNTIME_FULL_DURABLE"}:
             smoke_result = result.get("smoke") or {}
             if isinstance(smoke_result, dict):
-                print(f"RUNTIME_FULL: sentinel_found={smoke_result.get('sentinel_found')} tokens_saved={smoke_result.get('tokens_saved')}")
+                print(f"{result.get('state')}: sentinel_found={smoke_result.get('sentinel_found')} tokens_saved={smoke_result.get('tokens_saved')}")
         elif result.get("output_tail"):
             print(str(result.get("output_tail"))[-2000:], file=sys.stderr)
-    return 0 if result.get("state") == "RUNTIME_FULL" or (args.no_start and result.get("ok")) or (args.no_smoke and result.get("ok")) else 1
+    return 0 if result.get("state") in {"RUNTIME_FULL", "RUNTIME_FULL_DURABLE"} or (args.no_start and result.get("ok")) or (args.no_smoke and result.get("ok")) else 1
 
 
 if __name__ == "__main__":

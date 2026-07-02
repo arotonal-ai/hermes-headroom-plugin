@@ -45,7 +45,7 @@ Expected: the commands exist and return proxy/status guidance, including `visibl
 
 ## 2. Install Headroom runtime for real compression
 
-The plugin can be used for `/headroom status` and `headroom_retrieve` without the upstream runtime. That state is `RUNTIME_PARTIAL`. For production `RUNTIME_FULL`, run the bundled installer from a repo/plugin checkout:
+The plugin can be used for `/headroom status` and `headroom_retrieve` without the upstream runtime. That state is `RUNTIME_PARTIAL`. For process-level production `RUNTIME_FULL`, run the bundled installer from a repo/plugin checkout:
 
 ```bash
 python scripts/install-production-runtime.py
@@ -62,14 +62,21 @@ py -3 scripts\install-production-runtime.py
 ```
 
 What the installer does:
-
 1. Creates/updates a persistent venv: `~/.cache/hermes-headroom-venv`.
 2. Installs latest available `headroom-ai[proxy]` by default; override only for rollback with `--spec` or `HEADROOM_AI_SPEC`.
 3. Starts `headroom proxy --host 127.0.0.1 --port 28787` when no proxy is ready.
 4. Verifies `/readyz`.
 5. Runs real plugin compress → retrieve smoke.
 6. Prints `RUNTIME_FULL` only when all checks pass.
+Linux gateway/default-cockpit durable mode:
 
+```bash
+python scripts/install-production-runtime.py --systemd-user
+systemctl --user is-enabled hermes-context-reduction.service
+systemctl --user is-active hermes-context-reduction.service
+```
+
+Expected: `RUNTIME_FULL_DURABLE`. Plain `RUNTIME_FULL` is not a durability claim.
 Manual fallback on Unix/macOS/WSL:
 
 ```bash
@@ -101,7 +108,8 @@ Expected: smoke PASS with sentinel retrieval. With a healthy proxy, the plugin c
 |---|---|---|
 | `INSTALL_PASS` | Plugin installed and Hermes can load it | `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`; `/headroom status` and `/headroom on` respond after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz` |
-| `RUNTIME_FULL` | Plugin, dependency, and proxy all work | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval |
+| `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval |
+| `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `python scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
 
 ## 4. Optional validation helpers

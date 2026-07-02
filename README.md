@@ -91,6 +91,16 @@ scripts/install-production-runtime.sh
 
 The installer creates/updates a persistent venv at `~/.cache/hermes-headroom-venv`, installs the latest available `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, waits for `/readyz`, and runs a real plugin compress → retrieve smoke. It reports `RUNTIME_FULL` only when that end-to-end check passes.
 
+For a Linux Hermes gateway/default-cockpit deployment, use durable service mode instead of a detached helper process:
+
+```bash
+python scripts/install-production-runtime.py --systemd-user
+systemctl --user is-enabled hermes-context-reduction.service
+systemctl --user is-active hermes-context-reduction.service
+```
+
+That path reports `RUNTIME_FULL_DURABLE` only when the user service is enabled + active and the compress → retrieve smoke passes. Without `--systemd-user`, `RUNTIME_FULL` is process-level evidence, not proof that the proxy will survive a gateway restart/logout.
+
 Windows PowerShell uses the same Python helper:
 
 ```powershell
@@ -120,7 +130,8 @@ Then in Hermes:
 |---|---|---|
 | `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` enabled and `/headroom status` responds after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz` |
-| `RUNTIME_FULL` | Plugin, dependency, and local proxy all work | dependency smoke passes and `/headroom smoke` or runtime-smoke sentinel retrieval passes |
+| `RUNTIME_FULL` | Plugin, dependency, and local proxy all work in the current process/session | dependency smoke passes and `/headroom smoke` or runtime-smoke sentinel retrieval passes |
+| `RUNTIME_FULL_DURABLE` | Linux user-service deployment survives gateway restart/logout | `python scripts/install-production-runtime.py --systemd-user` passes, `hermes-context-reduction.service` is `enabled` + `active`, and `/headroom smoke` passes |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local state |
 
 ## Certified runtime matrix
