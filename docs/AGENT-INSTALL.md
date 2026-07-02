@@ -50,7 +50,13 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv`, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if needed, verifies `/readyz`, and runs real compress → retrieve smoke. Manual install is acceptable only if those same checks pass.
+The installer creates/updates `~/.cache/hermes-headroom-venv`, installs the bundled `llm-monitor` companion into `$HERMES_HOME/plugins/llm-monitor` without restarting Hermes, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if needed, verifies `/readyz`, and runs real compress → retrieve smoke. Manual install is acceptable only if those same checks pass. Existing local `llm-monitor` files are preserved unless `--force-llm-monitor-companion` is used.
+
+No-restart companion-only validation:
+
+```bash
+python scripts/install-production-runtime.py --companion-only --hermes-home /tmp/hermes-home --json
+```
 
 ## Verify
 

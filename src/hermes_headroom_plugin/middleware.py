@@ -8,17 +8,22 @@ result.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .proxy import compress_messages, hermes_home, readyz
+from .proxy import compress_messages, hermes_home, load_context_reduction_config, readyz
 
 MIN_TOOL_RESULT_CHARS = 28_000
 ALWAYS_TOOL_RESULT_CHARS = 120_000
 MAX_RETURN_CHARS = 12_000
 RAW_EDGE_CHARS = 1_200
+DEFAULT_EVENT_LOG_MAX_BYTES = 5_000_000
+EVENT_LOG_ROTATIONS = 3
+_PLATFORM_CONTEXT_MAX = 512
+_PLATFORM_BY_KEY: dict[str, str] = {}
 
 ELIGIBLE_TOOLS = {
     "delegate_task",
@@ -96,6 +101,212 @@ def _report_dir() -> Path:
     path = hermes_home() / "control-plane" / "headroom" / "reports"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _event_log_path() -> Path:
+    path = hermes_home() / "control-plane" / "headroom" / "events"
+    path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.chmod(0o700)
+    except Exception:
+        pass
+    return path / "headroom-events.jsonl"
+
+
+def _event_log_max_bytes() -> int:
+    try:
+        cfg = load_context_reduction_config()
+        value = cfg.get("event_log_max_bytes", cfg.get("events_max_bytes", DEFAULT_EVENT_LOG_MAX_BYTES))
+        max_bytes = int(value)
+    except Exception:
+        max_bytes = DEFAULT_EVENT_LOG_MAX_BYTES
+    return max(64_000, max_bytes)
+
+
+def _rotate_event_log_if_needed(path: Path) -> None:
+    """Bound local observability JSONL growth before appending a new event."""
+    try:
+        if not path.exists() or path.stat().st_size < _event_log_max_bytes():
+            return
+        oldest = path.with_name(path.name + f".{EVENT_LOG_ROTATIONS}")
+        if oldest.exists():
+            oldest.unlink()
+        for idx in range(EVENT_LOG_ROTATIONS - 1, 0, -1):
+            src = path.with_name(path.name + f".{idx}")
+            dst = path.with_name(path.name + f".{idx + 1}")
+            if src.exists():
+                src.replace(dst)
+        path.replace(path.with_name(path.name + ".1"))
+        for rotated in path.parent.glob(path.name + ".*"):
+            try:
+                rotated.chmod(0o600)
+            except Exception:
+                pass
+    except Exception:
+        return
+
+
+def _safe_event_text(value: Any, *, limit: int = 240) -> str:
+    text = _redact_text(str(value or ""))
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > limit:
+        text = text[: limit - 1].rstrip() + "…"
+    return text
+
+
+def _normalize_platform(value: Any) -> str:
+    text = _safe_event_text(value, limit=80).lower().replace("-", "_")
+    aliases = {
+        "tg": "telegram",
+        "telegram_dm": "telegram",
+        "telegram_group": "telegram",
+        "api": "api_server",
+        "api-server": "api_server",
+        "local": "cli",
+    }
+    text = aliases.get(text, text)
+    allowed = {
+        "telegram",
+        "cli",
+        "tui",
+        "desktop",
+        "api_server",
+        "cron",
+        "webhook",
+        "discord",
+        "slack",
+        "whatsapp",
+        "signal",
+        "matrix",
+        "email",
+    }
+    return text if text in allowed else ""
+
+
+def remember_platform_context(*, session_id: Any = "", task_id: Any = "", turn_id: Any = "", platform: Any = "", **_: Any) -> None:
+    """Remember platform from pre-LLM hooks for later tool middleware events.
+
+    Hermes core currently passes platform to pre-LLM hooks, while some
+    tool-execution middleware paths may omit it. Keep this plugin-local and
+    bounded instead of patching core just for observability metadata.
+    """
+    normalized = _normalize_platform(platform)
+    if not normalized:
+        return
+    for raw in (turn_id, task_id, session_id):
+        key = _safe_event_text(raw, limit=160)
+        if key:
+            _PLATFORM_BY_KEY[key] = normalized
+    if len(_PLATFORM_BY_KEY) > _PLATFORM_CONTEXT_MAX:
+        for key in list(_PLATFORM_BY_KEY)[: len(_PLATFORM_BY_KEY) - _PLATFORM_CONTEXT_MAX]:
+            _PLATFORM_BY_KEY.pop(key, None)
+
+
+def _resolve_event_platform(platform: Any, *, session_id: Any = "", task_id: Any = "", turn_id: Any = "") -> str:
+    explicit = _normalize_platform(platform)
+    if explicit:
+        return explicit
+    for raw in (turn_id, task_id, session_id):
+        key = _safe_event_text(raw, limit=160)
+        if key and _PLATFORM_BY_KEY.get(key):
+            return _PLATFORM_BY_KEY[key]
+    for env_name in ("HERMES_PLATFORM", "HERMES_SESSION_SOURCE"):
+        env_platform = _normalize_platform(os.environ.get(env_name))
+        if env_platform:
+            return env_platform
+    return "unknown"
+
+
+def _infer_lane(tool_name: str, args: dict[str, Any], data_class: Any = None) -> str:
+    explicit = _safe_event_text(args.get("lane") or args.get("headroom_lane"), limit=80)
+    if explicit:
+        return explicit
+    tool = str(tool_name or "").lower()
+    if tool == "delegate_task":
+        return "delegate"
+    if tool == "terminal":
+        return "terminal"
+    if tool == "execute_code":
+        return "code_execution"
+    if tool == "process":
+        return "process"
+    if tool.startswith("browser_"):
+        return "browser"
+    if tool in {"web_extract", "session_search", "x_search"}:
+        return "research"
+    if str(data_class or "") in {"qa_trace", "diagnostic_trace"}:
+        return "qa"
+    return "unknown"
+
+
+def _emit_headroom_event(
+    *,
+    action: str,
+    tool_name: str,
+    args: dict[str, Any],
+    reason: str,
+    task_id: str = "",
+    tool_call_id: str = "",
+    session_id: str = "",
+    turn_id: str = "",
+    api_request_id: str = "",
+    platform: str = "",
+    surface: str = "tool_execution",
+    data_class: Any = None,
+    original_chars: int | None = None,
+    redacted_chars: int | None = None,
+    tokens_before: Any = None,
+    tokens_after: Any = None,
+    tokens_saved: Any = None,
+    marker: str | None = None,
+    report_path: Path | None = None,
+    source_path: Path | None = None,
+    compressed_path: Path | None = None,
+    exact_authority: str = "none",
+    error: Any = None,
+) -> None:
+    """Append a local-only observability event without changing tool behavior."""
+    try:
+        event: dict[str, Any] = {
+            "type": "headroom_tool_result",
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "session_id": _safe_event_text(session_id, limit=120),
+            "turn_id": _safe_event_text(turn_id, limit=120),
+            "task_id": _safe_event_text(task_id, limit=120),
+            "tool_call_id": _safe_event_text(tool_call_id, limit=120),
+            "api_request_id": _safe_event_text(api_request_id, limit=120),
+            "platform": _resolve_event_platform(platform, session_id=session_id, task_id=task_id, turn_id=turn_id),
+            "surface": surface,
+            "tool_name": _safe_event_text(tool_name, limit=120),
+            "lane": _infer_lane(tool_name, args, data_class),
+            "data_class": _safe_event_text(data_class, limit=120),
+            "action": action,
+            "reason": _safe_event_text(reason, limit=240),
+            "original_chars": original_chars,
+            "redacted_chars": redacted_chars,
+            "tokens_before": tokens_before,
+            "tokens_after": tokens_after,
+            "tokens_saved": tokens_saved,
+            "marker": _safe_event_text(marker, limit=160),
+            "report_path": str(report_path) if report_path else "",
+            "source_path": str(source_path) if source_path else "",
+            "compressed_path": str(compressed_path) if compressed_path else "",
+            "exact_authority": exact_authority,
+            "sensitive_hits": 0,
+            "protected_hits": 1 if action == "blocked" and "protected" in str(reason).lower() else 0,
+        }
+        if error:
+            event["error"] = _safe_event_text(error, limit=500)
+        path = _event_log_path()
+        _rotate_event_log_if_needed(path)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+        try:
+            path.chmod(0o600)
+        except Exception:
+            pass
+    except Exception:
+        return
 
 
 def _safe_name(raw: str) -> str:
@@ -552,25 +763,102 @@ def compress_tool_result_for_context(
     result: str,
     task_id: str = "",
     tool_call_id: str = "",
+    session_id: str = "",
+    turn_id: str = "",
+    api_request_id: str = "",
+    platform: str = "",
     duration_ms: Any = None,
 ) -> str | None:
     """Return a compressed replacement for an eligible tool result, else None."""
     if not isinstance(result, str) or not result:
         return None
-    if not readyz().get("ok"):
+    health = readyz()
+    if not health.get("ok"):
+        _emit_headroom_event(
+            action="runtime_unavailable",
+            tool_name=tool_name,
+            args=args,
+            reason="proxy_not_ready",
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            original_chars=len(result),
+            error=health.get("body") or health.get("error"),
+        )
         return None
     if _contains_protected_control(tool_name, args, result):
+        _emit_headroom_event(
+            action="blocked",
+            tool_name=tool_name,
+            args=args,
+            reason="protected_control_or_sensitive_material",
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            original_chars=len(result),
+            exact_authority="original_tool_result",
+        )
         return None
     exact_reason = _exact_or_blocked_reason(tool_name, args, result)
     if exact_reason:
+        _emit_headroom_event(
+            action="exact",
+            tool_name=tool_name,
+            args=args,
+            reason=exact_reason,
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            original_chars=len(result),
+            exact_authority="original_tool_result",
+        )
         return None
     eligible, reason = _lane_eligible(tool_name, args, result)
     if not eligible:
+        _emit_headroom_event(
+            action="skipped",
+            tool_name=tool_name,
+            args=args,
+            reason=reason,
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            original_chars=len(result),
+            exact_authority="original_tool_result",
+        )
         return None
 
     redacted = _redact_text(result)
     header_data = _build_exact_header_data(tool_name, args, redacted, reason)
     if not header_data.get("header_ok"):
+        _emit_headroom_event(
+            action="blocked",
+            tool_name=tool_name,
+            args=args,
+            reason="header_missing:" + ",".join(str(x) for x in (header_data.get("missing") or [])),
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            data_class=header_data.get("data_class"),
+            original_chars=len(result),
+            redacted_chars=len(redacted),
+            exact_authority="original_tool_result",
+        )
         return None
 
     report_dir = _report_dir()
@@ -587,6 +875,24 @@ def compress_tool_result_for_context(
     ]
     compressed = compress_messages(messages)
     if not compressed.get("ok"):
+        _emit_headroom_event(
+            action="error",
+            tool_name=tool_name,
+            args=args,
+            reason="compress_failed",
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            data_class=header_data.get("data_class"),
+            original_chars=len(result),
+            redacted_chars=len(redacted),
+            exact_authority="redacted_sidecar",
+            source_path=source_path,
+            error=compressed.get("error"),
+        )
         return None
 
     markers = _extract_markers(compressed.get("messages"))
@@ -631,7 +937,54 @@ def compress_tool_result_for_context(
 
     useful = bool(marker) or (isinstance(saved, int) and saved > 500 and isinstance(after, int) and isinstance(before, int) and after < before)
     if not useful:
+        _emit_headroom_event(
+            action="skipped",
+            tool_name=tool_name,
+            args=args,
+            reason="compression_not_useful",
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            data_class=header_data.get("data_class"),
+            original_chars=len(result),
+            redacted_chars=len(redacted),
+            tokens_before=before,
+            tokens_after=after,
+            tokens_saved=saved,
+            marker=marker,
+            report_path=report_path,
+            source_path=source_path,
+            compressed_path=compressed_path,
+            exact_authority="redacted_sidecar",
+        )
         return None
+
+    _emit_headroom_event(
+        action="compressed",
+        tool_name=tool_name,
+        args=args,
+        reason=reason,
+        task_id=task_id,
+        tool_call_id=tool_call_id,
+        session_id=session_id,
+        turn_id=turn_id,
+        api_request_id=api_request_id,
+        platform=platform,
+        data_class=header_data.get("data_class"),
+        original_chars=len(result),
+        redacted_chars=len(redacted),
+        tokens_before=before,
+        tokens_after=after,
+        tokens_saved=saved,
+        marker=marker,
+        report_path=report_path,
+        source_path=source_path,
+        compressed_path=compressed_path,
+        exact_authority="redacted_sidecar",
+    )
 
     exact_header = _format_exact_header(
         header_data,
@@ -667,6 +1020,10 @@ def _compress_structured_result_for_context(
     result: Any,
     task_id: str = "",
     tool_call_id: str = "",
+    session_id: str = "",
+    turn_id: str = "",
+    api_request_id: str = "",
+    platform: str = "",
     duration_ms: Any = None,
 ) -> Any | None:
     """Compress bulky string fields embedded in structured tool results.
@@ -687,6 +1044,10 @@ def _compress_structured_result_for_context(
             result=value,
             task_id=task_id,
             tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
             duration_ms=duration_ms,
         )
         if transformed:
@@ -705,6 +1066,10 @@ def on_tool_execution(
     task_id: str = "",
     tool_call_id: str = "",
     duration_ms: Any = None,
+    session_id: str = "",
+    turn_id: str = "",
+    api_request_id: str = "",
+    platform: str = "",
     **_: Any,
 ) -> Any:
     """Compress eligible bulky tool/lane results, including delegate_task.
@@ -725,6 +1090,10 @@ def on_tool_execution(
                 result=result,
                 task_id=task_id or "",
                 tool_call_id=tool_call_id or "",
+                session_id=session_id or "",
+                turn_id=turn_id or "",
+                api_request_id=api_request_id or "",
+                platform=platform or "",
                 duration_ms=duration_ms,
             )
             if transformed:
@@ -735,11 +1104,30 @@ def on_tool_execution(
             result=result,
             task_id=task_id or "",
             tool_call_id=tool_call_id or "",
+            session_id=session_id or "",
+            turn_id=turn_id or "",
+            api_request_id=api_request_id or "",
+            platform=platform or "",
             duration_ms=duration_ms,
         )
         if structured is not None:
             return structured
-    except Exception:
+    except Exception as exc:
+        _emit_headroom_event(
+            action="error",
+            tool_name=str(tool_name or ""),
+            args=current_args,
+            reason="middleware_exception",
+            task_id=task_id or "",
+            tool_call_id=tool_call_id or "",
+            session_id=session_id or "",
+            turn_id=turn_id or "",
+            api_request_id=api_request_id or "",
+            platform=platform or "",
+            original_chars=len(result) if isinstance(result, str) else None,
+            error=f"{type(exc).__name__}: {exc}",
+            exact_authority="original_tool_result",
+        )
         return result
     return result
 

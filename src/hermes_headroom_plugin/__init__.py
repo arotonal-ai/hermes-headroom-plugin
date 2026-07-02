@@ -33,8 +33,8 @@ def register(ctx) -> None:
     ctx.register_command(
         "headroom",
         handle_headroom_command,
-        description="Headroom status/smoke/audit helpers: /headroom status|smoke|audit|on",
-        args_hint="status|smoke|audit|on",
+        description="Headroom status/smoke/audit/usage helpers: /headroom status|smoke|audit|on|usage|lanes|tail",
+        args_hint="status|smoke|audit|on|usage [turn [turn_id]]|lanes|tail [n]",
     )
     ctx.register_hook("transform_terminal_output", on_transform_terminal_output)
     ctx.register_hook("transform_llm_output", on_transform_llm_output)

@@ -1,0 +1,12 @@
+name: llm-monitor
+version: "0.2.0"
+description: "Owner-local LLM request monitor. Slash commands: /llm-monitor on|off|status|tail|report|context and /capabilities status|modes|recommend. Writes local JSONL traces/reports only."
+author: owner-local
+hooks:
+  - pre_api_request
+  - post_api_request
+  - api_request_error
+  - transform_llm_output
+commands:
+  - llm-monitor
+  - capabilities

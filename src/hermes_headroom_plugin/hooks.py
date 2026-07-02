@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from .middleware import remember_platform_context
 from .proxy import load_context_reduction_config, readyz
 
 _TRUTHY = {"1", "true", "yes", "y", "on"}
@@ -69,7 +70,12 @@ def on_transform_llm_output(response_text: str = "", **kwargs):
 
 
 def on_pre_llm_call(is_first_turn: bool = False, task_id: str = "", platform: str = "", **kwargs):
-    del task_id, platform, kwargs
+    remember_platform_context(
+        session_id=kwargs.get("session_id", ""),
+        task_id=task_id,
+        turn_id=kwargs.get("turn_id", ""),
+        platform=platform,
+    )
     if not is_first_turn:
         return None
     if not readyz().get("ok"):

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.8 — 2026-07-02
+
+- Added local Headroom observability events and read-only `/headroom usage`, `/headroom usage turn`, `/headroom lanes`, and `/headroom tail` summaries.
+- Added bundled `llm-monitor` companion packaging plus safe companion-only installer controls.
+- Added `headroom-events-summary` CLI/cron renderer for local Headroom event summaries.
+- Improved live turn scoping for HR summaries: prefer `turn_id`; use `task_id` only as fallback.
+- Added S7 observability polish: plugin-local platform context capture, bounded event-log rotation, platform rendering in usage/tail, clearer exact-safe zero-savings HR copy, and clean companion import fallback outside Hermes core.
+- No provider/model routing mutation, external telemetry, remote push, PyPI publish, or automatic core mutation.
+
 ## v0.3.7 — 2026-07-02
 
 - Added Linux durable runtime installation mode: `scripts/install-production-runtime.py --systemd-user` writes/enables/starts `hermes-context-reduction.service` and reports `RUNTIME_FULL_DURABLE` only when the user service is enabled + active and real compress → retrieve smoke passes.

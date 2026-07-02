@@ -89,7 +89,13 @@ python scripts/install-production-runtime.py
 scripts/install-production-runtime.sh
 ```
 
-The installer creates/updates a persistent venv at `~/.cache/hermes-headroom-venv`, installs the latest available `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, waits for `/readyz`, and runs a real plugin compress → retrieve smoke. It reports `RUNTIME_FULL` only when that end-to-end check passes.
+The installer creates/updates a persistent venv at `~/.cache/hermes-headroom-venv`, installs the bundled `llm-monitor` companion plugin into `$HERMES_HOME/plugins/llm-monitor` without restarting Hermes, installs the latest available `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, waits for `/readyz`, and runs a real plugin compress → retrieve smoke. It reports `RUNTIME_FULL` only when that end-to-end check passes. Existing local `llm-monitor` files are preserved unless `--force-llm-monitor-companion` is used; use `--skip-llm-monitor-companion` to opt out.
+
+No-restart companion-only validation:
+
+```bash
+python scripts/install-production-runtime.py --companion-only --hermes-home /tmp/hermes-home --json
+```
 
 For a Linux Hermes gateway/default-cockpit deployment, use durable service mode instead of a detached helper process:
 
