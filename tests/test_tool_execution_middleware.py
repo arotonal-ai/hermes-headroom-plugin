@@ -9,6 +9,13 @@ from hermes_headroom_plugin import middleware
 
 
 class ToolExecutionMiddlewareTest(unittest.TestCase):
+    def setUp(self):
+        self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
+        self._auto_compression_env.start()
+
+    def tearDown(self):
+        self._auto_compression_env.stop()
+
     def _large_result(self, lines=1200):
         return "".join(
             f"delegate line {i} WARNING verification PASS path=/tmp/delegate/{i}\n"
@@ -90,6 +97,12 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         compress.assert_not_called()
         self.assertEqual(events[-1]["action"], "skipped")
         self.assertEqual(events[-1]["reason"], "auto_compression_disabled")
+
+    def test_auto_compression_can_be_disabled_by_boolean_config(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(middleware.auto_compression_enabled({"auto_compression": False}))
+            self.assertFalse(middleware.auto_compression_enabled({"mode": "manual", "auto_terminal": True}))
+            self.assertTrue(middleware.auto_compression_enabled({"auto_compression": True}))
 
     def test_structured_execute_code_output_compresses_output_field(self):
         with tempfile.TemporaryDirectory() as td:

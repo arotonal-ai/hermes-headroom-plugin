@@ -4,7 +4,7 @@ Use this when another Hermes/AI agent is given only this repository URL and aske
 
 ## Goal
 
-Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing. The plugin does not compress by itself; real compression/retrieval requires a healthy local Headroom proxy. Exact/edit-critical/sensitive content remains exact or blocked. For heavy improvement loops, use on-demand mode (`HEADROOM_AUTO_COMPRESSION=0` or `context_reduction.auto_compression: false`) so the runtime stays available but middleware auto-compression does not add overhead.
+Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing. The plugin does not compress by itself; real compression/retrieval requires a healthy local Headroom proxy. Exact/edit-critical/sensitive content remains exact or blocked. Portable plugin operation should favor eligible-intermediate compression and savings by default. For this repo's own heavy development loops only, use scoped on-demand mode (`HEADROOM_AUTO_COMPRESSION=0` or `context_reduction.auto_compression: false`) so the runtime stays available but middleware auto-compression does not add overhead.
 
 ## Platform note
 

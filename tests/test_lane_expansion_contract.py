@@ -8,6 +8,7 @@ exact-header slice for header-sensitive bulky intermediates.
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,13 @@ from hermes_headroom_plugin import middleware
 
 
 class LaneExpansionContractTest(unittest.TestCase):
+    def setUp(self):
+        self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
+        self._auto_compression_env.start()
+
+    def tearDown(self):
+        self._auto_compression_env.stop()
+
     def _large_text(self, seed: str, *, min_chars: int = 35_000) -> str:
         lines = []
         i = 0
