@@ -9,6 +9,7 @@ would need for the next decision.
 from __future__ import annotations
 
 import re
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -98,6 +99,13 @@ def _orchestration_decision(text: str) -> dict[str, object]:
 
 
 class QualityParityHarnessTest(unittest.TestCase):
+    def setUp(self):
+        self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
+        self._auto_compression_env.start()
+
+    def tearDown(self):
+        self._auto_compression_env.stop()
+
     def _reduced(self, *, tool_name: str, args: dict, result: str) -> str:
         with tempfile.TemporaryDirectory() as td, patch(
             "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)

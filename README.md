@@ -149,9 +149,9 @@ The plugin is the Hermes integration layer; the Headroom runtime is the compress
 
 So the runtime is “optional” only for install/status/audit/degraded operation. It is **required** for the product claim “Headroom context reduction is active.”
 
-### On-demand mode for heavy operator loops
+### Scoped on-demand mode for plugin-development loops
 
-For iterative development/debug loops, leave the runtime running but disable middleware auto-compression when the overhead is not worth it:
+Portable plugin behavior should continue to favor compression and savings by default. For this repo's own iterative development/debug loops, leave the runtime running but disable middleware auto-compression in the development process when repeated tests/gates make automatic trace compression more expensive than useful:
 
 ```bash
 export HEADROOM_AUTO_COMPRESSION=0
@@ -164,7 +164,7 @@ context_reduction:
   auto_compression: false
 ```
 
-This keeps `/headroom status`, `/headroom smoke`, `/headroom cache`, and `headroom_retrieve` available, but tool outputs return exact unless explicitly compressed through a wrapper/runtime path. Use this for plugin improvement sessions with repeated tests/gates; re-enable with `HEADROOM_AUTO_COMPRESSION=1` or `context_reduction.auto_compression: true` when you want automatic eligible-intermediate compression.
+This is a scoped development-loop override, not a portable-product default. It keeps `/headroom status`, `/headroom smoke`, `/headroom cache`, and `headroom_retrieve` available, but tool outputs return exact unless explicitly compressed through a wrapper/runtime path. Use it for plugin improvement sessions with repeated tests/gates; keep `HEADROOM_AUTO_COMPRESSION=1` or `context_reduction.auto_compression: true` for normal portable operation where eligible-intermediate compression is the point.
 
 ### Cache / CCR store boundary
 

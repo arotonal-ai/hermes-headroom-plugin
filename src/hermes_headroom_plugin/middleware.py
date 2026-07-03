@@ -128,7 +128,11 @@ def _event_log_max_bytes() -> int:
 
 
 def _falsey(value: Any) -> bool:
-    return str(value or "").strip().lower() in {"0", "false", "no", "n", "off", "disabled", "disable"}
+    if isinstance(value, bool):
+        return value is False
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"0", "false", "no", "n", "off", "disabled", "disable"}
 
 
 def auto_compression_enabled(config: dict[str, Any] | None = None) -> bool:

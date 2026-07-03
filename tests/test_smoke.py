@@ -12,6 +12,13 @@ from hermes_headroom_plugin.commands import events_summary_main, handle_headroom
 
 
 class SmokeTest(unittest.TestCase):
+    def setUp(self):
+        self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
+        self._auto_compression_env.start()
+
+    def tearDown(self):
+        self._auto_compression_env.stop()
+
     def test_smoke_compress_retrieve_pass(self):
         def fake_http_json(url, payload=None, timeout=15):
             if url.endswith('/readyz'):

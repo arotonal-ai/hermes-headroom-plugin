@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.12 — 2026-07-03
+
+- Fixed scoped on-demand mode for YAML boolean config: `context_reduction.auto_compression: false` now disables middleware auto-compression as intended for development/operator loops.
+- Added regression coverage for boolean config and manual mode precedence over `auto_terminal`.
+- Clarified that the portable plugin default remains compression/savings-oriented; on-demand mode is a scoped development-loop override, not a product default.
+
 ## v0.3.11 — 2026-07-03
 
 - Added `/headroom cache` and `headroom-events-summary cache` as read-only views of the runtime-owned CCR cache/store.

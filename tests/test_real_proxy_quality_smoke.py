@@ -7,6 +7,7 @@ exact-header payload. It is intentionally small and local-loopback only.
 
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 import uuid
@@ -31,6 +32,13 @@ def _large_orchestration_payload(sentinel: str, *, min_chars: int = 130_000) -> 
 
 
 class RealProxyQualitySmokeTest(unittest.TestCase):
+    def setUp(self):
+        self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
+        self._auto_compression_env.start()
+
+    def tearDown(self):
+        self._auto_compression_env.stop()
+
     def test_real_proxy_marker_retrieves_exact_header_payload_sentinel(self):
         health = middleware.readyz()
         if not health.get("ok"):
