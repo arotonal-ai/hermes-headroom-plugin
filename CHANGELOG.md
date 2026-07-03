@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.15 — 2026-07-03
+
+- Added `headroom-cache-effectiveness`, a read-only report for CCR store posture, middleware savings, TTL risk, active Hermes model path, and provider-cache observability.
+- Added repository wrapper `scripts/headroom-cache-effectiveness.py` and tests for cache-effectiveness decisions.
+- The report returns `KEEP_PROXY_HOT_PATH`, `ADD_CACHE_UX`, `TEST_PROVIDER_CACHE_LANE`, or `DO_NOT_USE_PROVIDER_CACHE`; it does not mutate runtime cache, provider/model routing, Hermes config, or plugin registration.
+- Clarified that current plugin value is context reduction + CCR retrieval; provider prompt/KV cache requires a separate isolated lane before promotion.
+
 ## v0.3.14 — 2026-07-03
 
 - Added `headroom-adoption-benchmark`, a bounded benchmark for deciding whether a new Hermes instance should adopt the Context Economy Loop reporting layer or stay compression-only.

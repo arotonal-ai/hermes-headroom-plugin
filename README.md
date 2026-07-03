@@ -58,6 +58,7 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | Remote proxy guardrail | ✅ included | non-loopback blocked unless explicitly allowed |
 | Eligible bulky tool/lane result compression | ✅ requires runtime | `tool_execution` middleware calls the Headroom proxy to compress large intermediate results such as `delegate_task`, terminal/process, browser/debug, web_extract, and session_search when the proxy is healthy; otherwise it returns the exact original result |
 | Context Economy Loop contract | ✅ documented | [docs/context-economy-loop.md](docs/context-economy-loop.md) describes portable observe → classify → act → verify → learn behavior without instance-specific state; the loop is a bounded decision protocol, not an autonomous meta-agent or background watcher |
+| Cache effectiveness report | ✅ read-only | `headroom-cache-effectiveness` reports CCR store posture, middleware savings, TTL risk, active Hermes model path, and whether provider prompt/KV cache is observable before any routing experiment |
 | Worker/background/preflight CLI wrappers | ✅ require runtime for compression | wrappers retain exact sidecars/final packets; compression of eligible bulky intermediates happens only through a healthy Headroom proxy |
 | Global/default provider route mutation | ❌ not included | install does not change model/provider defaults |
 | External telemetry/API keys | ❌ not included | no telemetry, no keys required |
@@ -191,6 +192,25 @@ This is a scoped development-loop override, not a portable-product default. It k
 There is no separate plugin-side CCR cache. The cache/store that makes CCR markers retrievable belongs to the Headroom runtime/proxy. `/headroom cache` is read-only and reports the runtime store posture: entries, max entries, TTL, backend type, bytes used when the runtime exposes it, retrieval/event counts, and recent retrieval count. It does not purge, mutate, or expose admin/debug APIs.
 
 Operationally: if the runtime cache TTL expires or the runtime store is cleared, old CCR markers may stop resolving through `headroom_retrieve`. The plugin still keeps local reports and redacted sidecars for audit where middleware created them, but those sidecars are not a replacement for the runtime CCR store when exact full recovery is required. Treat long-lived canonical/source material as exact, not cache-backed compressed context.
+
+### Cache effectiveness before provider-cache experiments
+
+Before routing Hermes model calls through Headroom for provider prompt/KV cache experiments, run the read-only report:
+
+```bash
+headroom-cache-effectiveness --event-limit 2000 --format text
+# or from this repository
+PYTHONPATH=src python scripts/headroom-cache-effectiveness.py --event-limit 2000 --format json
+```
+
+The report returns one of:
+
+- `KEEP_PROXY_HOT_PATH` — current loopback proxy is valuable for compression/retrieval; do not change LLM provider routing yet.
+- `ADD_CACHE_UX` — improve read-only cache metrics/UX before changing routing.
+- `TEST_PROVIDER_CACHE_LANE` — only an isolated provider-cache lane benchmark should proceed.
+- `DO_NOT_USE_PROVIDER_CACHE` — keep provider prompt/KV cache off this path until runtime/store observability is fixed.
+
+This report is read-only: no config mutation, no cache purge, no provider/model routing change, and no plugin registration change.
 
 ## Acceptance states
 
