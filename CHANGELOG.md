@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.14 — 2026-07-03
+
+- Added `headroom-adoption-benchmark`, a bounded benchmark for deciding whether a new Hermes instance should adopt the Context Economy Loop reporting layer or stay compression-only.
+- The benchmark returns `ADOPT_LOOP`, `COMPRESSION_ONLY`, or `DISABLE_LOOP_REPORTING` based on saved context, loop/report overhead, runtime health, and retrieval quality.
+- Added repository wrapper `scripts/headroom-adoption-benchmark.py`, package module tests, and docs for fresh-instance adoption.
+- The benchmark is read-only: it does not mutate Hermes config, runtime cache, provider routing, or plugin registration.
+
 ## v0.3.13 — 2026-07-03
 
 - Clarified the Context Economy Loop as a bounded decision protocol, not an autonomous meta-agent, watcher, subjective scoring layer, or self-tuning controller.

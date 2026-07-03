@@ -50,6 +50,11 @@ class MarkdownDocsTest(unittest.TestCase):
             "Efficiency test for a fresh Hermes instance",
             "measure exact context chars/tokens avoided or compressed minus loop overhead",
             "A FAIL means keep the runtime/plugin compression path but remove or reduce the reporting/learning layer",
+            "headroom-adoption-benchmark --samples 3",
+            "ADOPT_LOOP",
+            "COMPRESSION_ONLY",
+            "DISABLE_LOOP_REPORTING",
+            "does not mutate Hermes config",
         ]
         for needle in required:
             self.assertIn(needle, loop_doc)

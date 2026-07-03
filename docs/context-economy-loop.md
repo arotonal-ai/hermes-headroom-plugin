@@ -69,6 +69,25 @@ Adopt the loop only if a short baseline experiment passes all criteria:
 
 A practical PASS means saved context is materially larger than the reports/gates/control text added by the loop, and the next action is clearer. A FAIL means keep the runtime/plugin compression path but remove or reduce the reporting/learning layer for that instance.
 
+### Benchmark command
+
+Use the benchmark before promoting the loop/reporting layer in a new instance:
+
+```bash
+headroom-adoption-benchmark --samples 3 --format text
+# repository fallback
+PYTHONPATH=src python scripts/headroom-adoption-benchmark.py --samples 3 --format json
+```
+
+Decision semantics:
+
+- `ADOPT_LOOP`: loop/reporting overhead is justified and retrieval quality passed.
+- `COMPRESSION_ONLY`: keep plugin/runtime compression active, but do not promote recurring loop reports yet.
+- `DISABLE_LOOP_REPORTING`: do not adopt loop/reporting until runtime, quality, or overhead is fixed.
+
+The command does not mutate Hermes config, plugin registration, runtime cache, or provider routing.
+
+
 ## Runtime boundary
 
 The portable product has two layers:

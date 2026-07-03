@@ -149,6 +149,26 @@ The plugin is the Hermes integration layer; the Headroom runtime is the compress
 
 So the runtime is “optional” only for install/status/audit/degraded operation. It is **required** for the product claim “Headroom context reduction is active.”
 
+### Adoption benchmark for a new Hermes instance
+
+Before promoting the Context Economy Loop as an always-used operating pattern in a new instance, run the bounded benchmark:
+
+```bash
+headroom-adoption-benchmark --samples 3 --format text
+# or from this repository
+PYTHONPATH=src python scripts/headroom-adoption-benchmark.py --samples 3 --format json
+```
+
+The benchmark returns one of three decisions:
+
+| Decision | Meaning |
+|---|---|
+| `ADOPT_LOOP` | loop reporting appears worth its overhead; compression/retrieval quality passed |
+| `COMPRESSION_ONLY` | keep plugin/runtime compression, but do not promote recurring loop reports yet |
+| `DISABLE_LOOP_REPORTING` | do not adopt the loop/reporting layer until runtime, quality, or overhead is fixed |
+
+This measures the evaluative layer, not whether the portable product should favor compression. Portable plugin behavior remains compression/savings-first by default.
+
 ### Scoped on-demand mode for plugin-development loops
 
 Portable plugin behavior should continue to favor compression and savings by default. For this repo's own iterative development/debug loops, leave the runtime running but disable middleware auto-compression in the development process when repeated tests/gates make automatic trace compression more expensive than useful:
