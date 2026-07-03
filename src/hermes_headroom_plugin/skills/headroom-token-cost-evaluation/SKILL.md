@@ -40,7 +40,7 @@ The installable repo includes a compact visible final-answer marker (`[HR✓]` p
 
 ## Portable Context Economy Loop
 
-Use Headroom as one mechanism inside a local loop:
+Use Headroom as one mechanism inside a bounded local decision protocol. The loop is not an autonomous meta-agent, watcher, subjective oracle, or self-tuning controller:
 
 ```text
 observe -> classify -> act -> verify -> learn
@@ -52,7 +52,8 @@ Portable contract:
 - classify by data class: avoid, exact, compress, or blocked;
 - act with the smallest safe intervention: avoid context, bound reads, shape sidecars, compress intermediates, keep exact, or block;
 - verify with compress -> retrieve smoke and exact source readback for claims;
-- learn from compact reports and promote only repeated operator value into stable commands.
+- learn from compact reports and promote only repeated operator value into stable commands;
+- prove controls: `HEADROOM_AUTO_COMPRESSION=0` or `context_reduction.auto_compression: false` disables middleware auto-compression only, while the runtime and retrieval remain available.
 
 Do not copy another instance's private paths, profile state, chat history, or case-specific thresholds. Full repo documentation: `docs/context-economy-loop.md`; portable gate: `python scripts/context-economy-loop-gate.py`.
 

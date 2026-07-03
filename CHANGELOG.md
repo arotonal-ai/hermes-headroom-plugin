@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.13 — 2026-07-03
+
+- Clarified the Context Economy Loop as a bounded decision protocol, not an autonomous meta-agent, watcher, subjective scoring layer, or self-tuning controller.
+- Added portable controls for disabling only middleware auto-compression while leaving runtime smoke/cache/retrieval available.
+- Added a fresh-instance efficiency test: compare saved/avoided context against loop overhead, verify quality, and prove rollback/control.
+- Added documentation/gate coverage so the loop cannot be promoted without controllability language.
+
 ## v0.3.12 — 2026-07-03
 
 - Fixed scoped on-demand mode for YAML boolean config: `context_reduction.auto_compression: false` now disables middleware auto-compression as intended for development/operator loops.

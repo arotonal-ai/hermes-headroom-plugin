@@ -94,6 +94,10 @@ def scan_portable_docs() -> dict[str, Any]:
         "observe -> classify -> act -> verify -> learn",
         "context-economy-loop.md",
         "Portable Context Economy Loop",
+        "not an autonomous meta-agent",
+        "HEADROOM_AUTO_COMPRESSION=0",
+        "Efficiency test for a fresh Hermes instance",
+        "measure exact context chars/tokens avoided or compressed minus loop overhead",
     ]
     combined = ""
     for path in targets:
