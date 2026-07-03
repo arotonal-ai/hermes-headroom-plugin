@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-headroom-plugin"
-version = "0.3.8"
+version = "0.3.9"
 description = "Hermes Agent plugin for safe Headroom context reduction, CCR retrieval, proxy smoke tests, and loopback-first runtime guardrails."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -47,4 +47,4 @@ where = ["src"]
 hermes_headroom_plugin = ["skills/*/SKILL.md", "data/systemd/*.template", "companions/llm-monitor/*"]
 
 [tool.pytest.ini_options]
-norecursedirs = ["qa", "release-candidate-runs", "build", "dist", ".git"]
+norecursedirs = ["qa", "release-candidate-runs", "context-economy-loop-gate-runs", "build", "dist", ".git"]

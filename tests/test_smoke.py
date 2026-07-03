@@ -43,6 +43,33 @@ class SmokeTest(unittest.TestCase):
         self.assertIn('Headroom smoke FAIL', text)
         self.assertIn('readyz', text)
 
+
+    def test_command_runtime_stats_uses_read_only_retrieve_stats(self):
+        with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}), patch(
+            'hermes_headroom_plugin.commands.retrieve_stats',
+            return_value={
+                "success": True,
+                "store": {
+                    "entry_count": 7,
+                    "max_entries": 1000,
+                    "default_ttl_seconds": 1800,
+                    "total_original_tokens": 12000,
+                    "total_compressed_tokens": 4000,
+                    "total_retrievals": 3,
+                    "event_count": 12,
+                    "backend": {"backend_type": "sqlite", "db_path": "/sensitive/local/path.db"},
+                },
+                "recent_retrievals": [{"hash": "abc"}, {"hash": "def"}],
+            },
+        ):
+            text = handle_headroom_command('runtime')
+        self.assertIn('retrieve_stats=PASS', text)
+        self.assertIn('entries=7', text)
+        self.assertIn('orig_tokens=12000', text)
+        self.assertIn('backend=sqlite', text)
+        self.assertIn('recent=2', text)
+        self.assertNotIn('/sensitive/local/path.db', text)
+
     def test_command_on_reports_active_without_mutating_runtime(self):
         with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
             text = handle_headroom_command('on')
@@ -59,7 +86,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_unknown_command_usage_mentions_on_compatibility(self):
         text = handle_headroom_command('some')
-        self.assertIn('status|smoke|audit|on', text)
+        self.assertIn('status|smoke|audit|on|runtime', text)
 
 
     def _write_events(self, root, events):
@@ -118,6 +145,9 @@ class SmokeTest(unittest.TestCase):
             turn = handle_headroom_command('usage turn turn-a')
             latest_turn = handle_headroom_command('usage turn')
             lanes = handle_headroom_command('lanes')
+            decisions = handle_headroom_command('decisions turn turn-a')
+            why = handle_headroom_command('why turn turn-a')
+            opportunities = handle_headroom_command('opportunities')
             tail = handle_headroom_command('tail 2')
             self.assertTrue(event_path.exists())
         self.assertIn('events=3', usage)
@@ -131,11 +161,19 @@ class SmokeTest(unittest.TestCase):
         self.assertIn('turn_id=turn-b', latest_turn)
         self.assertIn('delegate: events=1 compressed=1 saved=1200', lanes)
         self.assertIn('terminal: events=1 compressed=0 saved=0', lanes)
+        self.assertIn('file: events=1 compressed=0 saved=0', lanes)
+        self.assertIn('Headroom decisions · turn_id=turn-a', decisions)
+        self.assertIn('family=compressed', decisions)
+        self.assertIn('read_file lane=file', decisions)
+        self.assertIn('family=safety_exact', decisions)
+        self.assertEqual(decisions, why)
+        self.assertIn('Headroom opportunities · events=3', opportunities)
+        self.assertIn('terminal/build logs', opportunities)
+        self.assertIn('header-missing audit', opportunities)
         self.assertIn('Headroom tail · n=2', tail)
         self.assertIn('exact tool=read_file', tail)
         self.assertIn('blocked tool=terminal', tail)
         self.assertNotIn('999999', usage)
-
 
     def test_events_summary_cli_renderer_matches_slash_aggregator(self):
         events = [
@@ -166,6 +204,25 @@ class SmokeTest(unittest.TestCase):
                 code = events_summary_main(['tail', '-n', '1'])
             self.assertEqual(code, 0)
             self.assertIn('marker=hash-cli', buf.getvalue())
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                code = events_summary_main(['decisions', '--turn', 'turn-cli'])
+            self.assertEqual(code, 0)
+            decision_text = buf.getvalue()
+            self.assertIn('Headroom decisions · turn_id=turn-cli', decision_text)
+            self.assertIn('terminal lane=terminal', decision_text)
+            self.assertIn('family=compressed', decision_text)
+
+            with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}), patch(
+                'hermes_headroom_plugin.commands.retrieve_stats',
+                return_value={"success": True, "store": {"entry_count": 1, "backend": {"backend_type": "sqlite"}}, "recent_retrievals": []},
+            ):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    code = events_summary_main(['runtime'])
+            self.assertEqual(code, 0)
+            self.assertIn('Headroom runtime', buf.getvalue())
 
 
 if __name__ == '__main__':

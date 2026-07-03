@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.9 — 2026-07-03
+
+- Added portable Context Economy Loop documentation and gate: observe → classify → act → verify → learn, with exact-authority preservation and no instance-specific state.
+- Added release-candidate enforcement for the Context Economy loop gate plus audit coverage for the new doc/script surfaces.
+- Hardened repo readiness scanning to ignore local QA/gate evidence directories while keeping public package/archive scans active.
+- Kept stable `/headroom` command surface; experimental context-economy analysis remains in docs/tests/gates rather than new slash commands.
+- No provider/model routing mutation, external telemetry, core Hermes mutation, push/tag/release, or automatic cross-profile propagation.
+
 ## v0.3.8 — 2026-07-02
 
 - Added local Headroom observability events and read-only `/headroom usage`, `/headroom usage turn`, `/headroom lanes`, and `/headroom tail` summaries.

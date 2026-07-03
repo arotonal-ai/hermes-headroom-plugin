@@ -153,6 +153,19 @@ def retrieve(hash_key: str, query: str = "", proxy_url: str | None = None) -> di
     return data
 
 
+def retrieve_stats(proxy_url: str | None = None) -> dict[str, Any]:
+    """Read Headroom CCR retrieval/store stats without exposing admin/debug APIs."""
+    try:
+        proxy_url = validate_proxy_url(proxy_url) if proxy_url else resolve_proxy_url()
+    except ProxyConfigurationError as exc:
+        return {"success": False, "error": f"proxy configuration blocked: {exc}", "proxy_url": proxy_url}
+    proxy_url = proxy_url.rstrip("/")
+    status, data, body = http_json(f"{proxy_url}/v1/retrieve/stats", timeout=10)
+    if status != 200 or not isinstance(data, dict):
+        return {"success": False, "error": f"headroom retrieve stats failed status={status} body={body}", "proxy_url": proxy_url}
+    return {"success": True, "proxy_url": proxy_url, **data}
+
+
 def synthetic_messages(sentinel: str = SMOKE_SENTINEL) -> list[dict[str, Any]]:
     rows = []
     for i in range(220):

@@ -42,13 +42,10 @@ PUBLIC_SCAN_PATHS = [
     "pyproject.toml",
     ".github/workflows",
 ]
-OWNER_LOCAL_FORBIDDEN = (
-    "/home/" + "openclaw",
-    "/home/" + "bb",
-    "control-plane/" + "projects",
-    "owner-" + "capabilities",
-    "plugin-repo/" + "hermes-headroom-plugin",
-)
+OWNER_LOCAL_PATTERNS = [
+    re.compile(r"/home/[A-Za-z0-9._-]+"),
+    re.compile(r"/Users/[A-Za-z0-9._-]+"),
+]
 SECRET_PATTERNS = [
     re.compile(r"gho_[A-Za-z0-9_]{20,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
@@ -159,9 +156,9 @@ def public_path_scan() -> dict[str, Any]:
         scanned += 1
         rel = str(path.relative_to(REPO))
         for i, line in enumerate(text.splitlines(), 1):
-            for needle in OWNER_LOCAL_FORBIDDEN:
-                if needle in line:
-                    hits.append({"file": rel, "line": i, "kind": "owner_local_path", "needle": needle})
+            for pattern in OWNER_LOCAL_PATTERNS:
+                if pattern.search(line):
+                    hits.append({"file": rel, "line": i, "kind": "owner_local_path", "pattern": pattern.pattern})
             for pattern in SECRET_PATTERNS:
                 if pattern.search(line):
                     hits.append({"file": rel, "line": i, "kind": "secret_pattern", "pattern": pattern.pattern})
@@ -211,9 +208,9 @@ def build_and_inspect(run_dir: Path) -> dict[str, Any]:
             if any(bad in lowered for bad in (".git/", ".venv/", "__pycache__", ".pytest_cache", "release-candidate-runs")):
                 issues.append({"artifact": artifact.name, "member": member, "kind": "forbidden_member"})
         for member, text in read_archive_texts(artifact):
-            for needle in OWNER_LOCAL_FORBIDDEN:
-                if needle in text:
-                    issues.append({"artifact": artifact.name, "member": member, "kind": "owner_local_path", "needle": needle})
+            for pattern in OWNER_LOCAL_PATTERNS:
+                if pattern.search(text):
+                    issues.append({"artifact": artifact.name, "member": member, "kind": "owner_local_path", "pattern": pattern.pattern})
             for pattern in SECRET_PATTERNS:
                 if pattern.search(text):
                     issues.append({"artifact": artifact.name, "member": member, "kind": "secret_pattern", "pattern": pattern.pattern})
@@ -471,6 +468,10 @@ def main(argv: list[str] | None = None) -> int:
     audit = run(["bash", "scripts/audit-repo-readiness.sh"], timeout=240)
     write_json(run_dir / "commands" / "audit-repo-readiness.json", audit)
     gates["repo_readiness_audit"] = {"pass": audit["returncode"] == 0, "evidence": str(run_dir / "commands" / "audit-repo-readiness.json")}
+
+    context_loop = run([sys.executable, "scripts/context-economy-loop-gate.py"], timeout=args.install_timeout + 300)
+    write_json(run_dir / "commands" / "context-economy-loop-gate.json", context_loop)
+    gates["context_economy_loop_gate"] = {"pass": context_loop["returncode"] == 0, "evidence": str(run_dir / "commands" / "context-economy-loop-gate.json")}
 
     public_scan = public_path_scan()
     write_json(run_dir / "public-path-secret-scan.json", public_scan)

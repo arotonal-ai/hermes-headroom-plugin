@@ -33,9 +33,28 @@ Use this skill when you need to:
 - validate the upstream `headroom-ai[proxy]` dependency without touching the real Python environment;
 - check `/headroom status`, `/headroom on`, `/headroom smoke`, or `/headroom audit`;
 - classify payloads as compressible, exact, or blocked;
+- operate the portable Context Economy Loop contract (`docs/context-economy-loop.md`) without copying private instance state;
 - generate weekly savings tables from JSONL evidence.
 
 The installable repo includes a compact visible final-answer marker (`[HR✓]` proxy ready / `[HR!]` not ready) via `transform_llm_output`; this marker reports runtime readiness only, not per-message compression, and can be disabled with `context_reduction.visible_status_marker: false`. The installable repo includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, plus packaged `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` wrappers for explicit operator commands. These wrappers retain exact sidecars/final packets and compress only eligible bulky intermediate traces; they do not change provider/model routing.
+
+## Portable Context Economy Loop
+
+Use Headroom as one mechanism inside a local loop:
+
+```text
+observe -> classify -> act -> verify -> learn
+```
+
+Portable contract:
+
+- observe local event metadata and context-pressure aggregates without external telemetry;
+- classify by data class: avoid, exact, compress, or blocked;
+- act with the smallest safe intervention: avoid context, bound reads, shape sidecars, compress intermediates, keep exact, or block;
+- verify with compress -> retrieve smoke and exact source readback for claims;
+- learn from compact reports and promote only repeated operator value into stable commands.
+
+Do not copy another instance's private paths, profile state, chat history, or case-specific thresholds. Full repo documentation: `docs/context-economy-loop.md`; portable gate: `python scripts/context-economy-loop-gate.py`.
 
 ## Support Posture
 
