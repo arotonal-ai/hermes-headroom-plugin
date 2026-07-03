@@ -43,7 +43,7 @@ That workflow is intentionally **non-blocking**:
 
 Use capability checks before pins:
 
-1. Keep plugin install/load independent from the optional proxy runtime.
+1. Keep plugin install/load independent from the separate proxy runtime; only install/status can pass without it, while active compression requires it.
 2. Default production install to current `headroom-ai[proxy]`, not a stale pinned release.
 3. Use `--spec` / `HEADROOM_AI_SPEC` only as an explicit incident rollback or target-host diagnostic override.
 4. Promote or demote support only after **dependency smoke** and **real proxy runtime smoke** pass/fail with evidence.

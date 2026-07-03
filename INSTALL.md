@@ -1,6 +1,6 @@
 # Install Hermes Headroom Plugin
 
-This guide is the shortest safe path for a fresh Hermes instance. It separates the **Hermes plugin** from the optional **Headroom proxy/backend** so operators do not confuse “plugin loaded” with “compression runtime running”.
+This guide is the shortest safe path for a fresh Hermes instance. It separates the **Hermes plugin** from the **Headroom proxy/backend runtime** so operators do not confuse “plugin loaded” with “compression runtime running”. The runtime is optional only for degraded install/status operation; it is required for real compression, retrieval, smoke tests, and middleware/wrapper compression.
 
 ## 0. Prerequisites
 
@@ -18,8 +18,8 @@ If `hermes` is missing, install/fix Hermes Agent first: <https://hermes-agent.no
 |---|---|---|
 | Hermes Agent | plugin install/load | must be on `PATH` |
 | Git | `hermes plugins install owner/repo` | required by native plugin install |
-| Python | helper scripts and optional proxy venv | use a Python supported by Hermes and upstream Headroom |
-| `headroom-ai[proxy]` | full compression runtime | optional; not required for plugin load |
+| Python | helper scripts and separate proxy venv | use a Python supported by Hermes and upstream Headroom |
+| `headroom-ai[proxy]` | full compression/retrieval runtime | required for `RUNTIME_FULL`; not required only for plugin load/status |
 | API keys | not needed | do not paste secrets into install commands or issues |
 
 ## 1. Install the Hermes plugin
@@ -45,7 +45,7 @@ Expected: the commands exist and return proxy/status guidance, including `visibl
 
 ## 2. Install Headroom runtime for real compression
 
-The plugin can be used for `/headroom status` and `headroom_retrieve` without the upstream runtime. That state is `RUNTIME_PARTIAL`. For process-level production `RUNTIME_FULL`, run the bundled installer from a repo/plugin checkout:
+The plugin can be installed and can report `/headroom status` without the upstream runtime. That degraded state is `RUNTIME_PARTIAL`. It does **not** provide real compression, CCR retrieval, `/headroom smoke`, or middleware/wrapper compression. For process-level production `RUNTIME_FULL`, run the bundled installer from a repo/plugin checkout:
 
 ```bash
 python scripts/install-production-runtime.py
@@ -104,7 +104,7 @@ Expected: smoke PASS with sentinel retrieval. With a healthy proxy, the plugin c
 | State | Meaning | Evidence |
 |---|---|---|
 | `INSTALL_PASS` | Plugin installed and Hermes can load it | `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`; `/headroom status` and `/headroom on` respond after restart/new session |
-| `RUNTIME_PARTIAL` | Plugin works, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz` |
+| `RUNTIME_PARTIAL` | Plugin commands load, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; no compression/retrieval/middleware compression is active |
 | `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval |
 | `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `python scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |

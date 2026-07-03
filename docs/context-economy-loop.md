@@ -4,7 +4,7 @@ This document describes the portable context-economy capability provided by the 
 
 ## Purpose
 
-Headroom compression is one mechanism inside a broader context-economy loop. A healthy instance should optimize for useful work per context window, not for compression counts alone.
+Headroom compression is one mechanism inside a broader context-economy loop. A healthy instance should optimize for useful work per context window, not for compression counts alone. In this plugin, compression is not embedded in the Hermes wrapper: the plugin calls a configured Headroom proxy/runtime for compress and retrieve operations.
 
 The loop has four goals:
 
@@ -32,6 +32,17 @@ observe -> classify -> act -> verify -> learn
 | Act | Apply the smallest safe intervention: avoid read, bound read, shape sidecar, compress intermediate, or keep exact. | Chosen action, fallback, exact source pointer. |
 | Verify | Prove runtime health and claim accuracy. | Compress -> retrieve smoke, exact sidecar hash/path, focused retrieval or source readback. |
 | Learn | Update local guidance and thresholds from evidence, not anecdotes. | Compact report with top offenders, saved tokens/chars, failures, and next intervention. |
+
+## Runtime boundary
+
+The portable product has two layers:
+
+| Layer | Portable responsibility | Requires Headroom runtime? |
+|---|---|---:|
+| Hermes plugin | register tool/command/skill/middleware, classify data, preserve exact/blocked outputs, expose status/audit/readiness | No |
+| Headroom runtime/proxy | execute `/v1/compress`, store/retrieve CCR payloads, return stats, pass compress -> retrieve smoke | Yes |
+
+`RUNTIME_PARTIAL` means the first layer works and the second layer is unavailable. It is acceptable for install verification, but it is not enough to claim active context reduction. `RUNTIME_FULL` or `RUNTIME_FULL_DURABLE` is required before expecting automatic eligible-intermediate compression.
 
 ## Admission policy
 

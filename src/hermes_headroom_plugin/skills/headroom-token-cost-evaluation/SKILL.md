@@ -19,7 +19,7 @@ This skill is bundled with the `headroom_retrieve` Hermes plugin. Load it with t
 skill_view(name="headroom_retrieve:headroom-token-cost-evaluation")
 ```
 
-It is for **portable plugin operation**: installing the Hermes plugin, checking whether the optional Headroom proxy works, retrieving exact CCR content, applying safe admission policy, and publishing savings only from retained evidence.
+It is for **portable plugin operation**: installing the Hermes plugin, checking whether the separate Headroom runtime/proxy works, retrieving exact CCR content, applying safe admission policy, and publishing savings only from retained evidence. The plugin does not compress by itself; real compression/retrieval requires the configured Headroom proxy.
 
 Do **not** treat this bundled skill as an owner-local deployment manual. It must not depend on private paths, local profile state, or unpublished wrappers.
 
@@ -86,7 +86,7 @@ Verify in Hermes:
 /headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
-If this command responds, plugin install succeeded. A missing proxy is `RUNTIME_PARTIAL`, not a failed install.
+If this command responds, plugin install succeeded. A missing proxy is `RUNTIME_PARTIAL`, not a failed install, but it is not active context reduction: `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression require a reachable proxy.
 
 For process-level real compression / `RUNTIME_FULL`, run the production runtime installer from a repo/plugin checkout:
 
@@ -117,7 +117,7 @@ Then verify in Hermes:
 | State | Meaning | Required evidence |
 |---|---|---|
 | `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom on` respond after restart/new session. |
-| `RUNTIME_PARTIAL` | Plugin loads, but no proxy is reachable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; plugin does not crash. |
+| `RUNTIME_PARTIAL` | Plugin loads, but no proxy is reachable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; status/audit work, but compression/retrieval/middleware compression are not active. |
 | `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | `scripts/install-production-runtime.py` reports `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval. |
 | `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes. |
 | `FAIL` | Plugin cannot be used | plugin not enabled, `/headroom` unavailable after reload, or install required copying another machine/profile state. |
@@ -126,13 +126,13 @@ Never call proxy-down `RUNTIME_PARTIAL` a failed install. It is a valid degraded
 
 ## Dependency and Proxy Split
 
-The Hermes plugin and upstream Headroom runtime are separate layers:
+The Hermes plugin and upstream Headroom runtime are separate layers. The plugin is an integration/control plane; the runtime is the compression/retrieval engine:
 
 | Layer | Installed by | Required for |
 |---|---|---|
-| Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | `headroom_retrieve` tool, `/headroom` command, and fail-open `tool_execution` middleware for eligible bulky intermediate results. |
-| Upstream Headroom package | `headroom-ai[proxy]` | local proxy/backend. |
-| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
+| Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | registers `headroom_retrieve`, `/headroom`, bundled skill, visible readiness marker, and fail-open middleware; does not perform compression locally. |
+| Upstream Headroom package | `headroom-ai[proxy]` | provides the compressor/retriever service used by the plugin. |
+| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | handles `/readyz`, `/v1/compress`, `/v1/retrieve`, stats, and real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
 
 Use the production installer or cross-platform smoke helpers before claiming runtime capability:
 

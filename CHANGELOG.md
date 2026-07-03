@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.10 — 2026-07-03
+
+- Clarified the runtime boundary: the Hermes plugin does not implement compression by itself; it calls a configured Headroom proxy (`headroom-ai[proxy]`) for `/v1/compress`, `/v1/retrieve`, stats, and smoke tests.
+- Reframed `RUNTIME_PARTIAL` as install/status-only operation, not production context reduction. Real compression, retrieval, `/headroom smoke`, middleware compression, and wrapper compression require `RUNTIME_FULL` or `RUNTIME_FULL_DURABLE`.
+- Updated README, install guide, compact agent brief, Context Economy docs, and bundled skill so fresh instances know what the plugin alone covers versus what the Headroom runtime covers.
+- Switched package license metadata to SPDX string form to remove the setuptools deprecation warning.
+- No provider/model routing mutation, external telemetry, core Hermes mutation, or automatic cross-profile propagation.
+
 ## v0.3.9 — 2026-07-03
 
 - Added portable Context Economy Loop documentation and gate: observe → classify → act → verify → learn, with exact-authority preservation and no instance-specific state.

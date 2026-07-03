@@ -52,6 +52,8 @@ class BundledSkillTest(unittest.TestCase):
             "headroom-ai[proxy]",
             "Do not print or advertise a plugin/skill version",
             "global/default routing",
+            "does not compress by itself",
+            "compression/retrieval/middleware compression are not active",
         ]
         for needle in required:
             self.assertIn(needle, text)

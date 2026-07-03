@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-headroom-plugin"
-version = "0.3.9"
+version = "0.3.10"
 description = "Hermes Agent plugin for safe Headroom context reduction, CCR retrieval, proxy smoke tests, and loopback-first runtime guardrails."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Hermes Headroom contributors" }]
 dependencies = [
   "PyYAML>=6,<7",
