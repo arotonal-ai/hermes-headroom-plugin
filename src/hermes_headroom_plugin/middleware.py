@@ -127,6 +127,31 @@ def _event_log_max_bytes() -> int:
     return max(64_000, max_bytes)
 
 
+def _falsey(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"0", "false", "no", "n", "off", "disabled", "disable"}
+
+
+def auto_compression_enabled(config: dict[str, Any] | None = None) -> bool:
+    """Return whether middleware may auto-compress tool outputs.
+
+    Runtime/status/smoke/retrieve remain available when this is false. This is
+    the lightweight on-demand mode for expensive owner-cockpit improvement loops.
+    """
+    env_value = os.environ.get("HEADROOM_AUTO_COMPRESSION")
+    if env_value is not None:
+        return not _falsey(env_value)
+    cfg = config if isinstance(config, dict) else load_context_reduction_config()
+    mode = str(cfg.get("mode") or cfg.get("compression_mode") or "").strip().lower().replace("-", "_")
+    if mode in {"manual", "on_demand", "ondemand", "off", "disabled"}:
+        return False
+    if mode in {"auto", "automatic", "on", "enabled"}:
+        return True
+    for key in ("auto_compression", "auto_compress", "auto_terminal"):
+        if key in cfg:
+            return not _falsey(cfg.get(key))
+    return True
+
+
 def _rotate_event_log_if_needed(path: Path) -> None:
     """Bound local observability JSONL growth before appending a new event."""
     try:
@@ -1004,6 +1029,22 @@ def compress_tool_result_for_context(
 ) -> str | None:
     """Return a compressed replacement for an eligible tool result, else None."""
     if not isinstance(result, str) or not result:
+        return None
+    if not auto_compression_enabled():
+        _emit_headroom_event(
+            action="skipped",
+            tool_name=tool_name,
+            args=args,
+            reason="auto_compression_disabled",
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            original_chars=len(result),
+            exact_authority="original_tool_result",
+        )
         return None
     health = readyz()
     if not health.get("ok"):

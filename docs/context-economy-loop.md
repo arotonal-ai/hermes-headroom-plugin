@@ -40,9 +40,9 @@ The portable product has two layers:
 | Layer | Portable responsibility | Requires Headroom runtime? |
 |---|---|---:|
 | Hermes plugin | register tool/command/skill/middleware, classify data, preserve exact/blocked outputs, expose status/audit/readiness | No |
-| Headroom runtime/proxy | execute `/v1/compress`, store/retrieve CCR payloads, return stats, pass compress -> retrieve smoke | Yes |
+| Headroom runtime/proxy | execute `/v1/compress`, store/retrieve CCR payloads, own CCR cache/store TTL/entry limits, return stats, pass compress -> retrieve smoke | Yes |
 
-`RUNTIME_PARTIAL` means the first layer works and the second layer is unavailable. It is acceptable for install verification, but it is not enough to claim active context reduction. `RUNTIME_FULL` or `RUNTIME_FULL_DURABLE` is required before expecting automatic eligible-intermediate compression.
+`RUNTIME_PARTIAL` means the first layer works and the second layer is unavailable. It is acceptable for install verification, but it is not enough to claim active context reduction. `RUNTIME_FULL` or `RUNTIME_FULL_DURABLE` is required before expecting automatic eligible-intermediate compression. Cache/store visibility is also runtime-owned: `/headroom cache` reads `/v1/retrieve/stats` and must not be treated as a plugin-local persistence layer.
 
 ## Admission policy
 

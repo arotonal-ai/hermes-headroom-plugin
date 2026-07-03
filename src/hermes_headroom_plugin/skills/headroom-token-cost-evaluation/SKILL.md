@@ -31,12 +31,12 @@ Use this skill when you need to:
 - decide whether a Headroom result is `INSTALL_PASS`, `RUNTIME_PARTIAL`, `RUNTIME_FULL`, `RUNTIME_FULL_DURABLE`, or `FAIL`;
 - use `headroom_retrieve` to resolve an exact CCR marker;
 - validate the upstream `headroom-ai[proxy]` dependency without touching the real Python environment;
-- check `/headroom status`, `/headroom on`, `/headroom smoke`, or `/headroom audit`;
+- check `/headroom status`, `/headroom on`, `/headroom smoke`, `/headroom cache`, or `/headroom audit`;
 - classify payloads as compressible, exact, or blocked;
 - operate the portable Context Economy Loop contract (`docs/context-economy-loop.md`) without copying private instance state;
 - generate weekly savings tables from JSONL evidence.
 
-The installable repo includes a compact visible final-answer marker (`[HR✓]` proxy ready / `[HR!]` not ready) via `transform_llm_output`; this marker reports runtime readiness only, not per-message compression, and can be disabled with `context_reduction.visible_status_marker: false`. The installable repo includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, plus packaged `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` wrappers for explicit operator commands. These wrappers retain exact sidecars/final packets and compress only eligible bulky intermediate traces; they do not change provider/model routing.
+The installable repo includes a compact visible final-answer marker (`[HR✓]` proxy ready / `[HR!]` not ready) via `transform_llm_output`; this marker reports runtime readiness only, not per-message compression, and can be disabled with `context_reduction.visible_status_marker: false`. The installable repo includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, plus packaged `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` wrappers for explicit operator commands. These wrappers retain exact sidecars/final packets and compress only eligible bulky intermediate traces; they do not change provider/model routing. For heavy iterative improvement loops, on-demand mode (`HEADROOM_AUTO_COMPRESSION=0` or `context_reduction.auto_compression: false`) keeps status/smoke/cache/retrieve available while preventing automatic middleware compression overhead.
 
 ## Portable Context Economy Loop
 
@@ -122,7 +122,7 @@ Then verify in Hermes:
 | `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes. |
 | `FAIL` | Plugin cannot be used | plugin not enabled, `/headroom` unavailable after reload, or install required copying another machine/profile state. |
 
-Never call proxy-down `RUNTIME_PARTIAL` a failed install. It is a valid degraded state.
+Never call proxy-down `RUNTIME_PARTIAL` a failed install. It is a valid degraded state. Also do not call the runtime CCR store a plugin cache: `/headroom cache` is read-only visibility into the runtime-owned store/TTL, and expired/cleared runtime entries can make older CCR markers unretrievable.
 
 ## Dependency and Proxy Split
 
@@ -132,7 +132,7 @@ The Hermes plugin and upstream Headroom runtime are separate layers. The plugin 
 |---|---|---|
 | Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | registers `headroom_retrieve`, `/headroom`, bundled skill, visible readiness marker, and fail-open middleware; does not perform compression locally. |
 | Upstream Headroom package | `headroom-ai[proxy]` | provides the compressor/retriever service used by the plugin. |
-| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | handles `/readyz`, `/v1/compress`, `/v1/retrieve`, stats, and real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
+| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | handles `/readyz`, `/v1/compress`, `/v1/retrieve`, runtime-owned CCR cache/store stats, and real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
 
 Use the production installer or cross-platform smoke helpers before claiming runtime capability:
 

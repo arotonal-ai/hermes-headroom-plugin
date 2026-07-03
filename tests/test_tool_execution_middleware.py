@@ -70,6 +70,27 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertIn("auto-tool-", event["report_path"])
         self.assertNotIn("delegate line", json.dumps(event, ensure_ascii=False))
 
+    def test_auto_compression_can_be_disabled_for_on_demand_mode(self):
+        large = self._large_result()
+        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "0"}), patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz") as ready, patch(
+            "hermes_headroom_plugin.middleware.compress_messages"
+        ) as compress:
+            out = middleware.on_tool_execution(
+                tool_name="delegate_task",
+                args={"goal": "diagnostics"},
+                next_call=lambda args: large,
+                turn_id="turn-manual",
+                platform="telegram",
+            )
+            events = self._events(td)
+        self.assertEqual(out, large)
+        ready.assert_not_called()
+        compress.assert_not_called()
+        self.assertEqual(events[-1]["action"], "skipped")
+        self.assertEqual(events[-1]["reason"], "auto_compression_disabled")
+
     def test_structured_execute_code_output_compresses_output_field(self):
         with tempfile.TemporaryDirectory() as td:
             compressed = {

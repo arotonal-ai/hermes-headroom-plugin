@@ -61,7 +61,7 @@ class RegisterTest(unittest.TestCase):
         self.assertIn("on", command_kwargs.get("args_hint", ""))
         self.assertIn("usage", command_kwargs.get("args_hint", ""))
         self.assertIn("runtime", command_kwargs.get("args_hint", ""))
-        self.assertIn("/headroom status|smoke|audit|on|runtime|usage|lanes|tail|decisions|why|opportunities", command_kwargs.get("description", ""))
+        self.assertIn("/headroom status|smoke|audit|on|runtime|cache|usage|lanes|tail|decisions|why|opportunities", command_kwargs.get("description", ""))
         self.assertIn("decisions", command_kwargs.get("args_hint", ""))
         self.assertIn("opportunities", command_kwargs.get("args_hint", ""))
         self.assertNotIn("schema-pressure", command_kwargs.get("args_hint", ""))
