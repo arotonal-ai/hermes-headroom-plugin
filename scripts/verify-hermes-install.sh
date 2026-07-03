@@ -17,7 +17,7 @@ Checks:
   - hermes CLI exists
   - plugin is enabled in Hermes
   - plugin source directory exists when installed as a Git/directory plugin
-  - optional proxy status/smoke helper can run from plugin source
+  - proxy status helper can run from plugin source; --smoke requires runtime
 USAGE
 }
 

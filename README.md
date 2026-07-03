@@ -8,7 +8,7 @@
 
 **Installable Hermes Agent plugin for safe Headroom context reduction and exact CCR retrieval.**
 
-Use it when a Hermes instance needs a conservative bridge to Headroom: install the Hermes plugin surface first, verify the optional local proxy separately, show compact `[HR✓]`/`[HR!]` readiness in final answers, compress only eligible bulky intermediate tool/lane results, and keep finals, secrets, patches, manifests, memory, and protected content exact or blocked.
+Use it when a Hermes instance needs a conservative bridge to Headroom: install the Hermes plugin surface first, then install or point it at a local Headroom runtime for actual compression. The plugin **does not compress by itself**; it calls the configured Headroom proxy for `/v1/compress`, `/v1/retrieve`, stats, and smoke tests. Without that runtime it is limited to install/status/readiness surfaces and fails open to exact outputs.
 
 ```bash
 hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
@@ -22,7 +22,7 @@ Then in Hermes:
 /headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
-If a local Headroom proxy is running:
+After the Headroom runtime/proxy is installed and healthy:
 
 ```text
 /headroom smoke
@@ -30,7 +30,7 @@ If a local Headroom proxy is running:
 
 ## Why this exists
 
-Hermes can benefit from context reduction, but a context/cost layer must be safe by default. This plugin packages Headroom retrieval/status/smoke plus a fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, without mutating global provider routing or asking for secrets.
+Hermes can benefit from context reduction, but a context/cost layer must be safe by default. This plugin packages the Hermes-side bridge: retrieval/status/smoke commands, runtime guardrails, bundled operating skill, and fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results. Actual compression/retrieval is performed by the upstream Headroom runtime behind the configured proxy; the plugin never mutates global provider routing or asks for secrets.
 
 | Problem | What this repo provides |
 |---|---|
@@ -46,17 +46,18 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | Capability | Status | Notes |
 |---|---:|---|
 | `headroom_retrieve` Hermes tool | ✅ included | retrieves exact content behind CCR markers |
-| `/headroom status` | ✅ included | reports configured proxy URL and readiness |
-| `/headroom smoke` | ✅ included | real compress → retrieve sentinel check when proxy is available |
-| `/headroom audit` | ✅ included | local policy/runtime posture summary |
+| `/headroom status` | ✅ plugin-only | reports configured proxy URL and readiness; does not compress |
+| `/headroom on` | ✅ plugin-only | read-only compatibility/readiness check; does not start or mutate runtime |
+| `/headroom smoke` | ✅ requires runtime | real compress → retrieve sentinel check through the configured Headroom proxy |
+| `/headroom audit` | ✅ plugin-only + runtime-aware | local policy/runtime posture summary |
 | Visible `[HR✓]` / `[HR!]` final-answer marker | ✅ included | reports proxy readiness only; disable with `context_reduction.visible_status_marker: false` if desired |
 | Conservative admission policy | ✅ included | exact/compressible/blocked classification scaffolding |
 | Bundled operating skill | ✅ included | `headroom_retrieve:headroom-token-cost-evaluation` when plugin skills are supported |
 | Full upstream proxy runtime smoke | ✅ included | `scripts/test-headroom-runtime-smoke.py` and GitHub Runtime Smoke workflow |
 | Remote proxy guardrail | ✅ included | non-loopback blocked unless explicitly allowed |
-| Eligible bulky tool/lane result compression | ✅ included | `tool_execution` middleware compresses large intermediate results such as `delegate_task`, terminal/process, browser/debug, web_extract, and session_search when proxy is healthy |
+| Eligible bulky tool/lane result compression | ✅ requires runtime | `tool_execution` middleware calls the Headroom proxy to compress large intermediate results such as `delegate_task`, terminal/process, browser/debug, web_extract, and session_search when the proxy is healthy; otherwise it returns the exact original result |
 | Context Economy Loop contract | ✅ documented | [docs/context-economy-loop.md](docs/context-economy-loop.md) describes portable observe → classify → act → verify → learn behavior without instance-specific state |
-| Worker/background/preflight CLI wrappers | ✅ included | `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` retain exact sidecars/final packets and compress only eligible bulky intermediates |
+| Worker/background/preflight CLI wrappers | ✅ require runtime for compression | wrappers retain exact sidecars/final packets; compression of eligible bulky intermediates happens only through a healthy Headroom proxy |
 | Global/default provider route mutation | ❌ not included | install does not change model/provider defaults |
 | External telemetry/API keys | ❌ not included | no telemetry, no keys required |
 
@@ -78,11 +79,11 @@ Expected first verification:
 /headroom status
 ```
 
-If this responds, the plugin has loaded. A missing proxy is `RUNTIME_PARTIAL`, not an install failure.
+If this responds, the plugin has loaded. A missing proxy is `RUNTIME_PARTIAL`: useful for status/audit/readiness, but **not** a production context-reduction state because no real compression or retrieval can occur.
 
 ### Production: install the Headroom proxy runtime
 
-`hermes plugins install ... --enable` installs only the Hermes surface. It does **not** install or supervise the upstream Headroom runtime. For `RUNTIME_FULL`, run the production runtime installer from a repo/plugin checkout:
+`hermes plugins install ... --enable` installs only the Hermes surface. It does **not** install or supervise the upstream Headroom runtime. For any real compression/retrieval path — `/headroom smoke`, `headroom_retrieve`, `tool_execution` compression, and wrapper compression — a reachable Headroom proxy is required. For `RUNTIME_FULL`, run the production runtime installer from a repo/plugin checkout:
 
 ```bash
 python scripts/install-production-runtime.py
@@ -131,13 +132,28 @@ Then in Hermes:
 /headroom smoke
 ```
 
+## Runtime boundary: plugin alone vs Headroom runtime
+
+The plugin is the Hermes integration layer; the Headroom runtime is the compression/retrieval engine. Treat them as separate layers:
+
+| Layer | Works without proxy? | What it covers |
+|---|---:|---|
+| Hermes plugin registration | ✅ | `headroom_retrieve` tool exists, `/headroom` command exists, bundled skill is discoverable, fail-open middleware is registered. |
+| Status/audit/readiness | ✅ partial | `/headroom status`, `/headroom on`, and audit can report configuration/readiness; they do not compress. |
+| `headroom_retrieve` exact CCR recovery | ❌ | Calls the proxy `/v1/retrieve`; without runtime it returns a clear proxy-not-ready/config error. |
+| `/headroom smoke` | ❌ | Calls proxy `/readyz`, `/v1/compress`, then `/v1/retrieve`; PASS requires runtime. |
+| `tool_execution` result compression | ❌ | Middleware first checks proxy readiness, then calls `/v1/compress`; if unavailable or unsafe, it returns the exact original result. |
+| Worker/background/preflight wrapper compression | ❌ | Wrappers retain exact sidecars regardless, but compression requires the proxy. |
+
+So the runtime is “optional” only for install/status/audit/degraded operation. It is **required** for the product claim “Headroom context reduction is active.”
+
 ## Acceptance states
 
 | State | Meaning | Evidence |
 |---|---|---|
 | `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` enabled and `/headroom status` responds after restart/new session |
-| `RUNTIME_PARTIAL` | Plugin works, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz` |
-| `RUNTIME_FULL` | Plugin, dependency, and local proxy all work in the current process/session | dependency smoke passes and `/headroom smoke` or runtime-smoke sentinel retrieval passes |
+| `RUNTIME_PARTIAL` | Plugin commands load, but proxy is unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; status/audit are usable, but compression/retrieval/middleware compression are not active |
+| `RUNTIME_FULL` | Plugin, dependency, and local proxy all work in the current process/session | dependency smoke passes and `/headroom smoke` or runtime-smoke sentinel retrieval passes; eligible intermediate compression can run |
 | `RUNTIME_FULL_DURABLE` | Linux user-service deployment survives gateway restart/logout | `python scripts/install-production-runtime.py --systemd-user` passes, `hermes-context-reduction.service` is `enabled` + `active`, and `/headroom smoke` passes |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local state |
 

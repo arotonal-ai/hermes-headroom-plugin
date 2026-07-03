@@ -4,7 +4,7 @@ Use this when another Hermes/AI agent is given only this repository URL and aske
 
 ## Goal
 
-Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing. With a healthy local proxy, the plugin may compress eligible bulky intermediate `tool_execution` results; exact/edit-critical/sensitive content remains exact or blocked.
+Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing. The plugin does not compress by itself; real compression/retrieval requires a healthy local Headroom proxy. Exact/edit-critical/sensitive content remains exact or blocked.
 
 ## Platform note
 
@@ -24,7 +24,7 @@ hermes gateway restart || true
 
 If operating inside an active Hermes chat instead of gateway shell, start a fresh session with `/new` after install.
 
-Production runtime for process-level `RUNTIME_FULL`:
+Production runtime for process-level `RUNTIME_FULL` — required for `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression:
 
 ```bash
 python scripts/install-production-runtime.py
@@ -94,17 +94,17 @@ PASS if:
 - `/headroom status` and `/headroom on` respond after restart/new session;
 - no secrets are requested or printed;
 - global/default provider routing is unchanged;
-- if proxy/runtime is enabled, eligible bulky intermediate tool/lane result compression is available via `tool_execution` middleware.
+- if proxy/runtime is enabled, eligible bulky intermediate tool/lane result compression is available via `tool_execution` middleware; without proxy, middleware returns the exact original result.
 
 PARTIAL if:
 
-- install succeeds but `/headroom smoke` fails because no Headroom proxy is running.
+- install succeeds but `/headroom smoke` fails because no Headroom proxy is running; status/audit are usable, but compression/retrieval are not active.
 
 FULL if:
 
 - `scripts/install-production-runtime.py` returns `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval;
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval;
-- optional result-compression checks preserve exact/blocked tools such as `read_file`, `patch`, and `git diff`.
+- runtime-dependent result-compression checks preserve exact/blocked tools such as `read_file`, `patch`, and `git diff`.
 
 DURABLE on Linux if:
 

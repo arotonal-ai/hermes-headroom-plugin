@@ -383,7 +383,7 @@ def classify_command(command: list[str], expected_chars: int | None, threshold: 
 
 
 def worker_main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run a bounded worker command with exact sidecars and optional Headroom compression.")
+    parser = argparse.ArgumentParser(description="Run a bounded worker command with exact sidecars and runtime-dependent Headroom compression.")
     parser.add_argument("--lane", default="worker")
     parser.add_argument("--query", default="errors failures warnings root cause verification final status")
     parser.add_argument("--out-root", default=str(default_out_root()))
