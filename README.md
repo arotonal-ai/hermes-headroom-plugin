@@ -50,6 +50,7 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | `/headroom on` | ✅ plugin-only | read-only compatibility/readiness check; does not start or mutate runtime |
 | `/headroom smoke` | ✅ requires runtime | real compress → retrieve sentinel check through the configured Headroom proxy |
 | `/headroom audit` | ✅ plugin-only + runtime-aware | local policy/runtime posture summary |
+| `/headroom cache` | ✅ runtime read-only | reports runtime-owned CCR store/cache entries, TTL, backend, usage, and retrieval counts; the plugin has no independent CCR cache |
 | Visible `[HR✓]` / `[HR!]` final-answer marker | ✅ included | reports proxy readiness only; disable with `context_reduction.visible_status_marker: false` if desired |
 | Conservative admission policy | ✅ included | exact/compressible/blocked classification scaffolding |
 | Bundled operating skill | ✅ included | `headroom_retrieve:headroom-token-cost-evaluation` when plugin skills are supported |
@@ -142,10 +143,34 @@ The plugin is the Hermes integration layer; the Headroom runtime is the compress
 | Status/audit/readiness | ✅ partial | `/headroom status`, `/headroom on`, and audit can report configuration/readiness; they do not compress. |
 | `headroom_retrieve` exact CCR recovery | ❌ | Calls the proxy `/v1/retrieve`; without runtime it returns a clear proxy-not-ready/config error. |
 | `/headroom smoke` | ❌ | Calls proxy `/readyz`, `/v1/compress`, then `/v1/retrieve`; PASS requires runtime. |
+| `/headroom cache` / `/headroom runtime` | ❌ for store data | Read-only views of runtime health and retrieve/store stats; without runtime they can only report unavailable. |
 | `tool_execution` result compression | ❌ | Middleware first checks proxy readiness, then calls `/v1/compress`; if unavailable or unsafe, it returns the exact original result. |
 | Worker/background/preflight wrapper compression | ❌ | Wrappers retain exact sidecars regardless, but compression requires the proxy. |
 
 So the runtime is “optional” only for install/status/audit/degraded operation. It is **required** for the product claim “Headroom context reduction is active.”
+
+### On-demand mode for heavy operator loops
+
+For iterative development/debug loops, leave the runtime running but disable middleware auto-compression when the overhead is not worth it:
+
+```bash
+export HEADROOM_AUTO_COMPRESSION=0
+```
+
+Or in Hermes config:
+
+```yaml
+context_reduction:
+  auto_compression: false
+```
+
+This keeps `/headroom status`, `/headroom smoke`, `/headroom cache`, and `headroom_retrieve` available, but tool outputs return exact unless explicitly compressed through a wrapper/runtime path. Use this for plugin improvement sessions with repeated tests/gates; re-enable with `HEADROOM_AUTO_COMPRESSION=1` or `context_reduction.auto_compression: true` when you want automatic eligible-intermediate compression.
+
+### Cache / CCR store boundary
+
+There is no separate plugin-side CCR cache. The cache/store that makes CCR markers retrievable belongs to the Headroom runtime/proxy. `/headroom cache` is read-only and reports the runtime store posture: entries, max entries, TTL, backend type, bytes used when the runtime exposes it, retrieval/event counts, and recent retrieval count. It does not purge, mutate, or expose admin/debug APIs.
+
+Operationally: if the runtime cache TTL expires or the runtime store is cleared, old CCR markers may stop resolving through `headroom_retrieve`. The plugin still keeps local reports and redacted sidecars for audit where middleware created them, but those sidecars are not a replacement for the runtime CCR store when exact full recovery is required. Treat long-lived canonical/source material as exact, not cache-backed compressed context.
 
 ## Acceptance states
 
@@ -182,7 +207,7 @@ If you are another Hermes/AI instance installing or auditing this repo:
 2. Do **not** ask for API keys; this install does not need them.
 3. Install with native Hermes plugin commands first.
 4. Verify `/headroom status` before claiming `INSTALL_PASS`.
-5. Verify `scripts/test-headroom-runtime-smoke.py` or `/headroom smoke` before claiming `RUNTIME_FULL`.
+5. Verify `scripts/test-headroom-runtime-smoke.py` or `/headroom smoke` before claiming `RUNTIME_FULL`. Use `/headroom cache` to inspect runtime-owned CCR store TTL/pressure when debugging marker retrieval.
 6. Keep global/default provider routing unchanged.
 7. Keep remote proxies disabled unless explicitly allowed by the operator.
 8. Do not invent token-savings metrics.

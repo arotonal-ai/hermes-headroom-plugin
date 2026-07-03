@@ -4,7 +4,7 @@ Use this when another Hermes/AI agent is given only this repository URL and aske
 
 ## Goal
 
-Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing. The plugin does not compress by itself; real compression/retrieval requires a healthy local Headroom proxy. Exact/edit-critical/sensitive content remains exact or blocked.
+Install and enable the Hermes Headroom plugin without exposing secrets, copying owner-local state, or changing global/default provider routing. The plugin does not compress by itself; real compression/retrieval requires a healthy local Headroom proxy. Exact/edit-critical/sensitive content remains exact or blocked. For heavy improvement loops, use on-demand mode (`HEADROOM_AUTO_COMPRESSION=0` or `context_reduction.auto_compression: false`) so the runtime stays available but middleware auto-compression does not add overhead.
 
 ## Platform note
 
@@ -94,7 +94,7 @@ PASS if:
 - `/headroom status` and `/headroom on` respond after restart/new session;
 - no secrets are requested or printed;
 - global/default provider routing is unchanged;
-- if proxy/runtime is enabled, eligible bulky intermediate tool/lane result compression is available via `tool_execution` middleware; without proxy, middleware returns the exact original result.
+- if proxy/runtime is enabled, eligible bulky intermediate tool/lane result compression is available via `tool_execution` middleware; without proxy, middleware returns the exact original result. Use `/headroom cache` only as read-only runtime-owned CCR store visibility; the plugin has no independent CCR cache.
 
 PARTIAL if:
 

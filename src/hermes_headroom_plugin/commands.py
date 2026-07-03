@@ -8,9 +8,10 @@ from typing import Any
 
 from .health import audit
 from .hooks import headroom_status_marker, visible_status_marker_enabled
+from .middleware import auto_compression_enabled
 from .proxy import hermes_home, readyz, retrieve_stats, smoke
 
-USAGE = "Usage: /headroom status|smoke|audit|on|runtime|stats|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities"
+USAGE = "Usage: /headroom status|smoke|audit|on|runtime|stats|cache|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities"
 REPEATED_TERMINAL_BELOW_MIN_CANDIDATE_CHARS = 28_000
 
 
@@ -37,7 +38,8 @@ def _render_status(health: dict) -> str:
         detail = f" · detail={detail_text}"
     marker_state = "on" if visible_status_marker_enabled() else "off"
     marker = headroom_status_marker(health) if marker_state == "on" else "disabled"
-    return f"Headroom status · ok={health['ok']} · proxy={health['proxy_url']} · status={health['status']} · visible_marker={marker_state}:{marker}{detail}"
+    auto_state = "on" if auto_compression_enabled() else "manual"
+    return f"Headroom status · ok={health['ok']} · proxy={health['proxy_url']} · status={health['status']} · visible_marker={marker_state}:{marker} · auto_compression={auto_state}{detail}"
 
 
 
@@ -162,6 +164,8 @@ def _reason_family(action: str, reason: str) -> str:
         return "safety_blocked"
     if reason_l.startswith("exact_tool") or reason_l in {"patch_diff", "final_or_claim_ledger", "browser_vision_final_default_exact", "exact_command"}:
         return "safety_exact"
+    if "auto_compression_disabled" in reason_l:
+        return "manual_mode"
     if "below_min_chars" in reason_l:
         return "below_min"
     if "not_intermediate_lane" in reason_l:
@@ -249,6 +253,73 @@ def _render_runtime_stats() -> str:
     }
     body = " ".join(f"{key}={_safe_cell(value, limit=80)}" for key, value in fields.items() if value is not None)
     return f"Headroom runtime · proxy={health.get('proxy_url')} · retrieve_stats=PASS · {body}"
+
+
+def _format_seconds(value: Any) -> str:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return "unknown"
+    if seconds <= 0:
+        return str(seconds) + "s"
+    minutes, sec = divmod(seconds, 60)
+    hours, minute = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h{minute:02d}m"
+    if minutes:
+        return f"{minutes}m{sec:02d}s" if sec else f"{minutes}m"
+    return f"{sec}s"
+
+
+def _render_cache_status() -> str:
+    """Render runtime-owned CCR cache/store posture.
+
+    The plugin has no independent CCR cache. This command is a read-only view of
+    the configured Headroom runtime's retrieve store using `/readyz` and
+    `/v1/retrieve/stats` only.
+    """
+    health = readyz()
+    proxy_url = health.get("proxy_url")
+    body = health.get("body") if isinstance(health.get("body"), dict) else {}
+    checks = body.get("checks") if isinstance(body.get("checks"), dict) else {}
+    cache_check = checks.get("cache") if isinstance(checks.get("cache"), dict) else {}
+    cache_status = _safe_cell(cache_check.get("status") or ("ready" if health.get("ok") else "unavailable"), limit=40)
+    cache_enabled = cache_check.get("enabled")
+    if not health.get("ok"):
+        return _render_status(health) + f" · cache=unavailable · plugin_cache=none · note=CCR store is runtime-owned"
+
+    stats = retrieve_stats(proxy_url=proxy_url)
+    if not stats.get("success"):
+        return f"Headroom cache · proxy={proxy_url} · cache_check={cache_status} · store=FAIL · plugin_cache=none · error={_safe_cell(stats.get('error'), limit=180)}"
+
+    store = stats.get("store") if isinstance(stats.get("store"), dict) else {}
+    backend = store.get("backend") if isinstance(store.get("backend"), dict) else {}
+    entries = store.get("entry_count")
+    max_entries = store.get("max_entries")
+    usage_pct = None
+    try:
+        if max_entries is not None and int(max_entries) > 0 and entries is not None:
+            usage_pct = round((int(entries) / int(max_entries)) * 100, 1)
+    except (TypeError, ValueError):
+        usage_pct = None
+    ttl_s = store.get("default_ttl_seconds")
+    recent = stats.get("recent_retrievals") if isinstance(stats.get("recent_retrievals"), list) else []
+    fields = {
+        "cache_check": cache_status,
+        "enabled": cache_enabled,
+        "entries": entries,
+        "max": max_entries,
+        "usage_pct": usage_pct,
+        "ttl_s": ttl_s,
+        "ttl": _format_seconds(ttl_s),
+        "backend": backend.get("backend_type"),
+        "bytes": backend.get("bytes_used"),
+        "retrievals": store.get("total_retrievals"),
+        "events": store.get("event_count"),
+        "recent": len(recent),
+    }
+    rendered = " ".join(f"{key}={_safe_cell(value, limit=80)}" for key, value in fields.items() if value is not None)
+    return f"Headroom cache · proxy={proxy_url} · store=PASS · {rendered} · plugin_cache=none · note=CCR markers may expire with runtime TTL; retain exact sidecars/reports for audit"
 
 def _render_usage(parts: list[str]) -> str:
     events, path = _read_headroom_events()
@@ -470,6 +541,8 @@ def handle_headroom_command(raw_args: str = "") -> str:
         return _render_smoke(smoke())
     if action in {"runtime", "stats"}:
         return _render_runtime_stats()
+    if action == "cache":
+        return _render_cache_status()
     if action == "usage":
         return _render_usage(parts)
     if action == "lanes":
@@ -503,6 +576,7 @@ def events_summary_main(argv: list[str] | None = None) -> int:
     usage.add_argument("--turn", dest="turn_id", default="", help="optional turn_id to scope usage summary")
     sub.add_parser("lanes", help="summarize lane-level Headroom activity")
     sub.add_parser("runtime", help="show read-only Headroom runtime retrieval/store stats")
+    sub.add_parser("cache", help="show read-only runtime-owned CCR cache/store posture")
     decisions = sub.add_parser("decisions", help="show grouped Headroom compression/exact/skip/block decisions")
     decisions.add_argument("--turn", dest="turn_id", default="", help="optional turn_id to scope decision matrix")
     sub.add_parser("opportunities", help="show ranked read-only savings opportunities from event metadata")
@@ -520,6 +594,8 @@ def events_summary_main(argv: list[str] | None = None) -> int:
         text = _render_lanes()
     elif command == "runtime":
         text = _render_runtime_stats()
+    elif command == "cache":
+        text = _render_cache_status()
     elif command == "tail":
         text = _render_tail(["tail", str(getattr(args, "lines", 5))])
     elif command == "opportunities":

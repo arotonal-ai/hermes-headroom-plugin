@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -36,6 +37,12 @@ class SmokeTest(unittest.TestCase):
         with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
             text = handle_headroom_command('status')
         self.assertIn('visible_marker=on:[HR✓]', text)
+        self.assertIn('auto_compression=on', text)
+
+    def test_command_status_reports_manual_auto_compression_mode(self):
+        with patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "0"}), patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
+            text = handle_headroom_command('status')
+        self.assertIn('auto_compression=manual', text)
 
     def test_command_smoke_proxy_down(self):
         with patch('hermes_headroom_plugin.commands.smoke', return_value={"ok": False, "phase": "readyz", "proxy_url": "http://x", "error": "proxy not ready"}):
@@ -70,6 +77,38 @@ class SmokeTest(unittest.TestCase):
         self.assertIn('recent=2', text)
         self.assertNotIn('/sensitive/local/path.db', text)
 
+    def test_command_cache_reports_runtime_owned_store_without_local_path(self):
+        with patch('hermes_headroom_plugin.commands.readyz', return_value={
+            "ok": True,
+            "proxy_url": "http://127.0.0.1:28787",
+            "status": 200,
+            "body": {"ready": True, "checks": {"cache": {"enabled": True, "status": "healthy"}}},
+        }), patch(
+            'hermes_headroom_plugin.commands.retrieve_stats',
+            return_value={
+                "success": True,
+                "store": {
+                    "entry_count": 25,
+                    "max_entries": 100,
+                    "default_ttl_seconds": 1800,
+                    "total_retrievals": 9,
+                    "event_count": 30,
+                    "backend": {"backend_type": "sqlite", "bytes_used": 4096, "db_path": "/sensitive/local/ccr_store.db"},
+                },
+                "recent_retrievals": [{"hash": "abc"}],
+            },
+        ):
+            text = handle_headroom_command('cache')
+        self.assertIn('Headroom cache', text)
+        self.assertIn('store=PASS', text)
+        self.assertIn('entries=25', text)
+        self.assertIn('usage_pct=25.0', text)
+        self.assertIn('ttl_s=1800', text)
+        self.assertIn('ttl=30m', text)
+        self.assertIn('plugin_cache=none', text)
+        self.assertIn('CCR markers may expire', text)
+        self.assertNotIn('/sensitive/local/ccr_store.db', text)
+
     def test_command_on_reports_active_without_mutating_runtime(self):
         with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
             text = handle_headroom_command('on')
@@ -86,7 +125,7 @@ class SmokeTest(unittest.TestCase):
 
     def test_unknown_command_usage_mentions_on_compatibility(self):
         text = handle_headroom_command('some')
-        self.assertIn('status|smoke|audit|on|runtime', text)
+        self.assertIn('status|smoke|audit|on|runtime|stats|cache', text)
 
 
     def _write_events(self, root, events):
@@ -214,7 +253,7 @@ class SmokeTest(unittest.TestCase):
             self.assertIn('terminal lane=terminal', decision_text)
             self.assertIn('family=compressed', decision_text)
 
-            with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}), patch(
+            with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True, "checks": {"cache": {"enabled": True, "status": "healthy"}}}}), patch(
                 'hermes_headroom_plugin.commands.retrieve_stats',
                 return_value={"success": True, "store": {"entry_count": 1, "backend": {"backend_type": "sqlite"}}, "recent_retrievals": []},
             ):
@@ -223,6 +262,16 @@ class SmokeTest(unittest.TestCase):
                     code = events_summary_main(['runtime'])
             self.assertEqual(code, 0)
             self.assertIn('Headroom runtime', buf.getvalue())
+
+            with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True, "checks": {"cache": {"enabled": True, "status": "healthy"}}}}), patch(
+                'hermes_headroom_plugin.commands.retrieve_stats',
+                return_value={"success": True, "store": {"entry_count": 1, "max_entries": 10, "default_ttl_seconds": 60, "backend": {"backend_type": "sqlite"}}, "recent_retrievals": []},
+            ):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    code = events_summary_main(['cache'])
+            self.assertEqual(code, 0)
+            self.assertIn('Headroom cache', buf.getvalue())
 
 
 if __name__ == '__main__':

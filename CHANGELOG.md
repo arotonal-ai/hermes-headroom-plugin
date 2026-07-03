@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.3.11 — 2026-07-03
+
+- Added `/headroom cache` and `headroom-events-summary cache` as read-only views of the runtime-owned CCR cache/store.
+- Clarified that the plugin has no independent CCR cache; cache/TTL/entry limits live in the Headroom runtime/proxy.
+- Documented cache risk: CCR markers can expire with runtime TTL, so exact sidecars/reports remain the audit fallback.
+- Kept cache visibility read-only: no admin/debug endpoint exposure, no purge mutation, no provider routing mutation, and no telemetry.
+- Added on-demand auto-compression control: `HEADROOM_AUTO_COMPRESSION=0` or `context_reduction.auto_compression: false` disables middleware auto-compression while keeping status, smoke, cache, and retrieval available.
+
 ## v0.3.10 — 2026-07-03
 
 - Clarified the runtime boundary: the Hermes plugin does not implement compression by itself; it calls a configured Headroom proxy (`headroom-ai[proxy]`) for `/v1/compress`, `/v1/retrieve`, stats, and smoke tests.

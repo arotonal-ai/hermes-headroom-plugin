@@ -91,11 +91,7 @@ Do not rely on `python3` on native Windows; it may be the broken Microsoft Store
 
 Windows `RUNTIME_FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11 and 3.12. Still require target-host evidence when diagnosing a user machine, because global Python installs and shell aliases can drift. Prefer Python 3.11/3.12 for the proxy venv on Windows; newer global Python versions may install but still fail native runtime imports.
 
-Then verify inside Hermes:
-
-```text
-/headroom smoke
-```
+Then verify inside Hermes: `/headroom smoke`; use `/headroom cache` for read-only runtime-owned CCR store/cache posture.
 
 Expected: smoke PASS with sentinel retrieval. With a healthy proxy, the plugin can compress eligible bulky intermediate `tool_execution` results such as `delegate_task`, terminal/process, browser/debug, `web_extract`, and `session_search`. Exact/edit-critical/sensitive outputs still fail closed to the original result. This repo does **not** enable global/default provider routing by default.
 
@@ -105,7 +101,7 @@ Expected: smoke PASS with sentinel retrieval. With a healthy proxy, the plugin c
 |---|---|---|
 | `INSTALL_PASS` | Plugin installed and Hermes can load it | `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`; `/headroom status` and `/headroom on` respond after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin commands load, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; no compression/retrieval/middleware compression is active |
-| `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval |
+| `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval; `/headroom cache` can read runtime-owned CCR store stats |
 | `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `python scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local `~/.hermes` state |
 
@@ -138,7 +134,14 @@ scripts/test-clean-hermes-install.sh --local
 
 Compatibility: production install defaults to latest available `headroom-ai[proxy]` rather than pinning a historical version. If upstream releases regress, use `--spec` / `HEADROOM_AI_SPEC` as an explicit rollback override and capture dependency + runtime smoke evidence before changing the documented default. See [docs/compatibility.md](docs/compatibility.md) for certified vs experimental runtime support; Python 3.13/3.14 are monitored separately and are not certified by default.
 
-## 5. Proxy endpoint configuration
+## 5. On-demand auto-compression and cache
+For heavy iterative improvement loops, disable middleware auto-compression without stopping the runtime: set `HEADROOM_AUTO_COMPRESSION=0` for the process, or `context_reduction.auto_compression: false` in Hermes config plus fresh session/gateway restart. Status/smoke/cache/retrieve still work; eligible tool outputs return exact unless an explicit wrapper/runtime path compresses them.
+
+Cache boundary:
+
+The plugin has no independent CCR cache. The Headroom runtime/proxy owns CCR store TTL, entry limits, backend, and eviction. After runtime install, `/headroom cache` is read-only; healthy output includes `store=PASS`, `entries`, `max`, `ttl_s`, `backend`, and `plugin_cache=none`. Expired/cleared runtime entries can make older CCR markers unretrievable, so keep canonical/source material exact and treat local reports/sidecars as audit fallback only. No purge/admin/debug cache mutation command is exposed.
+
+## 6. Proxy endpoint configuration
 
 Default plugin/runtime target:
 
@@ -167,14 +170,14 @@ Restart/fresh-session before rechecking `/headroom status` and `/headroom on`.
 
 **Remote proxy guardrail:** loopback (`127.0.0.1` / `localhost`) is allowed by default. Non-loopback `HEADROOM_PROXY_URL` is blocked unless you explicitly set `HEADROOM_ALLOW_REMOTE_PROXY=1` or `context_reduction.allow_remote_proxy: true`; use that only for controlled, trusted endpoints.
 
-## 6. Update
+## 7. Update
 
 ```bash
 hermes plugins update headroom_retrieve
 hermes gateway restart
 ```
 
-## 7. Disable / remove / rollback
+## 8. Disable / remove / rollback
 
 Disable but keep files:
 
