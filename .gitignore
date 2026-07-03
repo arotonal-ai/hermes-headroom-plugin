@@ -10,3 +10,5 @@ dist/
 .env
 *.log
 release-candidate-runs/
+context-economy-loop-gate-runs/
+qa/

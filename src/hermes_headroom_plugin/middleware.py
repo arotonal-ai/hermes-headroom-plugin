@@ -24,6 +24,10 @@ DEFAULT_EVENT_LOG_MAX_BYTES = 5_000_000
 EVENT_LOG_ROTATIONS = 3
 _PLATFORM_CONTEXT_MAX = 512
 _PLATFORM_BY_KEY: dict[str, str] = {}
+_BELOW_MIN_AGGREGATE_BUFFERS: dict[str, dict[str, Any]] = {}
+BELOW_MIN_AGGREGATE_CHARS = 28_000
+BELOW_MIN_AGGREGATE_MAX_CHUNKS = 24
+BELOW_MIN_AGGREGATE_MAX_BUFFER_KEYS = 128
 
 ELIGIBLE_TOOLS = {
     "delegate_task",
@@ -234,6 +238,18 @@ def _infer_lane(tool_name: str, args: dict[str, Any], data_class: Any = None) ->
         return "browser"
     if tool in {"web_extract", "session_search", "x_search"}:
         return "research"
+    if tool in {"read_file", "search_files"}:
+        return "file"
+    if tool in {"patch", "write_file", "mcp_open_design_write_file"}:
+        return "edit"
+    if tool in {"skill_view", "skill_manage"}:
+        return "skill"
+    if tool in {"memory", "fact_store", "todo"}:
+        return "state"
+    if tool.startswith("mcp_open_design_"):
+        return "artifact"
+    if tool.startswith("kanban"):
+        return "kanban"
     if str(data_class or "") in {"qa_trace", "diagnostic_trace"}:
         return "qa"
     return "unknown"
@@ -756,6 +772,223 @@ def _build_trace(tool_name: str, args: dict[str, Any], result: str, *, task_id: 
     )
 
 
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _below_min_aggregate_enabled() -> bool:
+    if _truthy(os.environ.get("HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE")):
+        return True
+    try:
+        cfg = load_context_reduction_config()
+    except Exception:
+        cfg = {}
+    return _truthy(cfg.get("experimental_below_min_terminal_aggregate"))
+
+
+def _below_min_aggregate_key(*, session_id: str, turn_id: str, task_id: str, api_request_id: str) -> str:
+    for value in (turn_id, api_request_id, task_id, session_id):
+        safe = _safe_event_text(value, limit=120)
+        if safe:
+            return safe
+    return "global"
+
+
+def _prune_below_min_buffers() -> None:
+    if len(_BELOW_MIN_AGGREGATE_BUFFERS) <= BELOW_MIN_AGGREGATE_MAX_BUFFER_KEYS:
+        return
+    for key in list(_BELOW_MIN_AGGREGATE_BUFFERS)[: len(_BELOW_MIN_AGGREGATE_BUFFERS) - BELOW_MIN_AGGREGATE_MAX_BUFFER_KEYS]:
+        _BELOW_MIN_AGGREGATE_BUFFERS.pop(key, None)
+
+
+def _maybe_compress_terminal_below_min_aggregate(
+    *,
+    tool_name: str,
+    args: dict[str, Any],
+    result: str,
+    health: dict[str, Any],
+    task_id: str = "",
+    tool_call_id: str = "",
+    session_id: str = "",
+    turn_id: str = "",
+    api_request_id: str = "",
+    platform: str = "",
+    duration_ms: Any = None,
+) -> str | None:
+    """Experimental local-only prototype for repeated terminal below-min chunks.
+
+    Default-off. When explicitly enabled, buffer small terminal chunks within a
+    turn/session key and emit at most one aggregate marker when cumulative size
+    is material. Exact/protected gates run before this helper, so exact commands
+    and sensitive material never enter this path.
+    """
+    if tool_name != "terminal" or not _below_min_aggregate_enabled():
+        return None
+    key = _below_min_aggregate_key(session_id=session_id, turn_id=turn_id, task_id=task_id, api_request_id=api_request_id)
+    redacted = _redact_text(result)
+    buffer = _BELOW_MIN_AGGREGATE_BUFFERS.setdefault(
+        key,
+        {
+            "chunks": [],
+            "chars": 0,
+            "first_task_id": task_id,
+            "first_tool_call_id": tool_call_id,
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "api_request_id": api_request_id,
+            "platform": platform,
+        },
+    )
+    chunks = buffer.setdefault("chunks", [])
+    chunks.append(redacted)
+    if len(chunks) > BELOW_MIN_AGGREGATE_MAX_CHUNKS:
+        chunks.pop(0)
+    buffer["chars"] = sum(len(chunk) for chunk in chunks)
+    _prune_below_min_buffers()
+    if len(chunks) < 2 or int(buffer.get("chars") or 0) < BELOW_MIN_AGGREGATE_CHARS:
+        return None
+
+    report_dir = _report_dir()
+    stamp = _utc_stamp()
+    safe_tool = _safe_name(tool_name)
+    source_path = report_dir / f"auto-tool-{stamp}-{safe_tool}-below-min-aggregate.redacted.log"
+    compressed_path = report_dir / f"auto-tool-{stamp}-{safe_tool}-below-min-aggregate.compressed.json"
+    report_path = report_dir / f"auto-tool-{stamp}-{safe_tool}-below-min-aggregate.json"
+    aggregate_body = "\n\n".join(
+        [
+            "===== BELOW-MIN TERMINAL AGGREGATE =====",
+            f"aggregate_key={key}",
+            f"chunk_count={len(chunks)}",
+            f"aggregate_chars={buffer['chars']}",
+            "exact_sidecar_authority=true",
+            "policy_mutation=false",
+            "global_threshold_change=false",
+            "exact_commands_relaxed=false",
+            "===== CHUNKS =====",
+        ]
+        + [f"----- chunk {idx + 1}/{len(chunks)} -----\n{chunk}" for idx, chunk in enumerate(chunks)]
+    )
+    source_path.write_text(aggregate_body, encoding="utf-8")
+    trace = _build_trace(tool_name, args, aggregate_body, task_id=task_id, duration_ms=duration_ms)
+    messages = [
+        {"role": "system", "content": "Headroom intermediate tool-result compression: terminal below-min aggregate."},
+        {"role": "user", "content": "Compress this bounded aggregate of repeated below-min terminal chunks. Preserve errors, warnings, paths, counts, status, and gate fields. Exact raw aggregate sidecar is retained."},
+        {"role": "tool", "tool_call_id": _safe_name(tool_call_id or tool_name), "name": "worker_trace", "content": trace},
+    ]
+    compressed = compress_messages(messages, proxy_url=health.get("proxy_url"))
+    compressed_path.write_text(json.dumps(compressed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    markers = _extract_markers(compressed.get("messages")) if compressed.get("ok") else []
+    marker = markers[0] if markers else None
+    before = compressed.get("tokens_before")
+    after = compressed.get("tokens_after")
+    saved = compressed.get("tokens_saved")
+    useful = bool(marker) and isinstance(saved, int) and saved > 500 and isinstance(after, int) and isinstance(before, int) and after < before
+    report = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "kind": "auto-tool-result-below-min-aggregate",
+        "tool_name": tool_name,
+        "task_id": task_id,
+        "tool_call_id": tool_call_id,
+        "aggregate_key": key,
+        "chunk_count": len(chunks),
+        "aggregate_chars": buffer.get("chars"),
+        "source_path": str(source_path),
+        "compressed_path": str(compressed_path),
+        "marker": marker,
+        "marker_count": len(markers),
+        "tokens_before": before,
+        "tokens_after": after,
+        "tokens_saved": saved,
+        "compression_ratio": compressed.get("compression_ratio"),
+        "compression_input_shape": "terminal_below_min_per_turn_aggregate",
+        "policy_mutation": False,
+        "global_threshold_change": False,
+        "exact_commands_relaxed": False,
+        "useful": useful,
+        "source_retention": "redacted_aggregate_sidecar",
+    }
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if not useful:
+        return None
+
+    _BELOW_MIN_AGGREGATE_BUFFERS.pop(key, None)
+    _emit_headroom_event(
+        action="compressed",
+        tool_name=tool_name,
+        args=args,
+        reason="below_min_aggregate",
+        task_id=task_id,
+        tool_call_id=tool_call_id,
+        session_id=session_id,
+        turn_id=turn_id,
+        api_request_id=api_request_id,
+        platform=platform,
+        data_class="diagnostic_trace",
+        original_chars=int(buffer.get("chars") or 0),
+        redacted_chars=int(buffer.get("chars") or 0),
+        tokens_before=before,
+        tokens_after=after,
+        tokens_saved=saved,
+        marker=marker,
+        report_path=report_path,
+        source_path=source_path,
+        compressed_path=compressed_path,
+        exact_authority="redacted_aggregate_sidecar",
+    )
+    payload = (
+        f"[Headroom auto-compressed below-min terminal aggregate · chunks={len(chunks)} aggregate_chars={buffer.get('chars')} "
+        f"tokens_before={before} tokens_after={after} saved={saved} marker={marker}]\n"
+        "[Headroom compressed intermediate]\n"
+        "classification: diagnostic_trace\n"
+        "surface: tool_result_below_min_aggregate\n"
+        "tool_or_lane: terminal\n"
+        "action: aggregate_below_min_chunks\n"
+        "source_retention:\n"
+        f"  report: {report_path}\n"
+        "  sidecar_type: redacted_aggregate_sidecar\n"
+        f"  source_path: {source_path}\n"
+        f"  marker: {marker}\n"
+        "contract: compressed body is intermediate only; verify material claims against exact source/authorized retrieval before final decisions.\n"
+        f"Use headroom_retrieve(hash='{marker}', query='<focused query>') for exact slices."
+    )
+    return _shorten(payload)
+
+
+def _compression_body_for_tool_result(tool_name: str, redacted_result: str) -> tuple[str, str]:
+    """Return the payload shape to send to Headroom for compression.
+
+    Hermes terminal results can arrive as a JSON object string such as
+    ``{"output": "...large log...", "exit_code": 0}``. Sending that
+    escaped JSON wrapper to Headroom can miss the runtime's log router and
+    yield ``compression_not_useful`` even though the raw log is compressible.
+    Keep the full redacted result as the exact sidecar authority, but feed the
+    bulky output field to the runtime when this safe terminal shape is present.
+    """
+    if tool_name != "terminal" or not isinstance(redacted_result, str):
+        return redacted_result, "original"
+    stripped = redacted_result.strip()
+    if not stripped.startswith("{"):
+        return redacted_result, "original"
+    try:
+        data = json.loads(stripped)
+    except Exception:
+        return redacted_result, "original"
+    if not isinstance(data, dict):
+        return redacted_result, "original"
+    output = data.get("output")
+    if not isinstance(output, str) or len(output) < MIN_TOOL_RESULT_CHARS:
+        return redacted_result, "original"
+    metadata: list[str] = []
+    if "exit_code" in data:
+        metadata.append(f"exit_code={data.get('exit_code')}")
+    if data.get("error"):
+        metadata.append(f"error={data.get('error')}")
+    prefix = ""
+    if metadata:
+        prefix = "[terminal result metadata: " + ", ".join(_safe_header_value(item) for item in metadata) + "]\n"
+    return prefix + output, "terminal_json_output_field"
+
+
 def compress_tool_result_for_context(
     *,
     tool_name: str,
@@ -824,6 +1057,22 @@ def compress_tool_result_for_context(
         return None
     eligible, reason = _lane_eligible(tool_name, args, result)
     if not eligible:
+        if reason == "below_min_chars":
+            aggregate = _maybe_compress_terminal_below_min_aggregate(
+                tool_name=tool_name,
+                args=args,
+                result=result,
+                health=health,
+                task_id=task_id,
+                tool_call_id=tool_call_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                api_request_id=api_request_id,
+                platform=platform,
+                duration_ms=duration_ms,
+            )
+            if aggregate:
+                return aggregate
         _emit_headroom_event(
             action="skipped",
             tool_name=tool_name,
@@ -841,7 +1090,8 @@ def compress_tool_result_for_context(
         return None
 
     redacted = _redact_text(result)
-    header_data = _build_exact_header_data(tool_name, args, redacted, reason)
+    compression_body, compression_input_shape = _compression_body_for_tool_result(tool_name, redacted)
+    header_data = _build_exact_header_data(tool_name, args, compression_body, reason)
     if not header_data.get("header_ok"):
         _emit_headroom_event(
             action="blocked",
@@ -867,7 +1117,7 @@ def compress_tool_result_for_context(
     source_path = report_dir / f"auto-tool-{stamp}-{safe_tool}.redacted.log"
     source_path.write_text(redacted, encoding="utf-8")
 
-    trace = _build_trace(tool_name, args, redacted, task_id=task_id, duration_ms=duration_ms)
+    trace = _build_trace(tool_name, args, compression_body, task_id=task_id, duration_ms=duration_ms)
     messages = [
         {"role": "system", "content": f"Headroom intermediate tool-result compression: {tool_name}."},
         {"role": "user", "content": f"Compress only the bulky body of this intermediate Hermes lane/tool result. Eligibility: {reason}. A deterministic exact header has already been extracted and will remain visible; do not invent identifiers or citations. Preserve errors, warnings, decisions, paths, counts, changed files, verification status, and final status indicators in the compressed body when useful."},
@@ -927,6 +1177,8 @@ def compress_tool_result_for_context(
         "marker_count": len(markers),
         "original_chars": len(result),
         "redacted_chars": len(redacted),
+        "compression_input_shape": compression_input_shape,
+        "compression_input_chars": len(compression_body),
         "tokens_before": before,
         "tokens_after": after,
         "tokens_saved": saved,

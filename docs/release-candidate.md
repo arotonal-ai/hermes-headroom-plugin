@@ -25,6 +25,7 @@ A pass means the checkout is ready for owner review and remote CI readback. It i
 | Gate | Purpose |
 |---|---|
 | repo readiness audit | required docs/scripts/manifests, syntax checks, local-link checks, basic secret scan |
+| context economy loop gate | runs the portable Context Economy Loop gate, including portable doc scan, clean temp install when Hermes CLI is available, synthetic pressure adapter, stable command-surface check, and loopback runtime smoke |
 | public path / secret scan | blocks owner-local absolute paths and high-risk secret patterns in public package surfaces |
 | unit/contract tests | runs the package test suite in a temporary venv with `.[test]` |
 | build/archive inspection | builds wheel + sdist and scans archives for forbidden members, owner-local paths, and secrets |

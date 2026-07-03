@@ -1,4 +1,5 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -117,6 +118,71 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(out, large)
         compress.assert_not_called()
 
+
+    def test_exact_tool_events_use_specific_lanes_for_owner_attribution(self):
+        large = self._large_result()
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.middleware.compress_messages"
+        ) as compress:
+            out = middleware.on_tool_execution(
+                tool_name="read_file",
+                args={"path": "important.py"},
+                next_call=lambda args: large,
+            )
+            events = self._events(td)
+        self.assertEqual(out, large)
+        compress.assert_not_called()
+        self.assertEqual(events[-1]["action"], "exact")
+        self.assertEqual(events[-1]["lane"], "file")
+
+
+    def test_terminal_json_output_field_is_unwrapped_for_compression_shape(self):
+        captured = {}
+
+        def fake_compress(messages):
+            captured["messages"] = messages
+            return {
+                "ok": True,
+                "tokens_before": 30000,
+                "tokens_after": 300,
+                "tokens_saved": 29700,
+                "compression_ratio": 0.01,
+                "messages": [
+                    {
+                        "role": "tool",
+                        "name": "worker_trace",
+                        "content": "[terminal log compressed. Retrieve more: hash=term123def456]",
+                    }
+                ],
+            }
+
+        raw_output = self._large_result(lines=1400)
+        terminal_result = json.dumps({"output": raw_output, "exit_code": 0, "error": None})
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}
+        ), patch("hermes_headroom_plugin.middleware.compress_messages", side_effect=fake_compress), patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ):
+            out = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "pytest -q"},
+                next_call=lambda args: terminal_result,
+                task_id="t-terminal-json",
+                tool_call_id="tc-terminal-json",
+            )
+            reports = list((Path(td) / "control-plane" / "headroom" / "reports").glob("auto-tool-*-terminal.json"))
+            report = json.loads(reports[0].read_text(encoding="utf-8"))
+
+        tool_message = captured["messages"][-1]["content"]
+        self.assertIn("delegate line 1399", tool_message)
+        self.assertIn("exit_code=0", tool_message)
+        self.assertNotIn('"output":', tool_message)
+        self.assertIn("Headroom auto-compressed tool result", out)
+        self.assertEqual(report["compression_input_shape"], "terminal_json_output_field")
+        self.assertGreater(report["compression_input_chars"], 28000)
+
     def test_git_diff_terminal_result_remains_exact(self):
         large = self._large_result()
         with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
@@ -129,6 +195,107 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             )
         self.assertEqual(out, large)
         compress.assert_not_called()
+
+    def test_terminal_below_min_aggregate_is_default_off(self):
+        first = "terminal chunk A\n" * 1000
+        second = "terminal chunk B\n" * 1000
+        with tempfile.TemporaryDirectory() as td, patch.dict(
+            os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": ""}
+        ), patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.middleware.compress_messages"
+        ) as compress:
+            middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
+            out1 = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "pytest -q"},
+                next_call=lambda args: first,
+                turn_id="turn-default-off",
+            )
+            out2 = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "pytest -q"},
+                next_call=lambda args: second,
+                turn_id="turn-default-off",
+            )
+            events = self._events(td)
+        self.assertEqual(out1, first)
+        self.assertEqual(out2, second)
+        compress.assert_not_called()
+        self.assertEqual([event["reason"] for event in events], ["below_min_chars", "below_min_chars"])
+
+    def test_terminal_below_min_aggregate_requires_opt_in_and_emits_one_marker(self):
+        captured = {}
+
+        def fake_compress(messages, proxy_url=None):
+            captured["messages"] = messages
+            return {
+                "ok": True,
+                "tokens_before": 12000,
+                "tokens_after": 900,
+                "tokens_saved": 11100,
+                "compression_ratio": 0.075,
+                "messages": [
+                    {"role": "tool", "content": "[aggregate compressed. Retrieve more: hash=belowagg123456]"}
+                ],
+            }
+
+        first = "tests/test_a.py::test_a FAILED warning chunk A\n" * 360
+        second = "tests/test_b.py::test_b FAILED warning chunk B\n" * 360
+        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}), patch(
+            "hermes_headroom_plugin.middleware.compress_messages", side_effect=fake_compress
+        ):
+            middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
+            out1 = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "pytest -q"},
+                next_call=lambda args: first,
+                turn_id="turn-aggregate",
+                platform="telegram",
+            )
+            out2 = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "pytest -q"},
+                next_call=lambda args: second,
+                turn_id="turn-aggregate",
+                platform="telegram",
+            )
+            events = self._events(td)
+            reports = list((Path(td) / "control-plane" / "headroom" / "reports").glob("auto-tool-*-terminal-below-min-aggregate.json"))
+            report = json.loads(reports[0].read_text(encoding="utf-8"))
+            source_path = Path(report["source_path"])
+            source_text = source_path.read_text(encoding="utf-8")
+        self.assertEqual(out1, first)
+        self.assertIn("Headroom auto-compressed below-min terminal aggregate", out2)
+        self.assertIn("marker=belowagg123456", out2)
+        self.assertIn("chunk 1/2", source_text)
+        self.assertIn("chunk 2/2", source_text)
+        self.assertIn("terminal_below_min_per_turn_aggregate", json.dumps(report))
+        self.assertIn("===== BELOW-MIN TERMINAL AGGREGATE =====", captured["messages"][-1]["content"])
+        self.assertEqual(events[0]["reason"], "below_min_chars")
+        self.assertEqual(events[1]["action"], "compressed")
+        self.assertEqual(events[1]["reason"], "below_min_aggregate")
+        self.assertEqual(events[1]["marker"], "belowagg123456")
+
+    def test_terminal_below_min_aggregate_does_not_override_exact_commands(self):
+        first = "diff --git a/file b/file\n" * 2000
+        with patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch(
+            "hermes_headroom_plugin.middleware.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}
+        ), patch("hermes_headroom_plugin.middleware.compress_messages") as compress:
+            middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
+            out = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "git diff"},
+                next_call=lambda args: first,
+                turn_id="turn-exact-command",
+            )
+        self.assertEqual(out, first)
+        compress.assert_not_called()
+        self.assertEqual(middleware._BELOW_MIN_AGGREGATE_BUFFERS, {})
+
 
     def test_small_delegate_result_remains_exact(self):
         small = "short final packet"

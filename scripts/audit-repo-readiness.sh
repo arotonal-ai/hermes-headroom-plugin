@@ -17,6 +17,7 @@ required=(
   docs/AGENT-INSTALL.md
   docs/compatibility.md
   docs/release-candidate.md
+  docs/context-economy-loop.md
   docs/metrics/weekly-savings.md
   plugin.yaml
   __init__.py
@@ -32,6 +33,7 @@ required=(
   scripts/test-headroom-dependency-install.py
   scripts/test-headroom-runtime-smoke.py
   scripts/release-candidate-local-gate.py
+  scripts/context-economy-loop-gate.py
   scripts/generate-weekly-savings-table.py
   scripts/python-resolver.sh
   .github/workflows/runtime-smoke.yml
@@ -64,6 +66,7 @@ required_text = {
     'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]', 'scripts/install-production-runtime.py', 'Python 3.13/3.14', 'generate-weekly-savings-table.py', 'tool_execution', 'headroom-worker-lane'],
     'docs/compatibility.md': ['Certified runtime matrix', 'Future Runtime Monitor', 'Python 3.13', 'Python 3.14', 'headroom-ai[proxy]'],
     'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],
+    'docs/context-economy-loop.md': ['observe -> classify -> act -> verify -> learn', 'Portable gate', 'exact source authority', 'Do not require external telemetry'],
     'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/install-production-runtime.py', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'generate-weekly-savings-table.py', 'Python 3.13/3.14', 'Do not print or advertise a plugin/skill version', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom on'],
     'ACKNOWLEDGEMENTS.md': ['chopratejas/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
 }
@@ -106,7 +109,7 @@ pass "shell syntax ok"
 "${PY_CMD[@]}" - <<'PY'
 from pathlib import Path
 import os, re, sys
-skip = {'.git','__pycache__','.pytest_cache','.mypy_cache','.venv','build','dist','release-candidate-runs'}
+skip = {'.git','__pycache__','.pytest_cache','.mypy_cache','.venv','build','dist','release-candidate-runs','context-economy-loop-gate-runs','qa'}
 patterns = [
     re.compile(r'gho_[A-Za-z0-9_]{20,}'),
     re.compile(r'github_pat_[A-Za-z0-9_]{20,}'),

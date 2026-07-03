@@ -55,6 +55,7 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | Full upstream proxy runtime smoke | ✅ included | `scripts/test-headroom-runtime-smoke.py` and GitHub Runtime Smoke workflow |
 | Remote proxy guardrail | ✅ included | non-loopback blocked unless explicitly allowed |
 | Eligible bulky tool/lane result compression | ✅ included | `tool_execution` middleware compresses large intermediate results such as `delegate_task`, terminal/process, browser/debug, web_extract, and session_search when proxy is healthy |
+| Context Economy Loop contract | ✅ documented | [docs/context-economy-loop.md](docs/context-economy-loop.md) describes portable observe → classify → act → verify → learn behavior without instance-specific state |
 | Worker/background/preflight CLI wrappers | ✅ included | `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` retain exact sidecars/final packets and compress only eligible bulky intermediates |
 | Global/default provider route mutation | ❌ not included | install does not change model/provider defaults |
 | External telemetry/API keys | ❌ not included | no telemetry, no keys required |
@@ -170,7 +171,7 @@ If you are another Hermes/AI instance installing or auditing this repo:
 7. Keep remote proxies disabled unless explicitly allowed by the operator.
 8. Do not invent token-savings metrics.
 
-Compact agent brief: [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md). Full install/troubleshooting: [INSTALL.md](INSTALL.md).
+Compact agent brief: [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md). Context-economy loop contract: [docs/context-economy-loop.md](docs/context-economy-loop.md). Full install/troubleshooting: [INSTALL.md](INSTALL.md).
 
 ## Validation helpers
 
@@ -181,6 +182,7 @@ scripts/audit-repo-readiness.sh
 scripts/test-clean-hermes-install.sh --local
 python scripts/test-headroom-dependency-install.py
 python scripts/test-headroom-runtime-smoke.py
+python scripts/context-economy-loop-gate.py
 python scripts/install-production-runtime.py --no-start
 ```
 
