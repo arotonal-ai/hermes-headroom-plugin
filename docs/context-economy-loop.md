@@ -33,6 +33,42 @@ observe -> classify -> act -> verify -> learn
 | Verify | Prove runtime health and claim accuracy. | Compress -> retrieve smoke, exact sidecar hash/path, focused retrieval or source readback. |
 | Learn | Update local guidance and thresholds from evidence, not anecdotes. | Compact report with top offenders, saved tokens/chars, failures, and next intervention. |
 
+
+## What the loop is and is not
+
+The loop is not an autonomous meta-agent, background watcher, subjective scoring layer, or self-tuning controller. It is a bounded decision protocol for a Hermes instance:
+
+```text
+measure local context pressure -> choose one safe intervention -> verify savings and quality -> keep, revert, or stop
+```
+
+A new Hermes instance should use it only when it improves useful work per context window. Compression remains the preferred action for eligible bulky intermediates, but the loop may also choose a cheaper action before compression, such as searching first, bounding a read, or keeping exact source truth out of repeated prompts.
+
+The loop must be controllable. Portable controls are:
+
+| Control | Scope | Expected effect |
+|---|---|---|
+| `HEADROOM_AUTO_COMPRESSION=0` | current process | disables middleware auto-compression only; runtime, `/headroom smoke`, `/headroom cache`, and retrieval stay available |
+| `context_reduction.auto_compression: false` | Hermes config after fresh session/restart | same as above for that Hermes process/session |
+| `context_reduction.visible_status_marker: false` | Hermes config after fresh session/restart | hides `[HR✓]/[HR!]`; does not disable compression |
+| `hermes plugins disable headroom_retrieve` | Hermes plugin surface | disables plugin commands/tools/middleware after restart/new session |
+| stop the Headroom proxy/service | runtime layer | leaves plugin in `RUNTIME_PARTIAL`; no compression/retrieval/cache stats |
+| skip `context-economy-loop-gate.py` | development/release process | skips the portable loop gate only; product runtime behavior is unchanged |
+
+If an implementation cannot name which control disables which layer, it is not mature enough to call the loop production-ready.
+
+## Efficiency test for a fresh Hermes instance
+
+Adopt the loop only if a short baseline experiment passes all criteria:
+
+1. **Baseline:** run normal work for a bounded window and record local context-pressure metadata.
+2. **Intervention:** apply one change: automatic compression for eligible intermediates, bounded reads, explicit wrappers, or a compact index.
+3. **Compare:** measure exact context chars/tokens avoided or compressed minus loop overhead.
+4. **Quality:** verify final claims against exact source and confirm no regression in task outcome.
+5. **Control:** prove the operator can disable auto-compression without uninstalling the runtime.
+
+A practical PASS means saved context is materially larger than the reports/gates/control text added by the loop, and the next action is clearer. A FAIL means keep the runtime/plugin compression path but remove or reduce the reporting/learning layer for that instance.
+
 ## Runtime boundary
 
 The portable product has two layers:

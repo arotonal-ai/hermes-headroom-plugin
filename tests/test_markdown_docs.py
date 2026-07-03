@@ -39,6 +39,21 @@ class MarkdownDocsTest(unittest.TestCase):
         for needle in required:
             self.assertIn(needle, combined)
 
+    def test_context_loop_is_bounded_and_controllable(self):
+        loop_doc = (REPO / "docs" / "context-economy-loop.md").read_text(encoding="utf-8")
+        required = [
+            "not an autonomous meta-agent",
+            "not an autonomous meta-agent, background watcher",
+            "HEADROOM_AUTO_COMPRESSION=0",
+            "context_reduction.auto_compression: false",
+            "disables middleware auto-compression only",
+            "Efficiency test for a fresh Hermes instance",
+            "measure exact context chars/tokens avoided or compressed minus loop overhead",
+            "A FAIL means keep the runtime/plugin compression path but remove or reduce the reporting/learning layer",
+        ]
+        for needle in required:
+            self.assertIn(needle, loop_doc)
+
     def test_install_guide_is_not_overlong(self):
         lines = INSTALL.read_text(encoding="utf-8").splitlines()
         self.assertLessEqual(len(lines), 260)
