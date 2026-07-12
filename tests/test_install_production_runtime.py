@@ -65,14 +65,52 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
                 event_log.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
                 line = module._headroom_turn_summary_line({"session_id": "s1", "turn_id": "turn-new", "task_id": "task-shared"})
                 self.assertIn("ready", line)
-                self.assertIn("exact-safe `1`", line)
-                self.assertIn("no eligible bulky output", line)
+                self.assertIn("exact/skipped `1`", line)
+                self.assertIn("no compressed eligible output", line)
                 self.assertNotIn("1,000", line)
             finally:
                 if old_home is None:
                     os.environ.pop("HERMES_HOME", None)
                 else:
                     os.environ["HERMES_HOME"] = old_home
+
+    def test_llm_monitor_companion_proxy_summary_is_distinct_and_fail_silent(self):
+        module_path = ROOT / "src" / "hermes_headroom_plugin" / "companions" / "llm-monitor" / "__init__.py"
+        spec = importlib.util.spec_from_file_location("llm_monitor_proxy_summary_under_test", module_path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _limit):
+                return json.dumps(
+                    {
+                        "persistent_savings": {
+                            "display_session": {
+                                "tokens_saved": 1234,
+                                "savings_percent": 12.5,
+                                "requests": 7,
+                            }
+                        },
+                        "requests": {"failed": 1},
+                    }
+                ).encode()
+
+        module._read_state = lambda: {"headroom_summary": True}
+        module.urlopen = lambda *_args, **_kwargs: Response()
+        self.assertEqual(
+            module._headroom_proxy_summary_line(),
+            "**HR proxy:** proxy saved `1234` · rate `12.5%` · req `7` · failed `1`",
+        )
+
+        module.urlopen = lambda *_args, **_kwargs: (_ for _ in ()).throw(TimeoutError())
+        self.assertEqual(module._headroom_proxy_summary_line(), "")
 
     def test_companion_only_installs_llm_monitor_into_temp_hermes_home(self):
         with tempfile.TemporaryDirectory() as td:
