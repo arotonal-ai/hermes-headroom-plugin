@@ -12,6 +12,12 @@ The gate is local-only. It does **not** push, tag, publish, mutate the real Herm
 release-candidate-runs/<UTC>-release-candidate-local-gate/
 ```
 
+By default the gate removes its five reproducible per-run virtualenvs after
+writing reports, command receipts, logs, package artifacts and workload
+matrices.  This prevents repeated local gates from retaining roughly one full
+runtime environment per stage.  Use `--keep-ephemeral-envs` only for a bounded
+debugging run; it is not the normal evidence-retention mode.
+
 ## Passing decision
 
 ```text
