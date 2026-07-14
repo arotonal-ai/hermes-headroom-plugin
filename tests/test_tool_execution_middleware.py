@@ -420,7 +420,11 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertIn("chunk 1/2", source_text)
         self.assertIn("chunk 2/2", source_text)
         self.assertIn("terminal_below_min_per_turn_aggregate", json.dumps(report))
-        self.assertIn("===== BELOW-MIN TERMINAL AGGREGATE =====", captured["messages"][-1]["content"])
+        compression_body = captured["messages"][-1]["content"]
+        self.assertIn("===== BOUNDED TERMINAL CHUNKS =====", compression_body)
+        self.assertNotIn("policy_mutation", compression_body)
+        self.assertNotIn("global_threshold_change", compression_body)
+        self.assertNotIn("exact_commands_relaxed", compression_body)
         self.assertEqual(events[0]["reason"], "below_min_chars")
         self.assertEqual(events[1]["action"], "compressed")
         self.assertEqual(events[1]["reason"], "below_min_aggregate")

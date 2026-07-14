@@ -947,14 +947,9 @@ def _maybe_compress_terminal_below_min_aggregate(
     report_path = report_dir / f"auto-tool-{stamp}-{safe_tool}-below-min-aggregate.json"
     aggregate_body = "\n\n".join(
         [
-            "===== BELOW-MIN TERMINAL AGGREGATE =====",
-            f"aggregate_key={key}",
+            "===== BOUNDED TERMINAL CHUNKS =====",
             f"chunk_count={len(chunks)}",
             f"aggregate_chars={buffer['chars']}",
-            "exact_sidecar_authority=true",
-            "policy_mutation=false",
-            "global_threshold_change=false",
-            "exact_commands_relaxed=false",
             "===== CHUNKS =====",
         ]
         + [f"----- chunk {idx + 1}/{len(chunks)} -----\n{chunk}" for idx, chunk in enumerate(chunks)]
