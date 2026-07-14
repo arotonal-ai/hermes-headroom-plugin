@@ -168,6 +168,29 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(events[-1]["action"], "compressed")
         self.assertEqual(events[-1]["lane"], "file")
 
+    def test_machine_consumer_read_file_keeps_structured_contract_exact(self):
+        structured = {
+            "content": self._large_result(lines=700),
+            "total_lines": 700,
+            "truncated": False,
+        }
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.compress_messages") as compress:
+            out = middleware.on_tool_execution(
+                tool_name="read_file",
+                args={"path": "/tmp/machine-input.json", "offset": 1, "limit": 700},
+                next_call=lambda args: structured,
+                task_id="parent-execute-code-task",
+                platform="telegram",
+            )
+            events = self._events(td)
+        self.assertEqual(out, structured)
+        compress.assert_not_called()
+        self.assertEqual(events[-1]["action"], "exact")
+        self.assertEqual(events[-1]["reason"], "machine_consumer_contract")
+        self.assertEqual(events[-1]["exact_authority"], "original_machine_result")
+
     def test_fact_store_reads_compress_but_mutations_remain_exact(self):
         large = json.dumps({"results": [{"id": i, "content": "durable fact " + ("x" * 80)} for i in range(300)]})
         compressed = {
