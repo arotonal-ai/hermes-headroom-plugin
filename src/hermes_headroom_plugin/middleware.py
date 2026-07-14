@@ -63,6 +63,10 @@ EXACT_COMMAND_HINTS = (
     "gpg ",
     "openssl ",
 )
+PROTECTED_RECOVERY_MARKER_RE = re.compile(
+    r"(?im)\b(?:rollback(?:[_-]?(?:plan|path|target))?|checksum(?:[_-]?(?:expected|actual))?|sha(?:256)?|commit(?:[_-]?sha)?|patch(?:[_-]?id)?)\s*[:=]"
+)
+FAILURE_MARKER_RE = re.compile(r"(?i)\b(?:fail(?:ed|ure)?|error|exception|traceback|mismatch|blocked)\b")
 COMPRESSED_SENTINELS = (
     "Headroom auto-compressed",
     "<<ccr:",
@@ -483,6 +487,11 @@ def _exact_or_blocked_reason(tool_name: str, args: dict[str, Any], result: str) 
         return "patch_diff"
     if "# worker final packet" in lowered or "claim_ledger" in lowered:
         return "final_or_claim_ledger"
+    # Same-provider A/B: lossy compression removed an exact rollback target
+    # from 2/2 code-trace replicates while bypass preserved it. Fail closed
+    # only for failure traces carrying recovery/integrity anchors.
+    if PROTECTED_RECOVERY_MARKER_RE.search(result[:160_000]) and FAILURE_MARKER_RE.search(result[:160_000]):
+        return "protected_recovery_integrity_trace"
     if tool_name == "terminal":
         cmd = str(args.get("command") or "").lower()
         if any(hint in cmd for hint in EXACT_COMMAND_HINTS):

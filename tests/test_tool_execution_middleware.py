@@ -330,6 +330,27 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         compress.assert_not_called()
         self.assertEqual(middleware._BELOW_MIN_AGGREGATE_BUFFERS, {})
 
+    def test_failure_trace_with_rollback_anchor_remains_exact(self):
+        trace = (
+            "frame=0173 state=failed exception=ChecksumMismatch rollback=segment_42\n"
+            + "synthetic trace detail\n" * 2500
+        )
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.middleware.compress_messages"
+        ) as compress:
+            out = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "python synthetic_trace.py"},
+                next_call=lambda args: trace,
+            )
+            events = self._events(td)
+        self.assertEqual(out, trace)
+        compress.assert_not_called()
+        self.assertEqual(events[-1]["action"], "exact")
+        self.assertEqual(events[-1]["reason"], "protected_recovery_integrity_trace")
+
 
     def test_small_delegate_result_remains_exact(self):
         small = "short final packet"
