@@ -461,6 +461,15 @@ def _already_compressed(result: str) -> bool:
 def _exact_or_blocked_reason(tool_name: str, args: dict[str, Any], result: str) -> str | None:
     if tool_name in EXACT_TOOLS:
         return f"exact_tool:{tool_name}"
+    if tool_name.startswith(("mcp__open_design__", "mcp_open_design_")):
+        return f"exact_mcp_source_artifact:{tool_name}"
+    if tool_name.startswith(("mcp__", "mcp_")):
+        explicit_class = next(
+            (_normalize_data_class(args.get(key)) for key in ("data_class", "headroom_data_class", "classification") if args.get(key)),
+            None,
+        )
+        if not explicit_class:
+            return f"exact_mcp_default:{tool_name}"
     if tool_name == "browser_vision":
         vision_hint = " ".join(str(args.get(k) or "") for k in ("lane", "goal", "context", "data_class"))[:2_000].lower()
         if not any(h in vision_hint for h in ("intermediate", "debug", "ocr", "diagnostic", "qa")):
@@ -488,7 +497,10 @@ def _lane_eligible(tool_name: str, args: dict[str, Any], result: str) -> tuple[b
         return False, "below_min_chars"
     if tool_name in ELIGIBLE_TOOLS or any(tool_name.startswith(prefix) for prefix in ELIGIBLE_PREFIXES):
         return True, f"eligible_tool:{tool_name}"
-    task_hint = " ".join(str(args.get(k) or "") for k in ("lane", "goal", "context"))[:2_000].lower()
+    task_hint = " ".join(
+        str(args.get(k) or "")
+        for k in ("lane", "goal", "context", "data_class", "headroom_data_class", "classification")
+    )[:2_000].lower()
     if any(h in task_hint for h in ("delegate", "subagent", "worker", "kanban", "background", "debug", "research", "qa", "diagnostic")):
         return True, "lane_hint"
     return False, "not_intermediate_lane"
