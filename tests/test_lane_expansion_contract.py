@@ -83,31 +83,33 @@ class LaneExpansionContractTest(unittest.TestCase):
         self.assertEqual(out, final_packet)
         compress.assert_not_called()
 
-    def test_open_design_mcp_source_readback_remains_exact(self):
-        result = self._huge_text("open design exact source readback")
+    def test_open_design_mcp_source_readback_compresses_with_retrieval(self):
+        result = self._huge_text("open design source readback")
         with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
-        ) as compress:
+            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        ):
             out = middleware.on_tool_execution(
                 tool_name="mcp__open_design__get_artifact",
                 args={"entry": "index.html"},
                 next_call=lambda current_args: result,
             )
-        self.assertEqual(out, result)
-        compress.assert_not_called()
+        self.assertIn("Headroom auto-compressed tool result", out)
+        self.assertIn("classification: source_readback", out)
+        self.assertIn("entry=index.html", out)
 
-    def test_generic_mcp_defaults_exact_without_explicit_intermediate_class(self):
+    def test_generic_readonly_mcp_compresses_with_query_header(self):
         result = self._huge_text("generic mcp source response")
         with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
-        ) as compress:
+            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        ):
             out = middleware.on_tool_execution(
                 tool_name="mcp__vendor__query",
                 args={"query": "bounded"},
                 next_call=lambda current_args: result,
             )
-        self.assertEqual(out, result)
-        compress.assert_not_called()
+        self.assertIn("Headroom auto-compressed tool result", out)
+        self.assertIn("classification: source_readback", out)
+        self.assertIn("query=bounded", out)
 
     def test_generic_mcp_explicit_diagnostic_intermediate_can_compress(self):
         result = self._large_text("generic mcp diagnostic trace")

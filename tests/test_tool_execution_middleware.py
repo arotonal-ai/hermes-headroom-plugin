@@ -139,21 +139,106 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertIn("tool=execute_code", out["output"])
         self.assertIn("marker=exec123def456", out["output"])
 
-    def test_exact_tools_remain_exact_even_when_large(self):
+    def test_large_read_file_is_compressible_with_exact_source_header(self):
+        source = "".join(f"{i}|def function_{i}(): return {i}\n" for i in range(900))
+        compressed = {
+            "ok": True,
+            "tokens_before": 9000,
+            "tokens_after": 1500,
+            "tokens_saved": 7500,
+            "compression_ratio": 0.166,
+            "messages": [{"role": "tool", "content": "source outline hash=read123def456"}],
+        }
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+        ):
+            out = middleware.on_tool_execution(
+                tool_name="read_file",
+                args={"path": "/tmp/source.py", "offset": 1, "limit": 900},
+                next_call=lambda args: source,
+                session_id="s-read",
+            )
+            events = self._events(td)
+        self.assertIn("classification: source_readback", out)
+        self.assertIn("path=/tmp/source.py", out)
+        self.assertIn("offset=1", out)
+        self.assertIn("marker=read123def456", out)
+        self.assertEqual(events[-1]["action"], "compressed")
+        self.assertEqual(events[-1]["lane"], "file")
+
+    def test_fact_store_reads_compress_but_mutations_remain_exact(self):
+        large = json.dumps({"results": [{"id": i, "content": "durable fact " + ("x" * 80)} for i in range(300)]})
+        compressed = {
+            "ok": True,
+            "tokens_before": 10000,
+            "tokens_after": 2000,
+            "tokens_saved": 8000,
+            "messages": [{"role": "tool", "content": "fact rows hash=fact123def456"}],
+        }
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+        ) as compress:
+            read_out = middleware.on_tool_execution(
+                tool_name="fact_store",
+                args={"action": "probe", "entity": "architecture"},
+                next_call=lambda args: large,
+            )
+            mutation_out = middleware.on_tool_execution(
+                tool_name="fact_store",
+                args={"action": "add", "content": "new durable fact"},
+                next_call=lambda args: large,
+            )
+        self.assertIn("classification: source_readback", read_out)
+        self.assertEqual(mutation_out, large)
+        self.assertEqual(compress.call_count, 1)
+
+    def test_readonly_mcp_is_compressible_and_mcp_write_is_exact(self):
+        large = self._large_result(lines=500)
+        compressed = {
+            "ok": True,
+            "tokens_before": 9000,
+            "tokens_after": 1200,
+            "tokens_saved": 7800,
+            "messages": [{"role": "tool", "content": "artifact outline hash=mcp123def456"}],
+        }
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+        ) as compress:
+            read_out = middleware.on_tool_execution(
+                tool_name="mcp__open_design__get_artifact",
+                args={"project": "demo", "entry": "index.html"},
+                next_call=lambda args: large,
+            )
+            write_out = middleware.on_tool_execution(
+                tool_name="mcp__open_design__write_file",
+                args={"project": "demo", "path": "index.html", "content": "replacement"},
+                next_call=lambda args: large,
+            )
+        self.assertIn("classification: source_readback", read_out)
+        self.assertEqual(write_out, large)
+        self.assertEqual(compress.call_count, 1)
+
+    def test_mutating_tools_remain_exact_even_when_large(self):
         large = self._large_result()
         with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.middleware.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
-                tool_name="read_file",
-                args={"path": "important.py"},
+                tool_name="write_file",
+                args={"path": "important.py", "content": "replacement"},
                 next_call=lambda args: large,
             )
         self.assertEqual(out, large)
         compress.assert_not_called()
 
 
-    def test_exact_tool_events_use_specific_lanes_for_owner_attribution(self):
+    def test_exact_mutation_events_use_specific_lanes_for_owner_attribution(self):
         large = self._large_result()
         with tempfile.TemporaryDirectory() as td, patch(
             "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
@@ -161,15 +246,15 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "hermes_headroom_plugin.middleware.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
-                tool_name="read_file",
-                args={"path": "important.py"},
+                tool_name="write_file",
+                args={"path": "important.py", "content": "replacement"},
                 next_call=lambda args: large,
             )
             events = self._events(td)
         self.assertEqual(out, large)
         compress.assert_not_called()
         self.assertEqual(events[-1]["action"], "exact")
-        self.assertEqual(events[-1]["lane"], "file")
+        self.assertEqual(events[-1]["lane"], "edit")
 
 
     def test_terminal_json_output_field_is_unwrapped_for_compression_shape(self):
@@ -235,6 +320,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         second = "terminal chunk B\n" * 1000
         with tempfile.TemporaryDirectory() as td, patch.dict(
             os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": ""}
+        ), patch.object(
+            middleware, "MIN_TOOL_RESULT_CHARS", 28_000
         ), patch(
             "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
         ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
@@ -277,7 +364,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
         first = "tests/test_a.py::test_a FAILED warning chunk A\n" * 360
         second = "tests/test_b.py::test_b FAILED warning chunk B\n" * 360
-        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch(
+        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch.object(
+            middleware, "MIN_TOOL_RESULT_CHARS", 28_000
+        ), patch(
             "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
         ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}), patch(
             "hermes_headroom_plugin.middleware.compress_messages", side_effect=fake_compress
@@ -395,8 +484,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         ) as compress:
             self.assertEqual(
                 middleware.on_tool_execution(
-                    tool_name="read_file",
-                    args={"path": "important.py"},
+                    tool_name="write_file",
+                    args={"path": "important.py", "content": "replacement"},
                     next_call=lambda args: large,
                 ),
                 large,
@@ -422,7 +511,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         compress.assert_not_called()
         actions = [event["action"] for event in events]
         self.assertEqual(actions, ["exact", "blocked", "skipped"])
-        self.assertEqual(events[0]["reason"], "exact_tool:read_file")
+        self.assertEqual(events[0]["reason"], "exact_tool:write_file")
         self.assertEqual(events[1]["reason"], "protected_control_or_sensitive_material")
         self.assertEqual(events[1]["protected_hits"], 1)
         self.assertEqual(events[2]["reason"], "below_min_chars")
