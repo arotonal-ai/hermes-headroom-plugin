@@ -82,6 +82,82 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             if os.name != "nt":
                 self.assertEqual(unit.stat().st_mode & 0o777, 0o600)
 
+    def test_systemd_unit_rejects_path_escape_service_names_before_write(self):
+        spec = importlib.util.spec_from_file_location("headroom_runtime_installer_service_name_under_test", SCRIPT)
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        invalid_names = (
+            "../../pwn.service",
+            "../pwn.service",
+            "/tmp/pwn.service",
+            "nested/pwn.service",
+            "nested\\pwn.service",
+            "C:\\temp\\pwn.service",
+            ".service",
+            "pwn.socket",
+            " leading.service",
+            "pwn\n.service",
+            ("a" * 248) + ".service",
+        )
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch("pathlib.Path.home", return_value=Path(td)),
+            patch.object(module, "systemd_user_available", return_value=True),
+        ):
+            root = Path(td)
+            headroom = root / "bin" / "headroom"
+            headroom.parent.mkdir(parents=True)
+            headroom.write_text("#!/bin/sh\n", encoding="utf-8")
+            log = root / "install.log"
+            for service_name in invalid_names:
+                with self.subTest(service_name=service_name), self.assertRaisesRegex(
+                    ValueError, "unsafe systemd service name"
+                ):
+                    module.write_systemd_user_unit(
+                        headroom,
+                        "127.0.0.1",
+                        28787,
+                        service_name,
+                        log,
+                        ccr_backend="memory",
+                        ccr_ttl_seconds=1800,
+                    )
+            self.assertFalse((root / ".config" / "pwn.service").exists())
+            self.assertFalse((root / ".config" / "systemd" / "user").exists())
+
+    def test_systemd_service_name_allows_safe_custom_basename(self):
+        spec = importlib.util.spec_from_file_location("headroom_runtime_installer_safe_service_name_under_test", SCRIPT)
+        assert spec is not None
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        self.assertEqual(
+            module.validate_systemd_service_name("headroom-worker@alpha-1.service"),
+            "headroom-worker@alpha-1.service",
+        )
+        longest_safe_name = ("a" * 247) + ".service"
+        self.assertEqual(module.validate_systemd_service_name(longest_safe_name), longest_safe_name)
+
+    def test_cli_rejects_unsafe_systemd_service_name_before_install(self):
+        proc = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "--systemd-user",
+                "--service-name",
+                "../../pwn.service",
+                "--no-start",
+            ],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 2, proc.stdout)
+        self.assertIn("unsafe systemd service name", proc.stdout)
 
     def test_runtime_store_posture_parses_headroom_031_schema(self):
         spec = importlib.util.spec_from_file_location("headroom_runtime_posture_under_test", SCRIPT)
