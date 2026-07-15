@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.18 — 2026-07-15
+
+- Reject unsafe `--service-name` / `HEADROOM_SERVICE` values before writing a systemd user unit.
+- Constrain durable-service names to a single ASCII `.service` basename, preventing path traversal and writes outside the intended user-unit directory.
+- Add regression coverage for POSIX and Windows-style path separators plus valid custom service basenames.
+
 ## v0.3.17 — 2026-07-15
 
 - Isolated both the release-candidate proxy and the standalone runtime-smoke proxy under disposable `HOME`, `USERPROFILE`, and explicit Headroom workspace/config roots.

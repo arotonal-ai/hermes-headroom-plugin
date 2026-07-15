@@ -40,6 +40,7 @@ DEFAULT_PORT = 28787
 DEFAULT_SERVICE_NAME = "hermes-context-reduction.service"
 DEFAULT_CCR_BACKEND = "memory"
 DEFAULT_CCR_TTL_SECONDS = 1800
+SYSTEMD_SERVICE_NAME_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.@:-")
 
 
 def default_hermes_home() -> Path:
@@ -171,6 +172,23 @@ def systemd_user_available() -> bool:
     return os.name != "nt" and shutil.which("systemctl") is not None
 
 
+def validate_systemd_service_name(service_name: str) -> str:
+    """Accept only one safe systemd service basename, never a path."""
+    encoded = service_name.encode("utf-8")
+    stem = service_name.removesuffix(".service")
+    if (
+        not service_name.endswith(".service")
+        or not stem
+        or len(encoded) > 255
+        or stem[0] not in SYSTEMD_SERVICE_NAME_CHARS.intersection("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+        or any(char not in SYSTEMD_SERVICE_NAME_CHARS for char in service_name)
+    ):
+        raise ValueError(
+            "unsafe systemd service name; expected one ASCII basename ending in .service"
+        )
+    return service_name
+
+
 def write_systemd_user_unit(
     headroom: Path,
     host: str,
@@ -181,6 +199,7 @@ def write_systemd_user_unit(
     ccr_backend: str,
     ccr_ttl_seconds: int,
 ) -> Path:
+    service_name = validate_systemd_service_name(service_name)
     if not systemd_user_available():
         raise RuntimeError("systemd --user is available only on Linux hosts with systemctl")
     unit_dir = Path.home() / ".config" / "systemd" / "user"
@@ -368,7 +387,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-smoke", action="store_true", help="skip plugin compress/retrieve smoke after readyz")
     parser.add_argument("--stop-existing", action="store_true", help="stop PID recorded in the venv pid file before starting")
     parser.add_argument("--systemd-user", action="store_true", help="Linux only: write, enable, and restart a durable systemd --user service instead of a detached helper process")
-    parser.add_argument("--service-name", default=os.environ.get("HEADROOM_SERVICE", DEFAULT_SERVICE_NAME), help=f"systemd --user service name for --systemd-user; default {DEFAULT_SERVICE_NAME}")
+    parser.add_argument("--service-name", default=os.environ.get("HEADROOM_SERVICE", DEFAULT_SERVICE_NAME), help=f"safe systemd --user service basename ending in .service; default {DEFAULT_SERVICE_NAME}")
     parser.add_argument("--hermes-home", default=str(default_hermes_home()), help="Hermes home for optional companion plugin install; defaults to HERMES_HOME or ~/.hermes")
     companion_group = parser.add_mutually_exclusive_group()
     companion_group.add_argument("--with-llm-monitor-companion", action="store_true", help="opt in to installing the bundled llm-monitor companion plugin")
@@ -379,6 +398,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.ccr_ttl_seconds <= 0:
         parser.error("--ccr-ttl-seconds must be greater than zero")
+    if args.systemd_user:
+        try:
+            args.service_name = validate_systemd_service_name(args.service_name)
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.companion_only and args.skip_llm_monitor_companion:
         parser.error("--companion-only cannot be combined with --skip-llm-monitor-companion")
     if args.force_llm_monitor_companion and not (args.with_llm_monitor_companion or args.companion_only):

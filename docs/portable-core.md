@@ -23,7 +23,7 @@ The primary model/provider route stays direct. Provider-proxy routing is experim
 
 | Setting | Default |
 |---|---|
-| Plugin | `hermes-headroom-plugin==0.3.17` |
+| Plugin | `hermes-headroom-plugin==0.3.18` |
 | Headroom runtime | `headroom-ai[proxy]==0.31.0` |
 | Runtime venv | `~/.cache/hermes-headroom-venv-0.31.0` |
 | Bind | `127.0.0.1:28787` |
