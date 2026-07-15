@@ -56,7 +56,11 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
         module = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(module)
-        with tempfile.TemporaryDirectory() as td, patch("pathlib.Path.home", return_value=Path(td)):
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch("pathlib.Path.home", return_value=Path(td)),
+            patch.object(module, "systemd_user_available", return_value=True),
+        ):
             root = Path(td)
             headroom = root / ".cache" / "hermes-headroom-venv-0.31.0" / "bin" / "headroom"
             headroom.parent.mkdir(parents=True)

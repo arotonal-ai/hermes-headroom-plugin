@@ -166,6 +166,11 @@ def run_systemctl(args: list[str], *, log: Path, timeout: int = 60) -> subproces
     return proc
 
 
+def systemd_user_available() -> bool:
+    """Return whether this host can manage a systemd user service."""
+    return os.name != "nt" and shutil.which("systemctl") is not None
+
+
 def write_systemd_user_unit(
     headroom: Path,
     host: str,
@@ -176,7 +181,7 @@ def write_systemd_user_unit(
     ccr_backend: str,
     ccr_ttl_seconds: int,
 ) -> Path:
-    if os.name == "nt" or shutil.which("systemctl") is None:
+    if not systemd_user_available():
         raise RuntimeError("systemd --user is available only on Linux hosts with systemctl")
     unit_dir = Path.home() / ".config" / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
