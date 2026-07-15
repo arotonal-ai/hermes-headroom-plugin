@@ -79,7 +79,8 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             self.assertIn(str(headroom), text)
             self.assertIn("Environment=HEADROOM_CCR_BACKEND=memory", text)
             self.assertIn("Environment=HEADROOM_CCR_TTL_SECONDS=1800", text)
-            self.assertEqual(unit.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(unit.stat().st_mode & 0o777, 0o600)
 
 
     def test_runtime_store_posture_parses_headroom_031_schema(self):
