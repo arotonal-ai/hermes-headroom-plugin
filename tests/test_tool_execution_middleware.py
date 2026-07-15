@@ -12,8 +12,16 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def setUp(self):
         self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
         self._auto_compression_env.start()
+        self._hermes_home_tmp = tempfile.TemporaryDirectory()
+        self._hermes_home_patch = patch(
+            "hermes_headroom_plugin.middleware.hermes_home",
+            return_value=Path(self._hermes_home_tmp.name),
+        )
+        self._hermes_home_patch.start()
 
     def tearDown(self):
+        self._hermes_home_patch.stop()
+        self._hermes_home_tmp.cleanup()
         self._auto_compression_env.stop()
 
     def _large_result(self, lines=1200):

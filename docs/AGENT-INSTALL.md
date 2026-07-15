@@ -50,7 +50,7 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv`, installs the bundled `llm-monitor` companion into `$HERMES_HOME/plugins/llm-monitor` without restarting Hermes, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if needed, verifies `/readyz`, and runs real compress → retrieve smoke. Manual install is acceptable only if those same checks pass. Existing local `llm-monitor` files are preserved unless `--force-llm-monitor-companion` is used.
+The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs `headroom-ai[proxy]==0.31.0`, defaults CCR to memory with a 1,800-second TTL, starts the loopback proxy, verifies `/readyz`, and runs real compress → retrieve smoke. `llm-monitor` is opt-in via `--with-llm-monitor-companion` or `--companion-only`. Manual install is acceptable only if the same checks pass. See [portable-core.md](portable-core.md).
 
 No-restart companion-only validation:
 
@@ -78,7 +78,7 @@ scripts/test-headroom-dependency-install.sh
 "${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve/scripts/test-headroom-dependency-install.sh"
 ```
 
-Normal final answers may show `[HR✓]` when visible marker is enabled and proxy readiness is healthy (`[HR!]` when readiness fails). The marker is readiness-only, not proof that a specific answer was compressed.
+Normal final answers do not show a Headroom marker by default. Operators may explicitly enable `[HR✓]`/`[HR!]`; the marker is readiness-only, not proof that a specific answer was compressed.
 
 If a proxy is running:
 

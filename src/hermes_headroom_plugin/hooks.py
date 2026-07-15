@@ -1,10 +1,8 @@
-"""Plugin hooks.
+"""Conservative plugin hooks.
 
-Live compression is handled by tool_execution middleware for eligible bulky
-intermediate tool/lane results. These hooks stay conservative: they add a small
-first-turn availability hint and, by default, a compact visible status marker to
-final assistant messages so operators can distinguish plugin/runtime posture
-without reading slash-command output every turn.
+Tool-result compression is handled by middleware. Final-answer markers and
+first-turn hints are optional observability extras and default off in the
+portable core.
 """
 from __future__ import annotations
 
@@ -33,19 +31,21 @@ def _boolish(value: Any, *, default: bool) -> bool:
 
 
 def visible_status_marker_enabled(config: dict[str, Any] | None = None) -> bool:
-    """Return whether final-answer `[HR✓]`/`[HR!]` marker is enabled.
-
-    The marker is cosmetic/status-only. It reports Headroom runtime readiness,
-    not whether a particular final answer was compressed. Product default is on
-    for consistency with the historical owner-local contract; operators may opt
-    out via `context_reduction.visible_status_marker: false` or
-    `HEADROOM_VISIBLE_STATUS_MARKER=0`.
-    """
+    """Return whether the optional final-answer status marker is enabled."""
     env_value = os.environ.get("HEADROOM_VISIBLE_STATUS_MARKER")
     if env_value is not None:
-        return _boolish(env_value, default=True)
+        return _boolish(env_value, default=False)
     cfg = config if isinstance(config, dict) else load_context_reduction_config()
-    return _boolish(cfg.get("visible_status_marker"), default=True)
+    return _boolish(cfg.get("visible_status_marker"), default=False)
+
+
+def first_turn_hint_enabled(config: dict[str, Any] | None = None) -> bool:
+    """Return whether the optional first-turn Headroom availability hint is enabled."""
+    env_value = os.environ.get("HEADROOM_FIRST_TURN_HINT")
+    if env_value is not None:
+        return _boolish(env_value, default=False)
+    cfg = config if isinstance(config, dict) else load_context_reduction_config()
+    return _boolish(cfg.get("first_turn_hint"), default=False)
 
 
 def headroom_status_marker(health: dict[str, Any] | None = None) -> str:
@@ -76,8 +76,8 @@ def on_pre_llm_call(is_first_turn: bool = False, task_id: str = "", platform: st
         turn_id=kwargs.get("turn_id", ""),
         platform=platform,
     )
-    if not is_first_turn:
+    if not is_first_turn or not first_turn_hint_enabled():
         return None
     if not readyz().get("ok"):
         return None
-    return {"context": "Headroom is available for eligible bulky intermediate/diagnostic traces; final/edit-critical/sensitive content remains exact or blocked. Visible [HR✓]/[HR!] marker reports proxy readiness only, not per-message compression."}
+    return {"context": "Headroom is available for eligible bulky intermediate tool results; final/edit-critical/sensitive content remains exact or blocked."}

@@ -57,7 +57,7 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv`, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if needed, verifies `/readyz`, and runs real compress → retrieve smoke. Manual fallback is allowed only if it performs those same checks.
+The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs `headroom-ai[proxy]==0.31.0`, defaults CCR recovery to memory with a 1,800-second TTL, starts the loopback proxy as `headroom proxy --host 127.0.0.1 --port 28787`, verifies `/readyz`, and runs real compress → retrieve smoke. The companion and visible hooks are opt-in. Manual fallback is allowed only if it performs those same checks. The canonical contract is `docs/portable-core.md`.
 
 For Linux gateway/default-cockpit deployments, use durable service mode:
 

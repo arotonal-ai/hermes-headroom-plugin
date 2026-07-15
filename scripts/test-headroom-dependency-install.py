@@ -16,7 +16,7 @@ import tempfile
 import venv
 from pathlib import Path
 
-DEFAULT_SPEC = "headroom-ai[proxy]"
+DEFAULT_SPEC = "headroom-ai[proxy]==0.31.0"
 
 
 def bin_dir(venv_dir: Path) -> Path:

@@ -41,7 +41,7 @@ Verify inside Hermes:
 /headroom on      # read-only compatibility check; does not mutate runtime/provider state
 ```
 
-Expected: the commands exist and return proxy/status guidance, including `visible_marker=on:[HR✓]` when the marker is enabled and proxy readiness is healthy. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
+Expected: the commands exist and return proxy/status guidance. The optional marker is off by default; when explicitly enabled it reports `visible_marker=on:[HR✓]` only if proxy readiness is healthy. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
 
 ## 2. Install Headroom runtime for real compression
 
@@ -61,7 +61,7 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-What the installer does: installs the bundled `llm-monitor` companion plugin into `$HERMES_HOME/plugins/llm-monitor` unless `--skip-llm-monitor-companion` is set; preserves existing local files unless `--force-llm-monitor-companion` is used; creates/updates `~/.cache/hermes-headroom-venv`; installs latest available `headroom-ai[proxy]`; starts `headroom proxy --host 127.0.0.1 --port 28787` when no proxy is ready; verifies `/readyz`; runs real plugin compress → retrieve smoke; and prints `RUNTIME_FULL` only when all checks pass.
+What the installer does: creates/updates `~/.cache/hermes-headroom-venv-0.31.0`; installs `headroom-ai[proxy]==0.31.0`; defaults CCR recovery to memory with a 1,800-second TTL; starts the loopback proxy; verifies `/readyz`; runs real plugin compress → retrieve smoke; and prints `RUNTIME_FULL` only when all checks pass. The bundled `llm-monitor` companion is opt-in via `--with-llm-monitor-companion` or `--companion-only`. See [docs/portable-core.md](docs/portable-core.md).
 
 No-restart companion-only validation: `python scripts/install-production-runtime.py --companion-only --hermes-home /tmp/hermes-home --json`. This copies only the bundled `llm-monitor` companion and does not install/start Headroom runtime or restart Hermes.
 
@@ -77,13 +77,13 @@ Expected: `RUNTIME_FULL_DURABLE`. Plain `RUNTIME_FULL` is not a durability claim
 Manual fallback on Unix/macOS/WSL:
 
 ```bash
-python3 -m venv ~/.cache/hermes-headroom-venv
-~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]'
-~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+python3 -m venv ~/.cache/hermes-headroom-venv-0.31.0
+~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install --upgrade pip
+~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install 'headroom-ai[proxy]==0.31.0'
+HEADROOM_CCR_BACKEND=memory HEADROOM_CCR_TTL_SECONDS=1800 ~/.cache/hermes-headroom-venv-0.31.0/bin/headroom proxy --host 127.0.0.1 --port 28787 --no-telemetry
 ```
 
-Manual Windows fallback: use `py -3 -m venv $env:USERPROFILE\.cache\hermes-headroom-venv`, install `headroom-ai[proxy]` with the venv Python, then run `Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787`.
+Manual Windows fallback: use `py -3 -m venv $env:USERPROFILE\.cache\hermes-headroom-venv-0.31.0`, install `headroom-ai[proxy]==0.31.0` with the venv Python, set `HEADROOM_CCR_BACKEND=memory` and `HEADROOM_CCR_TTL_SECONDS=1800`, then run `Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787 --no-telemetry`.
 
 ### Windows Git Bash / MSYS
 

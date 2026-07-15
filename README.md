@@ -51,7 +51,7 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | `/headroom smoke` | ✅ requires runtime | real compress → retrieve sentinel check through the configured Headroom proxy |
 | `/headroom audit` | ✅ plugin-only + runtime-aware | local policy/runtime posture summary |
 | `/headroom cache` | ✅ runtime read-only | reports runtime-owned CCR store/cache entries, TTL, backend, usage, and retrieval counts; the plugin has no independent CCR cache |
-| Visible `[HR✓]` / `[HR!]` final-answer marker | ✅ included | reports proxy readiness only; disable with `context_reduction.visible_status_marker: false` if desired |
+| Visible `[HR✓]` / `[HR!]` final-answer marker | ✅ opt-in | disabled by default; enable with `context_reduction.visible_status_marker: true` or `HEADROOM_VISIBLE_STATUS_MARKER=1`; reports readiness only |
 | Conservative admission policy | ✅ included | exact/compressible/blocked classification scaffolding |
 | Bundled operating skill | ✅ included | `headroom_retrieve:headroom-token-cost-evaluation` when plugin skills are supported |
 | Full upstream proxy runtime smoke | ✅ included | `scripts/test-headroom-runtime-smoke.py` and GitHub Runtime Smoke workflow |
@@ -93,7 +93,7 @@ python scripts/install-production-runtime.py
 scripts/install-production-runtime.sh
 ```
 
-The installer creates/updates a persistent venv at `~/.cache/hermes-headroom-venv`, installs the bundled `llm-monitor` companion plugin into `$HERMES_HOME/plugins/llm-monitor` without restarting Hermes, installs the latest available `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, waits for `/readyz`, and runs a real plugin compress → retrieve smoke. It reports `RUNTIME_FULL` only when that end-to-end check passes. Existing local `llm-monitor` files are preserved unless `--force-llm-monitor-companion` is used; use `--skip-llm-monitor-companion` to opt out.
+The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs the reproducible runtime `headroom-ai[proxy]==0.31.0`, uses in-memory CCR with a 1,800-second TTL by default, starts the loopback proxy if needed, waits for `/readyz`, and runs real plugin compress → retrieve smoke. The bundled `llm-monitor` companion is not installed unless `--with-llm-monitor-companion` or `--companion-only` is requested. See the canonical [portable tool-core contract](docs/portable-core.md) for storage, retention, opt-ins, verification, and rollback.
 
 No-restart companion-only validation:
 
@@ -122,10 +122,10 @@ py -3 scripts\install-production-runtime.py
 Manual fallback:
 
 ```bash
-python3 -m venv ~/.cache/hermes-headroom-venv
-~/.cache/hermes-headroom-venv/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv/bin/python -m pip install 'headroom-ai[proxy]'
-~/.cache/hermes-headroom-venv/bin/headroom proxy --host 127.0.0.1 --port 28787
+python3 -m venv ~/.cache/hermes-headroom-venv-0.31.0
+~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install --upgrade pip
+~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install 'headroom-ai[proxy]==0.31.0'
+HEADROOM_CCR_BACKEND=memory HEADROOM_CCR_TTL_SECONDS=1800 ~/.cache/hermes-headroom-venv-0.31.0/bin/headroom proxy --host 127.0.0.1 --port 28787 --no-telemetry
 ```
 
 Then in Hermes:

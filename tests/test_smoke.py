@@ -13,7 +13,10 @@ from hermes_headroom_plugin.commands import events_summary_main, handle_headroom
 
 class SmokeTest(unittest.TestCase):
     def setUp(self):
-        self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
+        self._auto_compression_env = patch.dict(
+            os.environ,
+            {"HEADROOM_AUTO_COMPRESSION": "1", "HEADROOM_VISIBLE_STATUS_MARKER": "0"},
+        )
         self._auto_compression_env.start()
 
     def tearDown(self):
@@ -43,8 +46,16 @@ class SmokeTest(unittest.TestCase):
     def test_command_status_reports_visible_marker_state(self):
         with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
             text = handle_headroom_command('status')
-        self.assertIn('visible_marker=on:[HR✓]', text)
+        self.assertIn('visible_marker=off:disabled', text)
         self.assertIn('auto_compression=on', text)
+
+    def test_command_status_reports_explicit_marker_opt_in(self):
+        with patch.dict(os.environ, {"HEADROOM_VISIBLE_STATUS_MARKER": "1"}), patch(
+            'hermes_headroom_plugin.commands.readyz',
+            return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}},
+        ):
+            text = handle_headroom_command('status')
+        self.assertIn('visible_marker=on:[HR✓]', text)
 
     def test_command_status_reports_manual_auto_compression_mode(self):
         with patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "0"}), patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
@@ -121,14 +132,14 @@ class SmokeTest(unittest.TestCase):
             text = handle_headroom_command('on')
         self.assertIn('already active', text)
         self.assertIn('/headroom smoke', text)
-        self.assertIn('visible_marker=on:[HR✓]', text)
+        self.assertIn('visible_marker=off:disabled', text)
 
     def test_command_on_reports_no_slash_toggle_when_proxy_down(self):
         with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": False, "proxy_url": "http://127.0.0.1:28787", "status": None, "body": "connection refused"}):
             text = handle_headroom_command('on')
         self.assertIn('no slash-side toggle', text)
         self.assertIn('not ready', text)
-        self.assertIn('visible_marker=on:[HR!]', text)
+        self.assertIn('visible_marker=off:disabled', text)
 
     def test_unknown_command_usage_mentions_on_compatibility(self):
         text = handle_headroom_command('some')

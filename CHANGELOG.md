@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.3.16 — 2026-07-15
+
+- Defined a minimal portable tool-layer core while keeping provider/model routing direct and unchanged.
+- Pinned the reproducible runtime and blocking smoke default to `headroom-ai[proxy]==0.31.0` in a versioned venv.
+- Made in-memory CCR with a 1,800-second TTL the portable default; SQLite remains an explicit persistence tradeoff.
+- Added fail-open, grouped report retention: 14 days, a 256 MiB soft threshold enforced on the next prune cycle, explicit pin markers, and no timer/watcher.
+- Made the final status marker, first-turn hint, and bundled `llm-monitor` companion opt-in defaults.
+- Made systemd deployment convergent by writing backend/TTL explicitly, reloading, enabling, and restarting the Headroom service before smoke.
+- Required runtime store readback before `RUNTIME_FULL`; an already-running proxy with a backend/TTL mismatch now fails closed as `RUNTIME_PARTIAL`.
+- Added `docs/portable-core.md` as the canonical storage, install, verification, and rollback contract.
+
 ## v0.3.15 — 2026-07-03
 
 - Added `headroom-cache-effectiveness`, a read-only report for CCR store posture, middleware savings, TTL risk, active Hermes model path, and provider-cache observability.

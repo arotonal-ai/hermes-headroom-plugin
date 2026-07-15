@@ -36,7 +36,7 @@ Use this skill when you need to:
 - operate the portable Context Economy Loop contract (`docs/context-economy-loop.md`) without copying private instance state;
 - generate weekly savings tables from JSONL evidence.
 
-The installable repo includes a compact visible final-answer marker (`[HR✓]` proxy ready / `[HR!]` not ready) via `transform_llm_output`; this marker reports runtime readiness only, not per-message compression, and can be disabled with `context_reduction.visible_status_marker: false`. The installable repo includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, plus packaged `headroom-worker-lane`, `headroom-background-lane`, and `headroom-command-preflight` wrappers for explicit operator commands. These wrappers retain exact sidecars/final packets and compress only eligible bulky intermediate traces; they do not change provider/model routing. For heavy iterative improvement loops, on-demand mode (`HEADROOM_AUTO_COMPRESSION=0` or `context_reduction.auto_compression: false`) keeps status/smoke/cache/retrieve available while preventing automatic middleware compression overhead.
+The portable core is the fail-open `tool_execution` middleware plus `headroom_retrieve`, status/smoke and the loopback Headroom runtime. The compact final-answer marker (`[HR✓]` / `[HR!]`), first-turn hint, bundled `llm-monitor` companion, wrappers and extended reporting are optional extras and default off/not installed where applicable. The marker reports runtime readiness only, never per-message compression. Wrappers retain exact sidecars/final packets and do not change provider/model routing. For heavy iterative improvement loops, on-demand mode (`HEADROOM_AUTO_COMPRESSION=0` or `context_reduction.auto_compression: false`) keeps status/smoke/cache/retrieve available while preventing automatic middleware compression overhead.
 
 ## Portable Context Economy Loop
 
@@ -105,7 +105,7 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv`, installs latest `headroom-ai[proxy]` by default, starts `headroom proxy --host 127.0.0.1 --port 28787` if no proxy is ready, verifies `/readyz`, and runs real compress → retrieve smoke. Manual install is acceptable only if those same checks pass. For Linux gateway/default-cockpit durability, use `python scripts/install-production-runtime.py --systemd-user` and require `RUNTIME_FULL_DURABLE` plus `hermes-context-reduction.service` enabled + active before claiming survival across gateway restart/logout.
+The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs `headroom-ai[proxy]==0.31.0`, defaults CCR recovery to memory with a 1,800-second TTL, starts the loopback proxy, verifies `/readyz`, and runs real compress → retrieve smoke. `llm-monitor` is opt-in. Manual install is acceptable only if the same checks pass. For Linux gateway/default-cockpit durability, use `python scripts/install-production-runtime.py --systemd-user` and require `RUNTIME_FULL_DURABLE` plus `hermes-context-reduction.service` enabled + active before claiming survival across gateway restart/logout. See `docs/portable-core.md` for retention and rollback.
 
 Then verify in Hermes:
 

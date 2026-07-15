@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .proxy import compress_messages, hermes_home, load_context_reduction_config, readyz
+from .retention import maybe_prune_reports
 
 MIN_TOOL_RESULT_CHARS = max(2_000, int(os.environ.get("HEADROOM_MIN_TOOL_RESULT_CHARS", "8000")))
 ALWAYS_TOOL_RESULT_CHARS = 120_000
@@ -113,6 +114,11 @@ def _utc_stamp() -> str:
 def _report_dir() -> Path:
     path = hermes_home() / "control-plane" / "headroom" / "reports"
     path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.chmod(0o700)
+    except Exception:
+        pass
+    maybe_prune_reports(path, config=load_context_reduction_config())
     return path
 
 
