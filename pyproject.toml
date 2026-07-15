@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-headroom-plugin"
-version = "0.3.15"
+version = "0.3.16"
 description = "Hermes Agent plugin for safe Headroom context reduction, CCR retrieval, proxy smoke tests, and loopback-first runtime guardrails."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,10 +22,9 @@ Repository = "https://github.com/arotonal-ai/hermes-headroom-plugin"
 "headroom-ai on PyPI" = "https://pypi.org/project/headroom-ai/"
 
 [project.optional-dependencies]
-# Install the upstream runtime naturally by default. Operators may override the
-# runtime installer with --spec/HEADROOM_AI_SPEC for incident rollback, but the
-# packaged extra is intentionally not pinned to a historical Headroom release.
-proxy = ["headroom-ai[proxy]"]
+# Reproducible portable-core runtime. Operators may override the installer with
+# --spec/HEADROOM_AI_SPEC for an explicit canary or incident rollback.
+proxy = ["headroom-ai[proxy]==0.31.0"]
 test = ["pytest>=8,<10"]
 release = ["build>=1,<2"]
 
@@ -47,6 +46,9 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 hermes_headroom_plugin = ["skills/*/SKILL.md", "data/systemd/*.template", "companions/llm-monitor/*"]
+
+[tool.setuptools.data-files]
+"share/doc/hermes-headroom-plugin" = ["docs/portable-core.md"]
 
 [tool.pytest.ini_options]
 norecursedirs = ["qa", "release-candidate-runs", "context-economy-loop-gate-runs", "build", "dist", ".git"]

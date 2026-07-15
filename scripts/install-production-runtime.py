@@ -33,10 +33,13 @@ import venv
 from pathlib import Path
 from typing import Any
 
-DEFAULT_SPEC = "headroom-ai[proxy]"
+HEADROOM_RUNTIME_VERSION = "0.31.0"
+DEFAULT_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 28787
 DEFAULT_SERVICE_NAME = "hermes-context-reduction.service"
+DEFAULT_CCR_BACKEND = "memory"
+DEFAULT_CCR_TTL_SECONDS = 1800
 
 
 def default_hermes_home() -> Path:
@@ -44,7 +47,8 @@ def default_hermes_home() -> Path:
 
 
 def default_venv() -> Path:
-    return Path(os.environ.get("HEADROOM_RUNTIME_VENV") or Path.home() / ".cache" / "hermes-headroom-venv").expanduser()
+    default_path = Path.home() / ".cache" / f"hermes-headroom-venv-{HEADROOM_RUNTIME_VERSION}"
+    return Path(os.environ.get("HEADROOM_RUNTIME_VENV") or default_path).expanduser()
 
 
 def bin_dir(venv_dir: Path) -> Path:
@@ -96,15 +100,52 @@ def wait_readyz(proxy_url: str, *, timeout: int, log: Path) -> tuple[bool, str]:
     return False, last
 
 
-def start_proxy(headroom: Path, host: str, port: int, log: Path, pid_file: Path) -> int:
+def runtime_store_posture(proxy_url: str) -> dict[str, Any]:
+    """Read the actual Headroom 0.31 CCR backend/TTL for deployment evidence."""
+    status, data, body = http_get_json(f"{proxy_url.rstrip('/')}/v1/retrieve/stats", timeout=5)
+    if status != 200 or not isinstance(data, dict):
+        return {"ok": False, "status": status, "error": body}
+    raw_store = data.get("store")
+    store: dict[str, Any] = raw_store if isinstance(raw_store, dict) else {}
+    backend_data = store.get("backend")
+    if isinstance(backend_data, dict):
+        backend = backend_data.get("backend_type")
+        entry_count = backend_data.get("entry_count")
+    else:
+        backend = backend_data
+        entry_count = store.get("entry_count")
+    ttl = store.get("default_ttl_seconds")
+    return {
+        "ok": bool(backend) and isinstance(ttl, int),
+        "status": status,
+        "backend": backend,
+        "ttl_seconds": ttl,
+        "entry_count": entry_count,
+    }
+
+
+def start_proxy(
+    headroom: Path,
+    host: str,
+    port: int,
+    log: Path,
+    pid_file: Path,
+    *,
+    ccr_backend: str,
+    ccr_ttl_seconds: int,
+) -> int:
     proxy_log = log.parent / "headroom-proxy.log"
     out = proxy_log.open("a", encoding="utf-8")
     cmd = [str(headroom), "proxy", "--host", host, "--port", str(port)]
+    runtime_env = os.environ.copy()
+    runtime_env["HEADROOM_CCR_BACKEND"] = ccr_backend
+    runtime_env["HEADROOM_CCR_TTL_SECONDS"] = str(ccr_ttl_seconds)
     kwargs: dict[str, Any] = {
         "stdin": subprocess.DEVNULL,
         "stdout": out,
         "stderr": subprocess.STDOUT,
         "text": True,
+        "env": runtime_env,
     }
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
@@ -125,8 +166,22 @@ def run_systemctl(args: list[str], *, log: Path, timeout: int = 60) -> subproces
     return proc
 
 
-def write_systemd_user_unit(headroom: Path, host: str, port: int, service_name: str, log: Path) -> Path:
-    if os.name == "nt" or shutil.which("systemctl") is None:
+def systemd_user_available() -> bool:
+    """Return whether this host can manage a systemd user service."""
+    return os.name != "nt" and shutil.which("systemctl") is not None
+
+
+def write_systemd_user_unit(
+    headroom: Path,
+    host: str,
+    port: int,
+    service_name: str,
+    log: Path,
+    *,
+    ccr_backend: str,
+    ccr_ttl_seconds: int,
+) -> Path:
+    if not systemd_user_available():
         raise RuntimeError("systemd --user is available only on Linux hosts with systemctl")
     unit_dir = Path.home() / ".config" / "systemd" / "user"
     unit_dir.mkdir(parents=True, exist_ok=True)
@@ -145,21 +200,44 @@ Environment=HEADROOM_TELEMETRY=off
 Environment=HEADROOM_DISABLE_UPDATE_CHECK=1
 Environment=HEADROOM_HOST={host}
 Environment=HEADROOM_PORT={port}
+Environment=HEADROOM_CCR_BACKEND={ccr_backend}
+Environment=HEADROOM_CCR_TTL_SECONDS={ccr_ttl_seconds}
 
 [Install]
 WantedBy=default.target
 """,
         encoding="utf-8",
     )
+    try:
+        unit_path.chmod(0o600)
+    except OSError:
+        pass
     with log.open("a", encoding="utf-8") as fh:
         fh.write(f"\nwrote systemd user unit: {unit_path}\n")
     return unit_path
 
 
-def enable_systemd_user_service(headroom: Path, host: str, port: int, service_name: str, log: Path) -> dict[str, Any]:
-    unit_path = write_systemd_user_unit(headroom, host, port, service_name, log)
+def enable_systemd_user_service(
+    headroom: Path,
+    host: str,
+    port: int,
+    service_name: str,
+    log: Path,
+    *,
+    ccr_backend: str,
+    ccr_ttl_seconds: int,
+) -> dict[str, Any]:
+    unit_path = write_systemd_user_unit(
+        headroom,
+        host,
+        port,
+        service_name,
+        log,
+        ccr_backend=ccr_backend,
+        ccr_ttl_seconds=ccr_ttl_seconds,
+    )
     out: dict[str, Any] = {"service": service_name, "unit_path": str(unit_path), "ok": False}
-    for args in (["daemon-reload"], ["enable", "--now", service_name]):
+    for args in (["daemon-reload"], ["enable", service_name], ["restart", service_name]):
         proc = run_systemctl(list(args), log=log)
         if proc.returncode != 0:
             out.update({"phase": "systemctl", "command": " ".join(args), "returncode": proc.returncode, "output_tail": proc.stdout[-2000:]})
@@ -277,24 +355,34 @@ def install_llm_monitor_companion(repo_root: Path, hermes_home: Path, *, force: 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install/start/verify Headroom runtime for Hermes plugin production use.")
-    parser.add_argument("--venv", default=str(default_venv()), help="persistent runtime venv path")
-    parser.add_argument("--spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_SPEC), help=f"pip package spec; default installs latest ({DEFAULT_SPEC})")
+    parser.add_argument("--venv", default=str(default_venv()), help=f"persistent versioned runtime venv path; default {default_venv()}")
+    parser.add_argument("--spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_SPEC), help=f"pip package spec; reproducible default {DEFAULT_SPEC}")
     parser.add_argument("--host", default=os.environ.get("HEADROOM_HOST", DEFAULT_HOST))
     parser.add_argument("--port", type=int, default=int(os.environ.get("HEADROOM_PORT", str(DEFAULT_PORT))))
+    parser.add_argument("--ccr-backend", choices=("memory", "sqlite"), default=os.environ.get("HEADROOM_CCR_BACKEND", DEFAULT_CCR_BACKEND), help=f"CCR recovery backend; portable tool-core default {DEFAULT_CCR_BACKEND}")
+    parser.add_argument("--ccr-ttl-seconds", type=int, default=int(os.environ.get("HEADROOM_CCR_TTL_SECONDS", str(DEFAULT_CCR_TTL_SECONDS))), help=f"CCR marker TTL; default {DEFAULT_CCR_TTL_SECONDS}")
     parser.add_argument("--install-timeout", type=int, default=int(os.environ.get("HEADROOM_DEP_INSTALL_TIMEOUT", "900")))
     parser.add_argument("--ready-timeout", type=int, default=int(os.environ.get("HEADROOM_PROXY_READY_TIMEOUT", "90")))
     parser.add_argument("--recreate", action="store_true", help="delete and recreate the venv before installing")
     parser.add_argument("--no-start", action="store_true", help="install/check dependency only; do not start proxy")
     parser.add_argument("--no-smoke", action="store_true", help="skip plugin compress/retrieve smoke after readyz")
     parser.add_argument("--stop-existing", action="store_true", help="stop PID recorded in the venv pid file before starting")
-    parser.add_argument("--systemd-user", action="store_true", help="Linux only: write, enable, and start a durable systemd --user service instead of a detached helper process")
+    parser.add_argument("--systemd-user", action="store_true", help="Linux only: write, enable, and restart a durable systemd --user service instead of a detached helper process")
     parser.add_argument("--service-name", default=os.environ.get("HEADROOM_SERVICE", DEFAULT_SERVICE_NAME), help=f"systemd --user service name for --systemd-user; default {DEFAULT_SERVICE_NAME}")
-    parser.add_argument("--hermes-home", default=str(default_hermes_home()), help="Hermes home for companion plugin install; defaults to HERMES_HOME or ~/.hermes")
-    parser.add_argument("--skip-llm-monitor-companion", action="store_true", help="do not install the bundled llm-monitor companion plugin")
-    parser.add_argument("--force-llm-monitor-companion", action="store_true", help="overwrite an existing llm-monitor companion plugin in --hermes-home")
+    parser.add_argument("--hermes-home", default=str(default_hermes_home()), help="Hermes home for optional companion plugin install; defaults to HERMES_HOME or ~/.hermes")
+    companion_group = parser.add_mutually_exclusive_group()
+    companion_group.add_argument("--with-llm-monitor-companion", action="store_true", help="opt in to installing the bundled llm-monitor companion plugin")
+    companion_group.add_argument("--skip-llm-monitor-companion", action="store_true", help="deprecated compatibility flag; companion is skipped by default")
+    parser.add_argument("--force-llm-monitor-companion", action="store_true", help="overwrite an existing llm-monitor companion plugin in --hermes-home; requires --with-llm-monitor-companion or --companion-only")
     parser.add_argument("--companion-only", action="store_true", help="install/verify bundled companion plugin only; do not install or start Headroom runtime")
     parser.add_argument("--json", action="store_true", help="emit machine-readable result")
     args = parser.parse_args(argv)
+    if args.ccr_ttl_seconds <= 0:
+        parser.error("--ccr-ttl-seconds must be greater than zero")
+    if args.companion_only and args.skip_llm_monitor_companion:
+        parser.error("--companion-only cannot be combined with --skip-llm-monitor-companion")
+    if args.force_llm_monitor_companion and not (args.with_llm_monitor_companion or args.companion_only):
+        parser.error("--force-llm-monitor-companion requires --with-llm-monitor-companion or --companion-only")
 
     repo_root = Path(__file__).resolve().parents[1]
     hermes_home = Path(args.hermes_home).expanduser().resolve()
@@ -304,7 +392,16 @@ def main(argv: list[str] | None = None) -> int:
     log = log_dir / "install-production-runtime.log"
     pid_file = venv_dir / "headroom-proxy.pid"
     proxy_url = f"http://{args.host}:{args.port}"
-    result: dict[str, Any] = {"state": "FAIL", "proxy_url": proxy_url, "venv": str(venv_dir), "spec": args.spec, "log": str(log), "hermes_home": str(hermes_home)}
+    result: dict[str, Any] = {
+        "state": "FAIL",
+        "proxy_url": proxy_url,
+        "venv": str(venv_dir),
+        "spec": args.spec,
+        "ccr_backend": args.ccr_backend,
+        "ccr_ttl_seconds": args.ccr_ttl_seconds,
+        "log": str(log),
+        "hermes_home": str(hermes_home),
+    }
 
     if args.recreate and venv_dir.exists():
         shutil.rmtree(venv_dir)
@@ -312,14 +409,15 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         companion_ok = True
-        if not args.skip_llm_monitor_companion:
+        install_companion = args.with_llm_monitor_companion or args.companion_only
+        if install_companion:
             companion_result = install_llm_monitor_companion(repo_root, hermes_home, force=args.force_llm_monitor_companion, log=log)
             result["llm_monitor_companion"] = companion_result
             if not companion_result.get("ok"):
                 result.update({"state": "FAIL", "phase": "llm_monitor_companion", "ok": False})
                 companion_ok = False
         else:
-            result["llm_monitor_companion"] = {"ok": True, "status": "skipped"}
+            result["llm_monitor_companion"] = {"ok": True, "status": "skipped_default"}
 
         if companion_ok and args.companion_only:
             result.update({"state": "COMPANION_INSTALLED", "phase": "companion_only", "ok": True})
@@ -351,28 +449,58 @@ def main(argv: list[str] | None = None) -> int:
                         started_pid = None
                         systemd_result = None
                         if args.systemd_user:
-                            systemd_result = enable_systemd_user_service(headroom, args.host, args.port, args.service_name, log)
+                            systemd_result = enable_systemd_user_service(
+                                headroom,
+                                args.host,
+                                args.port,
+                                args.service_name,
+                                log,
+                                ccr_backend=args.ccr_backend,
+                                ccr_ttl_seconds=args.ccr_ttl_seconds,
+                            )
                             result["systemd_user"] = systemd_result
                             if not systemd_result.get("ok"):
                                 result.update({"state": "RUNTIME_PARTIAL", "phase": "systemd_user", "ok": False})
                         else:
                             already_ready, _detail = readyz(proxy_url)
                             if not already_ready:
-                                started_pid = start_proxy(headroom, args.host, args.port, log, pid_file)
+                                started_pid = start_proxy(
+                                    headroom,
+                                    args.host,
+                                    args.port,
+                                    log,
+                                    pid_file,
+                                    ccr_backend=args.ccr_backend,
+                                    ccr_ttl_seconds=args.ccr_ttl_seconds,
+                                )
                         ready, detail = wait_readyz(proxy_url, timeout=args.ready_timeout, log=log)
                         result.update({"readyz": detail, "started_pid": started_pid})
                         if not ready:
                             result.update({"state": "RUNTIME_PARTIAL", "phase": "readyz", "ok": False})
-                        elif args.no_smoke:
-                            result.update({"state": "RUNTIME_PARTIAL", "phase": "ready_no_smoke", "ok": True})
                         else:
-                            ok, smoke_result, output_tail = smoke(repo_root, python, proxy_url, log)
-                            result.update({"smoke": smoke_result, "output_tail": output_tail if not ok else ""})
-                            if ok:
-                                state = "RUNTIME_FULL_DURABLE" if args.systemd_user and (systemd_result or {}).get("ok") else "RUNTIME_FULL"
-                                result.update({"state": state, "phase": "smoke", "ok": True})
+                            store_posture = runtime_store_posture(proxy_url)
+                            result["runtime_store"] = store_posture
+                            if not store_posture.get("ok"):
+                                result.update({"state": "RUNTIME_PARTIAL", "phase": "runtime_store_posture", "ok": False})
+                            elif store_posture.get("backend") != args.ccr_backend or store_posture.get("ttl_seconds") != args.ccr_ttl_seconds:
+                                result.update(
+                                    {
+                                        "state": "RUNTIME_PARTIAL",
+                                        "phase": "runtime_store_mismatch",
+                                        "ok": False,
+                                        "requested_store": {"backend": args.ccr_backend, "ttl_seconds": args.ccr_ttl_seconds},
+                                    }
+                                )
+                            elif args.no_smoke:
+                                result.update({"state": "RUNTIME_PARTIAL", "phase": "ready_no_smoke", "ok": True})
                             else:
-                                result.update({"state": "RUNTIME_PARTIAL", "phase": "smoke", "ok": False})
+                                ok, smoke_result, output_tail = smoke(repo_root, python, proxy_url, log)
+                                result.update({"smoke": smoke_result, "output_tail": output_tail if not ok else ""})
+                                if ok:
+                                    state = "RUNTIME_FULL_DURABLE" if args.systemd_user and (systemd_result or {}).get("ok") else "RUNTIME_FULL"
+                                    result.update({"state": state, "phase": "smoke", "ok": True})
+                                else:
+                                    result.update({"state": "RUNTIME_PARTIAL", "phase": "smoke", "ok": False})
     except Exception as exc:
         result.update({"state": "FAIL", "phase": "exception", "error": f"{type(exc).__name__}: {exc}"})
 

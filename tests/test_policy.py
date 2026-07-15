@@ -8,7 +8,10 @@ class PolicyTest(unittest.TestCase):
         self.assertEqual(classify_data(tool="terminal", data_class="secret_or_sensitive"), "blocked")
 
     def test_exact_tools(self):
-        self.assertEqual(classify_data(tool="read_file", data_class="raw_log"), "exact")
+        self.assertEqual(classify_data(tool="patch", data_class="raw_log"), "exact")
+
+    def test_source_readback_is_compressible(self):
+        self.assertTrue(should_compress(tool="read_file", data_class="source_readback"))
 
     def test_raw_log_compressible(self):
         self.assertTrue(should_compress(data_class="raw_log"))

@@ -28,6 +28,13 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_HEADROOM_SPEC = "headroom-ai[proxy]"
+EPHEMERAL_ENV_DIRS = (
+    "build-venv",
+    "pytest-venv",
+    "wheel-install-venv",
+    "headroom-runtime-venv",
+    "workload-venv",
+)
 PUBLIC_SCAN_PATHS = [
     "README.md",
     "INSTALL.md",
@@ -60,6 +67,65 @@ def utc_stamp() -> str:
 
 def utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _tree_size_bytes(path: Path) -> int:
+    total = 0
+    for root, dirs, names in os.walk(path, followlinks=False):
+        dirs[:] = [name for name in dirs if not (Path(root) / name).is_symlink()]
+        for name in names:
+            candidate = Path(root) / name
+            if candidate.is_symlink():
+                continue
+            with contextlib.suppress(OSError):
+                total += candidate.stat().st_size
+    return total
+
+
+def cleanup_ephemeral_envs(run_dir: Path, *, keep: bool = False) -> dict[str, Any]:
+    """Remove only allowlisted per-run virtualenvs after evidence is written.
+
+    Reports, logs, package artifacts, command receipts, temporary Hermes-home
+    payloads and workload matrices remain.  The strict name/parent/symlink
+    guards prevent this retention step from becoming a general deletion API.
+    """
+    root = run_dir.resolve()
+    entries: list[dict[str, Any]] = []
+    removed_bytes = 0
+    for name in EPHEMERAL_ENV_DIRS:
+        candidate = run_dir / name
+        entry: dict[str, Any] = {"name": name, "existed": candidate.exists()}
+        if not candidate.exists():
+            entry["status"] = "absent"
+            entries.append(entry)
+            continue
+        resolved = candidate.resolve()
+        if candidate.is_symlink() or resolved.parent != root or resolved.name != name:
+            entry.update({"status": "blocked", "error": "path_guard_failed"})
+            entries.append(entry)
+            continue
+        size = _tree_size_bytes(candidate)
+        entry["bytes"] = size
+        if keep:
+            entry["status"] = "retained_by_request"
+        else:
+            try:
+                shutil.rmtree(candidate)
+            except OSError as exc:
+                entry.update({"status": "error", "error": f"{type(exc).__name__}: {exc}"})
+            else:
+                entry["status"] = "removed"
+                removed_bytes += size
+        entries.append(entry)
+    errors = [entry for entry in entries if entry["status"] in {"blocked", "error"}]
+    return {
+        "pass": not errors,
+        "keep_ephemeral_envs": keep,
+        "allowlist": list(EPHEMERAL_ENV_DIRS),
+        "removed_bytes": removed_bytes,
+        "entries": entries,
+        "errors": errors,
+    }
 
 
 def bin_dir(venv_dir: Path) -> Path:
@@ -459,6 +525,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-root", default=str(REPO / "release-candidate-runs"), help="directory for gate evidence")
     parser.add_argument("--headroom-spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_HEADROOM_SPEC))
     parser.add_argument("--install-timeout", type=int, default=int(os.environ.get("HEADROOM_DEP_INSTALL_TIMEOUT", "600")))
+    parser.add_argument(
+        "--keep-ephemeral-envs",
+        action="store_true",
+        help="retain the five per-run virtualenvs for explicit debugging (default: remove after evidence capture)",
+    )
     args = parser.parse_args(argv)
 
     run_dir = Path(args.run_root).expanduser().resolve() / f"{utc_stamp()}-release-candidate-local-gate"
@@ -534,6 +605,13 @@ def main(argv: list[str] | None = None) -> int:
     status = run(["git", "status", "--short"], timeout=30)
     write_json(run_dir / "git-status.json", status)
 
+    ephemeral_cleanup = cleanup_ephemeral_envs(run_dir, keep=args.keep_ephemeral_envs)
+    write_json(run_dir / "ephemeral-env-cleanup.json", ephemeral_cleanup)
+    gates["ephemeral_env_cleanup"] = {
+        "pass": ephemeral_cleanup.get("pass"),
+        "evidence": str(run_dir / "ephemeral-env-cleanup.json"),
+    }
+
     pass_count = sum(1 for g in gates.values() if g.get("pass"))
     total = len(gates)
     decision = "PLUGIN_RELEASE_CANDIDATE_LOCAL_PASS" if pass_count == total else "PLUGIN_RELEASE_CANDIDATE_LOCAL_GAPS_FOUND"
@@ -554,6 +632,7 @@ def main(argv: list[str] | None = None) -> int:
         "public_release": False,
         "real_hermes_profile_mutated": False,
         "git_status_short": status.get("stdout", ""),
+        "ephemeral_env_cleanup": ephemeral_cleanup,
         "next_gate": "OWNER_RELEASE_REVIEW_AND_REMOTE_CI_READBACK" if pass_count == total else "FIX_RC_GAPS_AND_RERUN",
     }
     write_json(run_dir / "summary.json", summary)

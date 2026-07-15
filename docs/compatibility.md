@@ -1,6 +1,6 @@
 # Compatibility
 
-This page separates **certified support** from **experimental monitoring**. The production installer intentionally uses latest available `headroom-ai[proxy]` by default; runtime certification still requires a real proxy smoke, not just a successful pip install.
+This page separates **certified support** from **experimental monitoring**. The portable-core installer and blocking smoke default to `headroom-ai[proxy]==0.31.0`; runtime certification still requires a real proxy smoke, not just a successful pip install. Future versions remain explicit non-blocking canaries until promoted.
 
 ## Certified runtime matrix
 

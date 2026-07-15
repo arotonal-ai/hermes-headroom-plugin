@@ -18,6 +18,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.request import urlopen
 
 try:
     from hermes_constants import get_hermes_home
@@ -226,6 +227,43 @@ def _headroom_event_tail(limit: int = 2000) -> List[Dict[str, Any]]:
         return []
 
 
+def _headroom_proxy_summary_line() -> str:
+    """Compact Headroom proxy savings line for llm-monitor.
+
+    Local loopback read only; fail-silent so monitor never blocks model turns.
+    This reports provider-route/proxy compression, distinct from tool-output
+    middleware events in `_headroom_turn_summary_line`.
+    """
+    try:
+        if not _read_state().get("headroom_summary", True):
+            return ""
+        proxy = os.getenv("HEADROOM_PROXY_URL") or "http://127.0.0.1:28787"
+        proxy = proxy.rstrip("/")
+        with urlopen(proxy + "/stats", timeout=0.75) as resp:  # nosec B310 owner-local loopback/read-only
+            data = json.loads(resp.read(200_000).decode("utf-8", errors="replace"))
+        tokens = data.get("tokens") or {}
+        display = (data.get("persistent_savings") or {}).get("display_session") or {}
+        requests = data.get("requests") or {}
+        saved = _safe_int(display.get("tokens_saved") or tokens.get("saved") or tokens.get("proxy_compression_saved"))
+        pct = display.get("savings_percent", tokens.get("savings_percent", tokens.get("proxy_savings_percent")))
+        reqs = _safe_int(display.get("requests") or requests.get("total"))
+        failed = _safe_int(requests.get("failed"))
+        if not saved and pct in (None, "", 0, 0.0):
+            return ""
+        try:
+            pct_txt = f"{float(pct):.1f}%"
+        except Exception:
+            pct_txt = "?%"
+        parts = [f"proxy saved `{_human_count(saved)}`", f"rate `{pct_txt}`"]
+        if reqs:
+            parts.append(f"req `{reqs}`")
+        if failed:
+            parts.append(f"failed `{failed}`")
+        return "**HR proxy:** " + " · ".join(parts)
+    except Exception:
+        return ""
+
+
 def _headroom_turn_summary_line(stats: Dict[str, Any]) -> str:
     """Compact Headroom line for llm-monitor turn-summary rail.
 
@@ -278,24 +316,24 @@ def _headroom_turn_summary_line(stats: Dict[str, Any]) -> str:
         skipped_count = counts.get("skipped", 0)
         issue_count = counts.get("runtime_unavailable", 0) + counts.get("error", 0)
         if issue_count:
-            parts = [f"issues `{issue_count}`", f"exact fallback `{exact_count + skipped_count}`"]
+            parts = [f"tool-output issues `{issue_count}`", f"exact/skipped `{exact_count + skipped_count}`"]
         elif compressed_count or saved:
             parts = [
-                "used",
+                "tool-output used",
                 f"saved `{_human_count(saved) if saved else '0'}`",
                 f"compressed `{compressed_count}`",
             ]
-            if exact_count:
-                parts.append(f"exact-safe `{exact_count}`")
-            if blocked_count:
-                parts.append(f"blocked `{blocked_count}`")
-        elif blocked_count:
-            parts = [f"safety block `{blocked_count}`", f"saved `0`"]
             if exact_count or skipped_count:
-                parts.append(f"exact-safe `{exact_count + skipped_count}`")
+                parts.append(f"exact/skipped `{exact_count + skipped_count}`")
+            if blocked_count:
+                parts.append(f"safety-blocked `{blocked_count}`")
+        elif blocked_count:
+            parts = [f"tool-output no compression", f"safety-blocked `{blocked_count}`"]
+            if exact_count or skipped_count:
+                parts.append(f"exact/skipped `{exact_count + skipped_count}`")
         else:
             safe_count = exact_count + skipped_count
-            parts = ["ready", f"exact-safe `{safe_count}`", "no eligible bulky output"]
+            parts = ["tool-output ready", f"exact/skipped `{safe_count}`", "no compressed eligible output"]
         parts.append(f"lanes `{lane_txt}`")
         return "**HR:** " + " · ".join(parts)
     except Exception:
@@ -322,6 +360,9 @@ def _turn_summary_message(stats: Dict[str, Any], *, phase: str) -> str:
         f"**Estado:** finish `{finish}`\n"
         f"**Modelo:** `{provider}/{model}`"
     )
+    headroom_proxy_line = _headroom_proxy_summary_line()
+    if headroom_proxy_line:
+        message += "\n" + headroom_proxy_line
     headroom_line = _headroom_turn_summary_line(stats)
     if headroom_line:
         message += "\n" + headroom_line

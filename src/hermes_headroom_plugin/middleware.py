@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from .proxy import compress_messages, hermes_home, load_context_reduction_config, readyz
+from .retention import maybe_prune_reports
 
-MIN_TOOL_RESULT_CHARS = 28_000
+MIN_TOOL_RESULT_CHARS = max(2_000, int(os.environ.get("HEADROOM_MIN_TOOL_RESULT_CHARS", "8000")))
 ALWAYS_TOOL_RESULT_CHARS = 120_000
 MAX_RETURN_CHARS = 12_000
 RAW_EDGE_CHARS = 1_200
@@ -34,26 +35,30 @@ ELIGIBLE_TOOLS = {
     "terminal",
     "execute_code",
     "process",
+    "read_file",
+    "search_files",
+    "skill_view",
+    "fact_store",
     "browser_console",
     "browser_snapshot",
     "browser_get_images",
+    "web_search",
     "web_extract",
     "session_search",
 }
 ELIGIBLE_PREFIXES = ("browser_",)
 EXACT_TOOLS = {
-    "read_file",
-    "search_files",
     "patch",
     "write_file",
     "skill_manage",
     "headroom_retrieve",
     "memory",
-    "fact_store",
-    "mcp_open_design_get_file",
-    "mcp_open_design_get_artifact",
     "mcp_open_design_write_file",
 }
+MACHINE_CONSUMER_EXACT_TOOLS = {"read_file", "search_files", "skill_view", "fact_store"}
+READ_ONLY_ACTIONS = {"search", "probe", "related", "reason", "contradict", "list", "get", "read", "query"}
+READ_ONLY_MCP_HINTS = ("get", "read", "list", "search", "query", "extract", "snapshot", "inspect", "show")
+MUTATING_MCP_HINTS = ("create", "write", "patch", "edit", "update", "delete", "remove", "publish", "send")
 EXACT_COMMAND_HINTS = (
     "git diff",
     "diff ",
@@ -63,6 +68,10 @@ EXACT_COMMAND_HINTS = (
     "gpg ",
     "openssl ",
 )
+PROTECTED_RECOVERY_MARKER_RE = re.compile(
+    r"(?im)\b(?:rollback(?:[_-]?(?:plan|path|target))?|checksum(?:[_-]?(?:expected|actual))?|sha(?:256)?|commit(?:[_-]?sha)?|patch(?:[_-]?id)?)\s*[:=]"
+)
+FAILURE_MARKER_RE = re.compile(r"(?i)\b(?:fail(?:ed|ure)?|error|exception|traceback|mismatch|blocked)\b")
 COMPRESSED_SENTINELS = (
     "Headroom auto-compressed",
     "<<ccr:",
@@ -82,6 +91,7 @@ PROTECTED_PATTERNS = [
 ]
 SENSITIVE_ARG_KEY_RE = re.compile(r"(?i)(api[_-]?key|token|secret|password|authorization|client_secret|cookie)")
 HEADER_REQUIRED_CLASSES = {
+    "source_readback",
     "browser_debug_trace",
     "interaction_state",
     "research_corpus",
@@ -104,6 +114,11 @@ def _utc_stamp() -> str:
 def _report_dir() -> Path:
     path = hermes_home() / "control-plane" / "headroom" / "reports"
     path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.chmod(0o700)
+    except Exception:
+        pass
+    maybe_prune_reports(path, config=load_context_reduction_config())
     return path
 
 
@@ -459,8 +474,24 @@ def _already_compressed(result: str) -> bool:
 
 
 def _exact_or_blocked_reason(tool_name: str, args: dict[str, Any], result: str) -> str | None:
-    if tool_name in EXACT_TOOLS:
+    tool = str(tool_name or "").lower()
+    if tool_name in EXACT_TOOLS or tool in EXACT_TOOLS:
         return f"exact_tool:{tool_name}"
+    if tool == "fact_store" and str(args.get("action") or "").lower() not in READ_ONLY_ACTIONS:
+        return "exact_state_mutation:fact_store"
+    if tool.startswith(("mcp__open_design__", "mcp_open_design_")):
+        if any(hint in tool for hint in MUTATING_MCP_HINTS):
+            return f"exact_mcp_mutation:{tool_name}"
+    elif tool.startswith(("mcp__", "mcp_")):
+        explicit_class = next(
+            (_normalize_data_class(args.get(key)) for key in ("data_class", "headroom_data_class", "classification") if args.get(key)),
+            None,
+        )
+        read_only_name = any(hint in tool for hint in READ_ONLY_MCP_HINTS) and not any(
+            hint in tool for hint in MUTATING_MCP_HINTS
+        )
+        if not explicit_class and not read_only_name:
+            return f"exact_mcp_default:{tool_name}"
     if tool_name == "browser_vision":
         vision_hint = " ".join(str(args.get(k) or "") for k in ("lane", "goal", "context", "data_class"))[:2_000].lower()
         if not any(h in vision_hint for h in ("intermediate", "debug", "ocr", "diagnostic", "qa")):
@@ -474,6 +505,11 @@ def _exact_or_blocked_reason(tool_name: str, args: dict[str, Any], result: str) 
         return "patch_diff"
     if "# worker final packet" in lowered or "claim_ledger" in lowered:
         return "final_or_claim_ledger"
+    # Same-provider A/B: lossy compression removed an exact rollback target
+    # from 2/2 code-trace replicates while bypass preserved it. Fail closed
+    # only for failure traces carrying recovery/integrity anchors.
+    if PROTECTED_RECOVERY_MARKER_RE.search(result[:160_000]) and FAILURE_MARKER_RE.search(result[:160_000]):
+        return "protected_recovery_integrity_trace"
     if tool_name == "terminal":
         cmd = str(args.get("command") or "").lower()
         if any(hint in cmd for hint in EXACT_COMMAND_HINTS):
@@ -486,9 +522,17 @@ def _lane_eligible(tool_name: str, args: dict[str, Any], result: str) -> tuple[b
         return True, "always_chars"
     if len(result) < MIN_TOOL_RESULT_CHARS:
         return False, "below_min_chars"
-    if tool_name in ELIGIBLE_TOOLS or any(tool_name.startswith(prefix) for prefix in ELIGIBLE_PREFIXES):
+    tool = str(tool_name or "").lower()
+    if tool in ELIGIBLE_TOOLS or any(tool.startswith(prefix) for prefix in ELIGIBLE_PREFIXES):
         return True, f"eligible_tool:{tool_name}"
-    task_hint = " ".join(str(args.get(k) or "") for k in ("lane", "goal", "context"))[:2_000].lower()
+    if tool.startswith(("mcp__", "mcp_")) and any(hint in tool for hint in READ_ONLY_MCP_HINTS) and not any(
+        hint in tool for hint in MUTATING_MCP_HINTS
+    ):
+        return True, f"eligible_readonly_mcp:{tool_name}"
+    task_hint = " ".join(
+        str(args.get(k) or "")
+        for k in ("lane", "goal", "context", "data_class", "headroom_data_class", "classification")
+    )[:2_000].lower()
     if any(h in task_hint for h in ("delegate", "subagent", "worker", "kanban", "background", "debug", "research", "qa", "diagnostic")):
         return True, "lane_hint"
     return False, "not_intermediate_lane"
@@ -538,6 +582,12 @@ def _detect_data_class(tool_name: str, args: dict[str, Any], result: str, eligib
     tool = str(tool_name or "").lower()
     scan = _scan_text(tool_name, args, result).lower()
 
+    if tool in {"read_file", "search_files", "skill_view", "fact_store"} or (
+        tool.startswith(("mcp__", "mcp_"))
+        and any(hint in tool for hint in READ_ONLY_MCP_HINTS)
+        and not any(hint in tool for hint in MUTATING_MCP_HINTS)
+    ):
+        return "source_readback"
     if tool.startswith("kanban") or re.search(
         r"\b(task[_-]?id|job[_-]?id|run[_-]?id|worker_context|acceptance_criteria|assignee|parents|children|latest_actionable_comment)\b",
         scan,
@@ -673,6 +723,17 @@ def _build_exact_header_data(tool_name: str, args: dict[str, Any], result: str, 
     anchors = _extract_labeled_values(
         scan,
         (
+            "path",
+            "project",
+            "entry",
+            "entity",
+            "action",
+            "offset",
+            "limit",
+            "pattern",
+            "query",
+            "target",
+            "file_glob",
             "selector",
             "bounds",
             "coordinates",
@@ -701,7 +762,14 @@ def _build_exact_header_data(tool_name: str, args: dict[str, Any], result: str, 
     errors = _extract_matching_lines(scan, r"\b(error|warning|traceback|assertionerror|blocked|fail(?:ed)?)\b", limit=6)
 
     missing: list[str] = []
-    if data_class == "orchestration_fanin":
+    if data_class == "source_readback":
+        if not (
+            identifiers
+            or urls
+            or any(re.search(r"(?i)(path|project|entry|entity|action|offset|limit|pattern|query|target|file_glob)", item) for item in anchors)
+        ):
+            missing.append("source path/query/window anchor")
+    elif data_class == "orchestration_fanin":
         if not any(re.search(r"(?i)\b(task|job|run)[_-]?id=", item) for item in identifiers):
             missing.append("task/job/run id")
         if not (status or any(re.search(r"(?i)(acceptance|title|latest_actionable_comment)", item) for item in anchors)):
@@ -885,14 +953,9 @@ def _maybe_compress_terminal_below_min_aggregate(
     report_path = report_dir / f"auto-tool-{stamp}-{safe_tool}-below-min-aggregate.json"
     aggregate_body = "\n\n".join(
         [
-            "===== BELOW-MIN TERMINAL AGGREGATE =====",
-            f"aggregate_key={key}",
+            "===== BOUNDED TERMINAL CHUNKS =====",
             f"chunk_count={len(chunks)}",
             f"aggregate_chars={buffer['chars']}",
-            "exact_sidecar_authority=true",
-            "policy_mutation=false",
-            "global_threshold_change=false",
-            "exact_commands_relaxed=false",
             "===== CHUNKS =====",
         ]
         + [f"----- chunk {idx + 1}/{len(chunks)} -----\n{chunk}" for idx, chunk in enumerate(chunks)]
@@ -1016,6 +1079,16 @@ def _compression_body_for_tool_result(tool_name: str, redacted_result: str) -> t
     if metadata:
         prefix = "[terminal result metadata: " + ", ".join(_safe_header_value(item) for item in metadata) + "]\n"
     return prefix + output, "terminal_json_output_field"
+
+
+def _compression_proxy_tool_name(tool_name: str) -> str:
+    """Expose semantic read-tool identity to Headroom's ContentRouter."""
+    tool = str(tool_name or "").lower()
+    if tool in {"read_file", "search_files", "skill_view", "fact_store", "web_search", "web_extract"}:
+        return _safe_name(tool)
+    if tool.startswith(("mcp__", "mcp_")) and any(hint in tool for hint in READ_ONLY_MCP_HINTS):
+        return _safe_name(tool)
+    return "worker_trace"
 
 
 def compress_tool_result_for_context(
@@ -1162,11 +1235,15 @@ def compress_tool_result_for_context(
     source_path = report_dir / f"auto-tool-{stamp}-{safe_tool}.redacted.log"
     source_path.write_text(redacted, encoding="utf-8")
 
-    trace = _build_trace(tool_name, args, compression_body, task_id=task_id, duration_ms=duration_ms)
+    trace = (
+        compression_body
+        if header_data.get("data_class") == "source_readback"
+        else _build_trace(tool_name, args, compression_body, task_id=task_id, duration_ms=duration_ms)
+    )
     messages = [
         {"role": "system", "content": f"Headroom intermediate tool-result compression: {tool_name}."},
         {"role": "user", "content": f"Compress only the bulky body of this intermediate Hermes lane/tool result. Eligibility: {reason}. A deterministic exact header has already been extracted and will remain visible; do not invent identifiers or citations. Preserve errors, warnings, decisions, paths, counts, changed files, verification status, and final status indicators in the compressed body when useful."},
-        {"role": "tool", "tool_call_id": _safe_name(tool_call_id or tool_name), "name": "worker_trace", "content": trace},
+        {"role": "tool", "tool_call_id": _safe_name(tool_call_id or tool_name), "name": _compression_proxy_tool_name(tool_name), "content": trace},
     ]
     compressed = compress_messages(messages)
     if not compressed.get("ok"):
@@ -1356,6 +1433,33 @@ def _compress_structured_result_for_context(
     return None
 
 
+def _machine_consumer_requires_exact(
+    tool_name: str,
+    *,
+    task_id: str = "",
+    tool_call_id: str = "",
+    session_id: str = "",
+    turn_id: str = "",
+    api_request_id: str = "",
+) -> bool:
+    """Protect structured tool-to-tool contracts from contextual compression.
+
+    Programmatic Hermes tool calls carry the parent task but no model-facing
+    call/session/request identifiers. Their return value is parsed by code,
+    not consumed as model context, so changing its shape is unsafe.
+    """
+    if not task_id or any((tool_call_id, session_id, turn_id, api_request_id)):
+        return False
+    tool = str(tool_name or "").lower()
+    if tool in MACHINE_CONSUMER_EXACT_TOOLS:
+        return True
+    if tool.startswith(("mcp__", "mcp_")):
+        return any(hint in tool for hint in READ_ONLY_MCP_HINTS) and not any(
+            hint in tool for hint in MUTATING_MCP_HINTS
+        )
+    return False
+
+
 def on_tool_execution(
     tool_name: str = "",
     args: dict[str, Any] | None = None,
@@ -1380,6 +1484,29 @@ def on_tool_execution(
     current_args = args if isinstance(args, dict) else {}
     result = next_call(current_args)
     try:
+        if _machine_consumer_requires_exact(
+            str(tool_name or ""),
+            task_id=task_id or "",
+            tool_call_id=tool_call_id or "",
+            session_id=session_id or "",
+            turn_id=turn_id or "",
+            api_request_id=api_request_id or "",
+        ):
+            _emit_headroom_event(
+                action="exact",
+                tool_name=str(tool_name or ""),
+                args=current_args,
+                reason="machine_consumer_contract",
+                task_id=task_id or "",
+                tool_call_id=tool_call_id or "",
+                session_id=session_id or "",
+                turn_id=turn_id or "",
+                api_request_id=api_request_id or "",
+                platform=platform or "",
+                original_chars=len(result) if isinstance(result, str) else len(json.dumps(result, ensure_ascii=False, default=str)),
+                exact_authority="original_machine_result",
+            )
+            return result
         if isinstance(result, str):
             transformed = compress_tool_result_for_context(
                 tool_name=str(tool_name or ""),

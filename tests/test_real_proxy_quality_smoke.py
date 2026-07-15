@@ -39,7 +39,7 @@ class RealProxyQualitySmokeTest(unittest.TestCase):
     def tearDown(self):
         self._auto_compression_env.stop()
 
-    def test_real_proxy_marker_retrieves_exact_header_payload_sentinel(self):
+    def test_real_proxy_preserves_exact_or_retrievable_payload_sentinel(self):
         health = middleware.readyz()
         if not health.get("ok"):
             self.skipTest(f"Headroom proxy unavailable: {health}")
@@ -56,16 +56,20 @@ class RealProxyQualitySmokeTest(unittest.TestCase):
             )
 
         self.assertIsInstance(reduced, str)
-        self.assertIn("Headroom auto-compressed tool result", reduced)
-        self.assertIn("classification: orchestration_fanin", reduced)
         self.assertIn(sentinel, reduced)
 
         markers = middleware._extract_markers([{"content": reduced}])
-        self.assertTrue(markers, reduced[:500])
-
-        retrieved = retrieve(markers[0], query=sentinel)
-        self.assertTrue(retrieved.get("success", "error" not in retrieved), retrieved)
-        self.assertIn(sentinel, str(retrieved))
+        if markers:
+            self.assertIn("Headroom auto-compressed tool result", reduced)
+            self.assertIn("classification: orchestration_fanin", reduced)
+            retrieved = retrieve(markers[0], query=sentinel)
+            self.assertTrue(retrieved.get("success", "error" not in retrieved), retrieved)
+            self.assertIn(sentinel, str(retrieved))
+        else:
+            # Quality-retuned proxies may deliberately passthrough this class
+            # when OpenAI Kompress is disabled. Exact passthrough is a valid
+            # safety outcome; it must be byte-identical, not silently truncated.
+            self.assertEqual(payload, reduced)
 
 
 if __name__ == "__main__":
