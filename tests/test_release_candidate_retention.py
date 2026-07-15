@@ -10,6 +10,12 @@ assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
+RUNTIME_SMOKE_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "test-headroom-runtime-smoke.py"
+RUNTIME_SMOKE_SPEC = importlib.util.spec_from_file_location("headroom_runtime_smoke", RUNTIME_SMOKE_SCRIPT)
+assert RUNTIME_SMOKE_SPEC and RUNTIME_SMOKE_SPEC.loader
+RUNTIME_SMOKE_MODULE = importlib.util.module_from_spec(RUNTIME_SMOKE_SPEC)
+RUNTIME_SMOKE_SPEC.loader.exec_module(RUNTIME_SMOKE_MODULE)
+
 
 def test_cleanup_ephemeral_envs_removes_only_allowlisted_dirs(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
@@ -57,3 +63,35 @@ def test_cleanup_ephemeral_envs_blocks_symlink_escape(tmp_path: Path) -> None:
     assert report["pass"] is False
     assert report["entries"][0]["status"] == "blocked"
     assert (outside / "keep.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_isolated_runtime_env_keeps_ccr_state_inside_run(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    env = MODULE.isolated_runtime_env(run_dir)
+
+    runtime_home = run_dir / "temp-headroom-home"
+    workspace = runtime_home / ".headroom"
+    assert env["HOME"] == str(runtime_home)
+    assert env["USERPROFILE"] == str(runtime_home)
+    assert env["HEADROOM_WORKSPACE_DIR"] == str(workspace)
+    assert env["HEADROOM_CONFIG_DIR"] == str(workspace / "config")
+    assert env["HEADROOM_CCR_BACKEND"] == "memory"
+    assert env["HEADROOM_CCR_TTL_SECONDS"] == "1800"
+    assert workspace.is_dir()
+    assert "temp-headroom-home" in MODULE.EPHEMERAL_ENV_DIRS
+
+
+def test_standalone_runtime_smoke_isolates_headroom_state(tmp_path: Path) -> None:
+    env = RUNTIME_SMOKE_MODULE.isolated_runtime_env(tmp_path)
+
+    runtime_home = tmp_path / "home"
+    workspace = runtime_home / ".headroom"
+    assert env["HOME"] == str(runtime_home)
+    assert env["USERPROFILE"] == str(runtime_home)
+    assert env["HEADROOM_WORKSPACE_DIR"] == str(workspace)
+    assert env["HEADROOM_CONFIG_DIR"] == str(workspace / "config")
+    assert env["HEADROOM_CCR_BACKEND"] == "memory"
+    assert env["HEADROOM_CCR_TTL_SECONDS"] == "1800"
+    assert workspace.is_dir()

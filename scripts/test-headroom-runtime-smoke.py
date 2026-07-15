@@ -34,8 +34,28 @@ def exe_name(name: str) -> str:
     return f"{name}.exe" if os.name == "nt" else name
 
 
-def run(cmd: list[str], *, timeout: int, log: Path) -> subprocess.CompletedProcess[str]:
-    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=False)
+def isolated_runtime_env(tmp_root: Path) -> dict[str, str]:
+    """Contain all Headroom state inside the disposable smoke directory."""
+    runtime_home = tmp_root / "home"
+    workspace = runtime_home / ".headroom"
+    workspace.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(runtime_home),
+            "USERPROFILE": str(runtime_home),
+            "HEADROOM_WORKSPACE_DIR": str(workspace),
+            "HEADROOM_CONFIG_DIR": str(workspace / "config"),
+            "HEADROOM_CCR_BACKEND": "memory",
+            "HEADROOM_CCR_TTL_SECONDS": "1800",
+            "HEADROOM_TELEMETRY": "off",
+        }
+    )
+    return env
+
+
+def run(cmd: list[str], *, timeout: int, log: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    proc = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, env=env, check=False)
     with log.open("a", encoding="utf-8") as fh:
         fh.write(f"\n$ {' '.join(cmd)}\n")
         fh.write(proc.stdout)
@@ -101,12 +121,13 @@ def main(argv: list[str] | None = None) -> int:
     log = tmp_root / "runtime-smoke.log"
     proxy_proc: subprocess.Popen[str] | None = None
     try:
+        runtime_env = isolated_runtime_env(tmp_root)
         venv.EnvBuilder(with_pip=True, clear=True).create(venv_dir)
         python = bin_dir(venv_dir) / exe_name("python")
         headroom = bin_dir(venv_dir) / exe_name("headroom")
 
         for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", args.spec]):
-            proc = run(cmd, timeout=args.install_timeout, log=log)
+            proc = run(cmd, timeout=args.install_timeout, log=log, env=runtime_env)
             if proc.returncode != 0:
                 print(f"FAIL: install command failed rc={proc.returncode}; log={log}", file=sys.stderr)
                 print(proc.stdout[-4000:], file=sys.stderr)
@@ -122,13 +143,14 @@ def main(argv: list[str] | None = None) -> int:
             errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            env=runtime_env,
         )
         ready, detail = wait_readyz(proxy_url, timeout=args.ready_timeout, log=log)
         if not ready:
             print(f"FAIL: proxy did not become ready at {proxy_url}; last={detail}; log={log}", file=sys.stderr)
             return 1
 
-        env = os.environ.copy()
+        env = runtime_env.copy()
         env["PYTHONPATH"] = str(repo_root / "src")
         env["HEADROOM_PROXY_URL"] = proxy_url
         env.pop("HEADROOM_ALLOW_REMOTE_PROXY", None)

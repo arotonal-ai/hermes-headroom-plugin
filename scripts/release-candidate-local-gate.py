@@ -33,6 +33,7 @@ EPHEMERAL_ENV_DIRS = (
     "pytest-venv",
     "wheel-install-venv",
     "headroom-runtime-venv",
+    "temp-headroom-home",
     "workload-venv",
 )
 PUBLIC_SCAN_PATHS = [
@@ -323,13 +324,37 @@ def wheel_install_gate(run_dir: Path, build_gate: dict[str, Any]) -> dict[str, A
     }
 
 
+def isolated_runtime_env(run_dir: Path) -> dict[str, str]:
+    """Return a memory-only Headroom environment contained inside one RC run."""
+    runtime_home = run_dir / "temp-headroom-home"
+    workspace = runtime_home / ".headroom"
+    workspace.mkdir(parents=True, exist_ok=True)
+    env = os.environ.copy()
+    env.update(
+        {
+            "HOME": str(runtime_home),
+            "USERPROFILE": str(runtime_home),
+            "HEADROOM_WORKSPACE_DIR": str(workspace),
+            "HEADROOM_CONFIG_DIR": str(workspace / "config"),
+            "HEADROOM_CCR_BACKEND": "memory",
+            "HEADROOM_CCR_TTL_SECONDS": "1800",
+            "HEADROOM_TELEMETRY": "off",
+            "HEADROOM_MEMORY_ENABLED": "0",
+            "HEADROOM_MEMORY_LEARN": "0",
+            "PYTHONUNBUFFERED": "1",
+        }
+    )
+    return env
+
+
 def start_proxy_with_fresh_runtime(run_dir: Path, spec: str, install_timeout: int) -> tuple[subprocess.Popen[str] | None, str, Path, dict[str, Any]]:
     runtime_dir = run_dir / "headroom-runtime-venv"
     python = create_venv(runtime_dir)
     log = run_dir / "logs" / "headroom-runtime.log"
     log.parent.mkdir(parents=True, exist_ok=True)
+    env = isolated_runtime_env(run_dir)
     for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", spec]):
-        result = run(cmd, timeout=install_timeout)
+        result = run(cmd, timeout=install_timeout, env=env)
         with log.open("a", encoding="utf-8") as fh:
             fh.write(f"\n$ {' '.join(cmd)}\n{result['stdout']}\n")
         if result["returncode"] != 0:
@@ -337,8 +362,6 @@ def start_proxy_with_fresh_runtime(run_dir: Path, spec: str, install_timeout: in
     port = free_loopback_port()
     proxy_url = f"http://127.0.0.1:{port}"
     headroom = bin_dir(runtime_dir) / exe("headroom")
-    env = os.environ.copy()
-    env.update({"HEADROOM_TELEMETRY": "off", "HEADROOM_MEMORY_ENABLED": "0", "HEADROOM_MEMORY_LEARN": "0", "PYTHONUNBUFFERED": "1"})
     fh = log.open("a", encoding="utf-8")
     proc = subprocess.Popen([str(headroom), "proxy", "--host", "127.0.0.1", "--port", str(port), "--no-telemetry"], cwd=str(REPO), env=env, stdout=fh, stderr=subprocess.STDOUT, text=True)
     setattr(proc, "_headroom_log_fh", fh)

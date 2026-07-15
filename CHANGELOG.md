@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.17 — 2026-07-15
+
+- Isolated both the release-candidate proxy and the standalone runtime-smoke proxy under disposable `HOME`, `USERPROFILE`, and explicit Headroom workspace/config roots.
+- Forced verification runtimes to in-memory CCR with a 1,800-second TTL so tests cannot create or mutate the operator's default SQLite store.
+- Added regression coverage and allowlisted cleanup for isolated Headroom state.
+
 ## v0.3.16 — 2026-07-15
 
 - Defined a minimal portable tool-layer core while keeping provider/model routing direct and unchanged.
