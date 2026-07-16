@@ -97,7 +97,7 @@ python scripts/install-production-runtime.py
 scripts/install-production-runtime.sh
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs the reproducible runtime `headroom-ai[proxy]==0.31.0`, uses in-memory CCR with a 1,800-second TTL by default, starts the loopback proxy if needed, waits for `/readyz`, and runs real plugin compress → retrieve smoke. The bundled `llm-monitor` companion is not installed unless `--with-llm-monitor-companion` or `--companion-only` is requested. See the canonical [portable tool-core contract](docs/portable-core.md) for storage, retention, opt-ins, verification, and rollback.
+The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs the reproducible runtime pair `headroom-ai[proxy]==0.31.0` + `litellm==1.91.3`, uses in-memory CCR with a 1,800-second TTL by default, starts the loopback proxy if needed, waits for `/readyz`, and runs real plugin compress → retrieve smoke. LiteLLM is pinned because `1.92.0` does not provide macOS/Windows wheels and would introduce an undeclared Rust build requirement. The bundled `llm-monitor` companion is not installed unless `--with-llm-monitor-companion` or `--companion-only` is requested. See the canonical [portable tool-core contract](docs/portable-core.md) for storage, retention, opt-ins, verification, and rollback.
 
 No-restart companion-only validation:
 

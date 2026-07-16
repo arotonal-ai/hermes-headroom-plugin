@@ -18,6 +18,8 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
         text = SCRIPT.read_text(encoding="utf-8")
         self.assertIn('HEADROOM_RUNTIME_VERSION = "0.31.0"', text)
         self.assertIn('DEFAULT_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"', text)
+        self.assertIn('LITELLM_RUNTIME_VERSION = "1.91.3"', text)
+        self.assertIn('DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"', text)
         self.assertIn('DEFAULT_CCR_BACKEND = "memory"', text)
         self.assertIn("DEFAULT_CCR_TTL_SECONDS = 1800", text)
         self.assertIn('DEFAULT_PORT = 28787', text)
@@ -37,7 +39,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, proc.stdout)
-        for needle in ["--spec", "--port", "--ccr-backend", "--ccr-ttl-seconds", "--no-start", "--no-smoke", "--stop-existing", "--systemd-user", "--service-name", "--hermes-home", "--with-llm-monitor-companion", "--skip-llm-monitor-companion", "--force-llm-monitor-companion", "--companion-only"]:
+        for needle in ["--spec", "--litellm-spec", "--port", "--ccr-backend", "--ccr-ttl-seconds", "--no-start", "--no-smoke", "--stop-existing", "--systemd-user", "--service-name", "--hermes-home", "--with-llm-monitor-companion", "--skip-llm-monitor-companion", "--force-llm-monitor-companion", "--companion-only"]:
             self.assertIn(needle, proc.stdout)
 
     def test_default_venv_is_versioned(self):

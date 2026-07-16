@@ -24,7 +24,10 @@ Repository = "https://github.com/arotonal-ai/hermes-headroom-plugin"
 [project.optional-dependencies]
 # Reproducible portable-core runtime. Operators may override the installer with
 # --spec/HEADROOM_AI_SPEC for an explicit canary or incident rollback.
-proxy = ["headroom-ai[proxy]==0.31.0"]
+proxy = [
+  "headroom-ai[proxy]==0.31.0",
+  "litellm==1.91.3",
+]
 test = ["pytest>=8,<10"]
 release = ["build>=1,<2"]
 

@@ -61,7 +61,7 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-What the installer does: creates/updates `~/.cache/hermes-headroom-venv-0.31.0`; installs `headroom-ai[proxy]==0.31.0`; defaults CCR recovery to memory with a 1,800-second TTL; starts the loopback proxy; verifies `/readyz`; runs real plugin compress → retrieve smoke; and prints `RUNTIME_FULL` only when all checks pass. The bundled `llm-monitor` companion is opt-in via `--with-llm-monitor-companion` or `--companion-only`. See [docs/portable-core.md](docs/portable-core.md).
+What the installer does: creates/updates `~/.cache/hermes-headroom-venv-0.31.0`; installs `headroom-ai[proxy]==0.31.0` plus portable constraint `litellm==1.91.3`; defaults CCR recovery to memory with a 1,800-second TTL; starts the loopback proxy; verifies `/readyz`; runs real plugin compress → retrieve smoke; and prints `RUNTIME_FULL` only when all checks pass. LiteLLM is pinned because `1.92.0` lacks macOS/Windows wheels and would require an undeclared Rust toolchain. The bundled `llm-monitor` companion is opt-in via `--with-llm-monitor-companion` or `--companion-only`. See [docs/portable-core.md](docs/portable-core.md).
 
 No-restart companion-only validation: `python scripts/install-production-runtime.py --companion-only --hermes-home /tmp/hermes-home --json`. This copies only the bundled `llm-monitor` companion and does not install/start Headroom runtime or restart Hermes.
 
@@ -79,11 +79,11 @@ Manual fallback on Unix/macOS/WSL:
 ```bash
 python3 -m venv ~/.cache/hermes-headroom-venv-0.31.0
 ~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install 'headroom-ai[proxy]==0.31.0'
+~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install 'headroom-ai[proxy]==0.31.0' 'litellm==1.91.3'
 HEADROOM_CCR_BACKEND=memory HEADROOM_CCR_TTL_SECONDS=1800 ~/.cache/hermes-headroom-venv-0.31.0/bin/headroom proxy --host 127.0.0.1 --port 28787 --no-telemetry
 ```
 
-Manual Windows fallback: use `py -3 -m venv $env:USERPROFILE\.cache\hermes-headroom-venv-0.31.0`, install `headroom-ai[proxy]==0.31.0` with the venv Python, set `HEADROOM_CCR_BACKEND=memory` and `HEADROOM_CCR_TTL_SECONDS=1800`, then run `Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787 --no-telemetry`.
+Manual Windows fallback: use `py -3 -m venv $env:USERPROFILE\.cache\hermes-headroom-venv-0.31.0`, install `headroom-ai[proxy]==0.31.0` and `litellm==1.91.3` with the venv Python, set `HEADROOM_CCR_BACKEND=memory` and `HEADROOM_CCR_TTL_SECONDS=1800`, then run `Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787 --no-telemetry`.
 
 ### Windows Git Bash / MSYS
 

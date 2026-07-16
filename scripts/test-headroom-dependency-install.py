@@ -17,6 +17,7 @@ import venv
 from pathlib import Path
 
 DEFAULT_SPEC = "headroom-ai[proxy]==0.31.0"
+DEFAULT_LITELLM_SPEC = "litellm==1.91.3"
 
 
 def bin_dir(venv_dir: Path) -> Path:
@@ -54,6 +55,7 @@ def run(cmd: list[str], *, timeout: int = 120, log: Path | None = None) -> subpr
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify headroom-ai[proxy] in a temporary venv.")
     parser.add_argument("--spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_SPEC), help=f"package spec (default: {DEFAULT_SPEC})")
+    parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", DEFAULT_LITELLM_SPEC), help=f"portable LiteLLM constraint (default: {DEFAULT_LITELLM_SPEC})")
     parser.add_argument("--install-timeout", type=int, default=int(os.environ.get("HEADROOM_DEP_INSTALL_TIMEOUT", "600")), help="seconds allowed for each pip install command")
     parser.add_argument("--keep", action="store_true", help="keep the temporary venv for inspection")
     args = parser.parse_args(argv)
@@ -66,7 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         python = bin_dir(venv_dir) / exe_name("python")
         headroom = bin_dir(venv_dir) / exe_name("headroom")
 
-        for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", args.spec]):
+        for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", args.spec, args.litellm_spec]):
             proc = run(cmd, timeout=args.install_timeout, log=log)
             if proc.returncode != 0:
                 print(f"FAIL: dependency install command failed rc={proc.returncode}; log={log}", file=sys.stderr)
@@ -83,7 +85,7 @@ if missing:
     raise SystemExit(f'missing runtime modules: {missing}')
 if sys.version_info >= (3, 13):
     print(f'WARN: Python {sys.version.split()[0]} is newer than the currently smoke-tested Windows runtime path; prefer 3.11/3.12 if proxy startup fails')
-print(md.version('headroom-ai'))
+print(f"headroom-ai={md.version('headroom-ai')} litellm={md.version('litellm')}")
 """.strip()
         proc = run([str(python), "-c", code], timeout=60, log=log)
         if proc.returncode != 0:

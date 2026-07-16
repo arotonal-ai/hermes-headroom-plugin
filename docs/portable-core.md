@@ -72,6 +72,7 @@ second provider and an injection/selection gate are implemented and tested.
 | Plugin | `hermes-headroom-plugin==0.4.0` |
 | LLM request middleware | off; explicit `mode: tool_results` opt-in |
 | Headroom runtime | `headroom-ai[proxy]==0.31.0` |
+| LiteLLM transitive runtime | `litellm==1.91.3` (portable wheel constraint) |
 | Runtime venv | `~/.cache/hermes-headroom-venv-0.31.0` |
 | Bind | `127.0.0.1:28787` |
 | CCR backend | `memory` |
