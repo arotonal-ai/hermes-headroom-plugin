@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.4.0 — unreleased
+## v0.4.0-rc1 — 2026-07-16
 
 - Make CCR retrieval hash-only across the tool schema, proxy payload, smoke/benchmark paths, bundled skill, docs, and release-candidate replay.
 - Add provider-neutral typed reduction contracts and fake-provider contract coverage.
@@ -11,6 +11,8 @@
 - Route core thresholds, request-cache bounds, optional markers/hints, experimental aggregation, and report retention through the typed effective configuration authority; retain legacy settings as warned migration shims rather than parallel authorities.
 - Enforce and test the attribution invariant that `tool_execution` is primary, marked results are not recompressed/recredited at `llm_request`, and logical request fingerprints separate protocol, tool-call, and session identities.
 - Reconcile runtime installer defaults, canonical/legacy configuration documentation, marker defaults, and end-to-end plugin/runtime/venv rollback guidance.
+- Bypass provider readiness and compression entirely for exact or protected tool-result paths, with regression coverage for final packets, diffs, existing markers, and protected controls.
+- Validate the release candidate in an isolated loopback A/B canary; retain `tool_execution` as the default lane and keep `llm_request` opt-in.
 
 ## v0.3.21 — 2026-07-15
 

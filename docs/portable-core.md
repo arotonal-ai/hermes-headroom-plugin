@@ -69,7 +69,7 @@ second provider and an injection/selection gate are implemented and tested.
 
 | Setting | Default |
 |---|---|
-| Plugin | `hermes-headroom-plugin==0.3.21` |
+| Plugin | `hermes-headroom-plugin==0.4.0rc1` |
 | LLM request middleware | off; explicit `mode: tool_results` opt-in |
 | Headroom runtime | `headroom-ai[proxy]==0.31.0` |
 | Runtime venv | `~/.cache/hermes-headroom-venv-0.31.0` |

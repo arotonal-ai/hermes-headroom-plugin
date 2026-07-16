@@ -269,7 +269,7 @@ If you are another Hermes/AI instance installing or auditing this repo:
 7. Keep remote proxies disabled unless explicitly allowed by the operator.
 8. Do not invent token-savings metrics.
 
-Compact agent brief: [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md). Context-economy loop contract: [docs/context-economy-loop.md](docs/context-economy-loop.md). Full install/troubleshooting: [INSTALL.md](INSTALL.md).
+Compact agent brief: [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md). Context-economy loop contract: [docs/context-economy-loop.md](docs/context-economy-loop.md). v0.3.x migration: [docs/MIGRATION-v0.4.md](docs/MIGRATION-v0.4.md). Full install/troubleshooting: [INSTALL.md](INSTALL.md).
 
 ## Validation helpers
 
