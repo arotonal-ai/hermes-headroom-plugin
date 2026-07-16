@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.0-rc2 — 2026-07-16
+
+- Add a process-local, bounded five-minute negative-outcome cache for unchanged logical tool sources that already returned `compression_not_useful`.
+- Share that suppression across `tool_execution` and opt-in `llm_request` so request replays do not repeat provider calls or create duplicate reports/events after the first authoritative skipped result.
+- Keep runtime-unavailable and provider-error outcomes uncached so fail-open recovery remains retryable; preserve content digest, tool/session/call identity, thread safety, and runtime-resolved cache bounds.
+- Add regressions for cross-surface suppression, TTL/eviction, and retryable provider failures after a live active-gateway canary exposed the rc1 gap.
+
 ## v0.4.0-rc1 — 2026-07-16
 
 - Make CCR retrieval hash-only across the tool schema, proxy payload, smoke/benchmark paths, bundled skill, docs, and release-candidate replay.

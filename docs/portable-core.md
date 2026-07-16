@@ -69,7 +69,7 @@ second provider and an injection/selection gate are implemented and tested.
 
 | Setting | Default |
 |---|---|
-| Plugin | `hermes-headroom-plugin==0.4.0rc1` |
+| Plugin | `hermes-headroom-plugin==0.4.0rc2` |
 | LLM request middleware | off; explicit `mode: tool_results` opt-in |
 | Headroom runtime | `headroom-ai[proxy]==0.31.0` |
 | Runtime venv | `~/.cache/hermes-headroom-venv-0.31.0` |
@@ -91,6 +91,7 @@ Core plugin configuration resolves once into a typed effective contract with thi
 - `llm_request` is off by default. When enabled, it only transforms eligible tool-result text that did not already carry a Headroom marker from `tool_execution`.
 - A marker produced by `tool_execution` is recognized as already compressed at the request boundary, so it is neither recompressed nor emitted as a second new-savings event.
 - Repeated request-boundary transforms use a logical-source fingerprint scoped by session, tool call, protocol family, tool name, and source digest. Plugin cache-reuse events set `new_savings_event=false`; downstream `llm-monitor` marker correlations independently set `counts_as_new_savings=false`.
+- A bounded five-minute cross-surface negative-outcome cache suppresses repeated provider work when an unchanged logical source already produced `compression_not_useful`. The first skipped event and exact sidecar remain authoritative; cache hits emit no duplicate report/event. Provider errors and runtime-unavailable outcomes are never negative-cached, so fail-open recovery remains retryable.
 - Savings totals must count only rows explicitly marked as new savings; retained correlations, experimental aggregates, and legacy internal-service token counters use separate scopes.
 
 ## Storage contract

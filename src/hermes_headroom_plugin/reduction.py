@@ -1,8 +1,11 @@
 """Provider-backed reduction orchestration; no Hermes transport routing."""
 from __future__ import annotations
 
+import hashlib
 import json
+import threading
 import time
+from collections import OrderedDict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -15,6 +18,62 @@ BELOW_MIN_AGGREGATE_CHARS = 28_000
 BELOW_MIN_AGGREGATE_MAX_CHUNKS = 24
 BELOW_MIN_AGGREGATE_MAX_BUFFER_KEYS = 128
 _BELOW_MIN_AGGREGATE_BUFFERS: dict[str, dict[str, Any]] = {}
+
+NEGATIVE_OUTCOME_TTL_SECONDS = 300.0
+_NEGATIVE_OUTCOME_CACHE: OrderedDict[str, float] = OrderedDict()
+_NEGATIVE_OUTCOME_CACHE_LOCK = threading.RLock()
+
+
+def _negative_outcome_key(
+    *,
+    tool_name: str,
+    result: str,
+    task_id: str,
+    tool_call_id: str,
+    session_id: str,
+) -> str:
+    """Identify one logical source across tool-execution and request surfaces."""
+    identity = {
+        "schema": "headroom.negative_outcome.v1",
+        "session_id": str(session_id or ""),
+        # Tool-call identity is stable across tool_execution and llm_request.
+        # task_id is only a fallback because request adapters may rebind task
+        # context while replaying the same canonical output.
+        "task_fallback": str(task_id or "") if not session_id and not tool_call_id else "",
+        "tool_call_id": str(tool_call_id or ""),
+        "tool_name": str(tool_name or ""),
+        "content_sha256": hashlib.sha256(result.encode("utf-8", errors="replace")).hexdigest(),
+    }
+    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _negative_outcome_cache_hit(key: str, *, now: float | None = None) -> bool:
+    """Return true for a live compression-not-useful outcome without side effects."""
+    observed = time.monotonic() if now is None else now
+    with _NEGATIVE_OUTCOME_CACHE_LOCK:
+        expires_at = _NEGATIVE_OUTCOME_CACHE.get(key)
+        if expires_at is None:
+            return False
+        if expires_at <= observed:
+            _NEGATIVE_OUTCOME_CACHE.pop(key, None)
+            return False
+        _NEGATIVE_OUTCOME_CACHE.move_to_end(key)
+        return True
+
+
+def _negative_outcome_cache_put(key: str, *, now: float | None = None) -> None:
+    """Bound transient negative outcomes; provider failures remain retryable."""
+    observed = time.monotonic() if now is None else now
+    with _NEGATIVE_OUTCOME_CACHE_LOCK:
+        for stale_key, expires_at in list(_NEGATIVE_OUTCOME_CACHE.items()):
+            if expires_at <= observed:
+                _NEGATIVE_OUTCOME_CACHE.pop(stale_key, None)
+        _NEGATIVE_OUTCOME_CACHE[key] = observed + NEGATIVE_OUTCOME_TTL_SECONDS
+        _NEGATIVE_OUTCOME_CACHE.move_to_end(key)
+        cache_max = resolve_effective_config().llm_request_cache_max
+        while len(_NEGATIVE_OUTCOME_CACHE) > cache_max:
+            _NEGATIVE_OUTCOME_CACHE.popitem(last=False)
 
 
 def _provider_ready(proxy_url: str | None = None) -> dict[str, Any]:
@@ -368,6 +427,18 @@ def compress_tool_result_for_context(
             exact_authority="original_tool_result",
         )
         return None
+    negative_outcome_key = _negative_outcome_key(
+        tool_name=tool_name,
+        result=result,
+        task_id=task_id,
+        tool_call_id=tool_call_id,
+        session_id=session_id,
+    )
+    if _negative_outcome_cache_hit(negative_outcome_key):
+        # The first attempt already retained a sidecar/report and skipped event.
+        # Repeated request-boundary passes must not redo provider work or grow
+        # duplicate evidence for the same unchanged logical source.
+        return None
     health = _provider_ready()
     if not health.get("ok"):
         _emit_headroom_event(
@@ -568,6 +639,7 @@ def compress_tool_result_for_context(
             compression_latency_ms=compression_latency_ms,
             measurement_scope=event_measurement_scope,
         )
+        _negative_outcome_cache_put(negative_outcome_key)
         return None
 
     exact_header = _format_exact_header(

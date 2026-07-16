@@ -3,13 +3,17 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from hermes_headroom_plugin import middleware
+import hermes_headroom_plugin.reduction as reduction
 
 
 class ToolExecutionMiddlewareTest(unittest.TestCase):
     def setUp(self):
+        reduction._NEGATIVE_OUTCOME_CACHE.clear()
+        middleware._LLM_REQUEST_TRANSFORM_CACHE.clear()
         self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
         self._auto_compression_env.start()
         self._hermes_home_tmp = tempfile.TemporaryDirectory()
@@ -23,6 +27,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self._hermes_home_patch.stop()
         self._hermes_home_tmp.cleanup()
         self._auto_compression_env.stop()
+        reduction._NEGATIVE_OUTCOME_CACHE.clear()
+        middleware._LLM_REQUEST_TRANSFORM_CACHE.clear()
 
     def _large_result(self, lines=1200):
         return "".join(
@@ -727,6 +733,108 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(events[-1]["surface"], "llm_request")
         self.assertEqual(events[-1]["measurement_scope"], "llm_request_tool_result:chat_completions")
         self.assertEqual(report["surface"], "llm_request")
+
+
+    def test_non_useful_outcome_is_reused_across_tool_and_request_surfaces(self):
+        large = self._large_result(lines=500)
+        not_useful = {
+            "ok": True,
+            "messages": [{"role": "tool", "content": large}],
+            "tokens_before": 9000,
+            "tokens_after": 8992,
+            "tokens_saved": 8,
+            "compression_ratio": 0.999,
+        }
+        request = {
+            "input": [
+                {"type": "function_call", "call_id": "cross-negative", "name": "terminal", "arguments": "{}"},
+                {"type": "function_call_output", "call_id": "cross-negative", "output": large},
+            ],
+            "stream": True,
+        }
+        with patch("hermes_headroom_plugin.reduction._provider_ready", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.reduction._provider_compress", return_value=not_useful
+        ) as compress, patch(
+            "hermes_headroom_plugin.middleware_request.llm_request_compression_enabled", return_value=True
+        ):
+            tool_out = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "generate diagnostics"},
+                next_call=lambda _args: large,
+                task_id="task-cross-negative",
+                tool_call_id="cross-negative",
+                session_id="session-cross-negative",
+                api_request_id="api-tool",
+                platform="telegram",
+            )
+            first_request = middleware.on_llm_request(
+                request=request,
+                api_mode="responses",
+                task_id="request-task-rebound",
+                session_id="session-cross-negative",
+                api_request_id="api-request-1",
+                platform="telegram",
+            )
+            second_request = middleware.on_llm_request(
+                request=request,
+                api_mode="responses",
+                task_id="request-task-rebound",
+                session_id="session-cross-negative",
+                api_request_id="api-request-2",
+                platform="telegram",
+            )
+            events = self._events(self._hermes_home_tmp.name)
+        self.assertEqual(tool_out, large)
+        self.assertIsNone(first_request)
+        self.assertIsNone(second_request)
+        self.assertEqual(compress.call_count, 1)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["surface"], "tool_execution")
+        self.assertEqual(events[0]["reason"], "compression_not_useful")
+        self.assertFalse(events[0]["new_savings_event"])
+
+    def test_negative_outcome_cache_expires_and_is_runtime_bounded(self):
+        keys = [
+            reduction._negative_outcome_key(
+                tool_name="terminal",
+                result=f"same source {index}",
+                task_id="task",
+                tool_call_id=f"call-{index}",
+                session_id="session",
+            )
+            for index in range(3)
+        ]
+        with patch(
+            "hermes_headroom_plugin.reduction.resolve_effective_config",
+            return_value=SimpleNamespace(llm_request_cache_max=2),
+        ):
+            reduction._negative_outcome_cache_put(keys[0], now=100.0)
+            reduction._negative_outcome_cache_put(keys[1], now=101.0)
+            reduction._negative_outcome_cache_put(keys[2], now=102.0)
+        self.assertNotIn(keys[0], reduction._NEGATIVE_OUTCOME_CACHE)
+        self.assertTrue(reduction._negative_outcome_cache_hit(keys[1], now=399.9))
+        self.assertFalse(reduction._negative_outcome_cache_hit(keys[1], now=401.0))
+        self.assertNotIn(keys[1], reduction._NEGATIVE_OUTCOME_CACHE)
+
+    def test_provider_failures_remain_retryable_and_are_not_negative_cached(self):
+        large = self._large_result(lines=500)
+        failed = {"ok": False, "error": "synthetic provider unavailable"}
+        with patch("hermes_headroom_plugin.reduction._provider_ready", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.reduction._provider_compress", return_value=failed
+        ) as compress:
+            for api_request_id in ("api-fail-1", "api-fail-2"):
+                out = middleware.compress_tool_result_for_context(
+                    tool_name="terminal",
+                    args={"command": "generate diagnostics"},
+                    result=large,
+                    task_id="task-fail-retry",
+                    tool_call_id="call-fail-retry",
+                    session_id="session-fail-retry",
+                    api_request_id=api_request_id,
+                )
+                self.assertIsNone(out)
+        self.assertEqual(compress.call_count, 2)
+        self.assertEqual(reduction._NEGATIVE_OUTCOME_CACHE, {})
 
 
 if __name__ == "__main__":
