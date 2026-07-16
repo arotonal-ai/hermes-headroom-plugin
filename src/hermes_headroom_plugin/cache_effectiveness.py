@@ -20,8 +20,8 @@ try:
 except Exception:  # pragma: no cover - package still works without config insight.
     yaml = None
 
-from .middleware import auto_compression_enabled
-from .proxy import hermes_home, load_context_reduction_config, readyz, resolve_proxy_url, retrieve_stats, utc_now
+from .config import auto_compression_enabled, hermes_home, load_context_reduction_config
+from .proxy import readyz, resolve_proxy_url, retrieve_stats, utc_now
 
 DECISIONS = {"KEEP_PROXY_HOT_PATH", "ADD_CACHE_UX", "TEST_PROVIDER_CACHE_LANE", "DO_NOT_USE_PROVIDER_CACHE"}
 

@@ -24,6 +24,13 @@ class ToolsTest(unittest.TestCase):
         self.assertEqual(set(parameters["properties"]), {"hash"})
         self.assertFalse(parameters["additionalProperties"])
 
+    @patch("hermes_headroom_plugin.tools.retrieve")
+    def test_legacy_query_is_never_forwarded_to_provider(self, call):
+        call.return_value = {"success": True, "content": "exact"}
+        result = json.loads(handle_headroom_retrieve({"hash": "abc123", "query": "legacy focus"}))
+        self.assertTrue(result["success"])
+        call.assert_called_once_with("abc123")
+
 
 if __name__ == "__main__":
     unittest.main()

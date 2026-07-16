@@ -14,7 +14,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self._auto_compression_env.start()
         self._hermes_home_tmp = tempfile.TemporaryDirectory()
         self._hermes_home_patch = patch(
-            "hermes_headroom_plugin.middleware.hermes_home",
+            "hermes_headroom_plugin.observability.hermes_home",
             return_value=Path(self._hermes_home_tmp.name),
         )
         self._hermes_home_patch.start()
@@ -36,6 +36,16 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             return []
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
+    def test_wrapped_tool_exception_propagates_unchanged(self):
+        error = RuntimeError("tool failed before middleware transformation")
+
+        def fail(_args):
+            raise error
+
+        with self.assertRaises(RuntimeError) as caught:
+            middleware.on_tool_execution(tool_name="terminal", args={}, next_call=fail)
+        self.assertIs(caught.exception, error)
+
     def test_delegate_task_large_result_is_compressed_when_proxy_ready(self):
         with tempfile.TemporaryDirectory() as td:
             compressed = {
@@ -52,9 +62,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                     }
                 ],
             }
-            with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-                "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
-            ), patch("hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)):
+            with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+                "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+            ), patch("hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)):
                 out = middleware.on_tool_execution(
                     tool_name="delegate_task",
                     args={"goal": "fan-in worker diagnostics"},
@@ -105,8 +115,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_event_ids_are_unique_while_logical_dedupe_keys_are_stable(self):
         large = self._large_result()
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}):
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}):
             for _ in range(2):
                 middleware.on_tool_execution(
                     tool_name="write_file",
@@ -127,9 +137,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_auto_compression_can_be_disabled_for_on_demand_mode(self):
         large = self._large_result()
         with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "0"}), patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz") as ready, patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz") as ready, patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -168,9 +178,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                 ],
             }
             structured = {"status": "success", "output": self._large_result(), "duration_seconds": 0.1}
-            with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-                "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
-            ), patch("hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)):
+            with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+                "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+            ), patch("hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)):
                 out = middleware.on_tool_execution(
                     tool_name="execute_code",
                     args={"code": "print synthetic diagnostics"},
@@ -207,9 +217,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "messages": [{"role": "tool", "content": "source outline hash=read123def456"}],
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
         ):
             out = middleware.on_tool_execution(
                 tool_name="read_file",
@@ -232,8 +242,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "truncated": False,
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.compress_messages") as compress:
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.compress_messages") as compress:
             out = middleware.on_tool_execution(
                 tool_name="read_file",
                 args={"path": "/tmp/machine-input.json", "offset": 1, "limit": 700},
@@ -258,9 +268,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "messages": [{"role": "tool", "content": "fact rows hash=fact123def456"}],
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
         ) as compress:
             read_out = middleware.on_tool_execution(
                 tool_name="fact_store",
@@ -286,9 +296,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "messages": [{"role": "tool", "content": "artifact outline hash=mcp123def456"}],
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
         ) as compress:
             read_out = middleware.on_tool_execution(
                 tool_name="mcp__open_design__get_artifact",
@@ -306,8 +316,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_mutating_tools_remain_exact_even_when_large(self):
         large = self._large_result()
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="write_file",
@@ -321,9 +331,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_exact_mutation_events_use_specific_lanes_for_owner_attribution(self):
         large = self._large_result()
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="write_file",
@@ -360,9 +370,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         raw_output = self._large_result(lines=1400)
         terminal_result = json.dumps({"output": raw_output, "exit_code": 0, "error": None})
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}
-        ), patch("hermes_headroom_plugin.middleware.compress_messages", side_effect=fake_compress), patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+            "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}
+        ), patch("hermes_headroom_plugin.provider_headroom.compress_messages", side_effect=fake_compress), patch(
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ):
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -384,8 +394,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_git_diff_terminal_result_remains_exact(self):
         large = self._large_result()
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -400,12 +410,12 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         second = "terminal chunk B\n" * 1000
         with tempfile.TemporaryDirectory() as td, patch.dict(
             os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": ""}
-        ), patch.object(
-            middleware, "MIN_TOOL_RESULT_CHARS", 28_000
         ), patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.reduction.MIN_TOOL_RESULT_CHARS", 28_000
+        ), patch(
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
             out1 = middleware.on_tool_execution(
@@ -444,12 +454,12 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
         first = "tests/test_a.py::test_a FAILED warning chunk A\n" * 360
         second = "tests/test_b.py::test_b FAILED warning chunk B\n" * 360
-        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch.object(
-            middleware, "MIN_TOOL_RESULT_CHARS", 28_000
+        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch(
+            "hermes_headroom_plugin.reduction.MIN_TOOL_RESULT_CHARS", 28_000
         ), patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", side_effect=fake_compress
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", side_effect=fake_compress
         ):
             middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
             out1 = middleware.on_tool_execution(
@@ -490,8 +500,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_terminal_below_min_aggregate_does_not_override_exact_commands(self):
         first = "diff --git a/file b/file\n" * 2000
         with patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch(
-            "hermes_headroom_plugin.middleware.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}
-        ), patch("hermes_headroom_plugin.middleware.compress_messages") as compress:
+            "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}
+        ), patch("hermes_headroom_plugin.provider_headroom.compress_messages") as compress:
             middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -509,9 +519,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             + "synthetic trace detail\n" * 2500
         )
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -527,8 +537,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_small_delegate_result_remains_exact(self):
         small = "short final packet"
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -541,9 +551,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_unhealthy_proxy_fails_open(self):
         large = self._large_result()
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": False, "body": "down"}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": False, "body": "down"}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -562,9 +572,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         protected = "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nSYNTHETIC_PRIVATE_KEY_BODY\n" + large
         synthetic_secret = "SYNTHETIC_SECRET_1234567890"
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             self.assertEqual(
                 middleware.on_tool_execution(
@@ -606,9 +616,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_pre_llm_platform_context_fills_tool_event_platform(self):
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             middleware.remember_platform_context(session_id="s-platform", task_id="task-platform", turn_id="turn-platform", platform="telegram")
             out = middleware.on_tool_execution(
@@ -626,10 +636,10 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_event_log_rotates_when_size_limit_is_exceeded(self):
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.load_context_reduction_config", return_value={"event_log_max_bytes": 64000}
-        ), patch("hermes_headroom_plugin.middleware.compress_messages"):
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.observability.load_context_reduction_config", return_value={"event_log_max_bytes": 64000}
+        ), patch("hermes_headroom_plugin.provider_headroom.compress_messages"):
             path = Path(td) / "control-plane" / "headroom" / "events" / "headroom-events.jsonl"
             path.parent.mkdir(parents=True)
             path.write_text("x" * 65000, encoding="utf-8")
@@ -664,9 +674,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "messages": [{"role": "tool", "content": "Retrieve more: hash=requestsurface123"}],
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
         ):
             out = middleware.compress_tool_result_for_context(
                 tool_name="terminal",

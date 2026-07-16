@@ -27,6 +27,44 @@ Retrieval is hash-only. The plugin sends exactly `{"hash": "<ccr-hash>"}` and do
 
 The primary model/provider route stays direct. Provider-proxy routing is experimental and must not be enabled by this installer. `context_reduction.llm_request_middleware` is a separate opt-in safety net for eligible legacy/bypassed tool results at Hermes's native post-build/pre-transport middleware boundary; it does not rewrite routing, auth, headers, tools, tool arguments, system/user prompts, signatures, images, or streaming controls.
 
+## Runtime module boundaries
+
+The v0.4 middleware implementation follows one-way dependencies and keeps the
+legacy import path as a compatibility facade:
+
+```text
+Hermes registration
+  -> middleware.py compatibility facade
+  -> middleware_tool.py / middleware_request.py
+  -> reduction.py + policy.py + observability.py
+  -> provider_headroom.py (current ReductionProvider implementation)
+  -> contracts.py + proxy.py loopback HTTP transport
+```
+
+| Module | Primary authority |
+|---|---|
+| `config.py` | typed effective configuration and legacy-alias resolution |
+| `policy.py` | exact/compressible/blocked admission and redaction rules |
+| `observability.py` | local reports, event attribution, platform context and bounded retention |
+| `reduction.py` | common reduction orchestration and compatibility output construction; v0.4 composes the current Headroom adapter directly |
+| `middleware_tool.py` | Hermes `tool_execution` adapter and fail-open boundary |
+| `middleware_request.py` | opt-in, copy-on-write protocol request adapters and logical-source cache |
+| `contracts.py` | provider-neutral compression, retrieval and health contracts |
+| `provider_headroom.py` | Headroom 0.31 response adapter |
+| `proxy.py` | direct loopback HTTP transport only |
+| `middleware.py` | import/call compatibility; not a dependency-injection or monkeypatch boundary |
+
+Implementation modules must not import `middleware.py`; dependencies flow toward
+policy/contracts/transport. Existing callers may continue importing the hooks and
+legacy helpers from `middleware.py`, but tests and extensions that patch internals
+must patch the module that owns the dependency.
+
+The contracts are provider-neutral, but runtime provider selection is not yet
+provider-neutral: `reduction.py` composes `HeadroomReductionProvider` directly.
+That is an explicit v0.4 limit, not evidence of a second supported reducer.
+Do not rename the product or claim provider-neutral runtime selection until a
+second provider and an injection/selection gate are implemented and tested.
+
 ## Reproducible defaults
 
 | Setting | Default |

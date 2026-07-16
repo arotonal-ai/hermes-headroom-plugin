@@ -58,12 +58,33 @@ def _boolish(value: Any, *, default: bool) -> bool:
     return default
 
 
+def _falsey(value: Any) -> bool:
+    """Legacy middleware helper retained for import compatibility."""
+    if isinstance(value, bool):
+        return value is False
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"0", "false", "no", "n", "off", "disabled", "disable"}
+
+
 def _bounded_int(value: Any, *, default: int, minimum: int, maximum: int) -> int:
     try:
         parsed = int(value)
     except (TypeError, ValueError):
         parsed = default
     return max(minimum, min(maximum, parsed))
+
+
+def auto_compression_enabled(config: Mapping[str, Any] | None = None) -> bool:
+    """Compatibility helper backed by the single effective config resolver."""
+    raw = config if isinstance(config, Mapping) else None
+    return resolve_effective_config(raw_config=raw).auto_compression
+
+
+def llm_request_compression_enabled(config: Mapping[str, Any] | None = None) -> bool:
+    """Return whether the separate common request adapter is explicitly enabled."""
+    raw = config if isinstance(config, Mapping) else None
+    return resolve_effective_config(raw_config=raw).llm_request_enabled
 
 
 def _first(mapping: Mapping[str, Any], *keys: str, default: Any = None) -> Any:

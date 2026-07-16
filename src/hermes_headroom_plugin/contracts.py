@@ -41,6 +41,7 @@ class ProviderHealth:
     provider: str
     status: int | None = None
     detail: str = ""
+    endpoint: str = ""
 
 
 @dataclass(frozen=True)

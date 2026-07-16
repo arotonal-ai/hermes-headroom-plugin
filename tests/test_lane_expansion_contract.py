@@ -23,7 +23,7 @@ class LaneExpansionContractTest(unittest.TestCase):
         self._auto_compression_env.start()
         self._hermes_home_tmp = tempfile.TemporaryDirectory()
         self._hermes_home_patch = patch(
-            "hermes_headroom_plugin.middleware.hermes_home",
+            "hermes_headroom_plugin.observability.hermes_home",
             return_value=Path(self._hermes_home_tmp.name),
         )
         self._hermes_home_patch.start()
@@ -67,8 +67,8 @@ class LaneExpansionContractTest(unittest.TestCase):
             "image_path": "/tmp/screen.png",
             "png_b64": "synthetic-base64-not-real",
         }
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="computer_use",
@@ -80,8 +80,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_final_packet_in_delegate_lane_remains_exact(self):
         final_packet = "# Worker Final Packet\n\nstatus: PASS\n" + self._large_text("final packet")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -93,8 +93,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_open_design_mcp_source_readback_compresses_with_retrieval(self):
         result = self._huge_text("open design source readback")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name="mcp__open_design__get_artifact",
@@ -107,8 +107,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_generic_readonly_mcp_compresses_with_query_header(self):
         result = self._huge_text("generic mcp source response")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name="mcp__vendor__query",
@@ -121,8 +121,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_generic_mcp_explicit_diagnostic_intermediate_can_compress(self):
         result = self._large_text("generic mcp diagnostic trace")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name="mcp__vendor__diagnostics",
@@ -134,8 +134,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_private_key_like_material_remains_exact_and_does_not_proxy(self):
         protected = "-----BEGIN " + "OPENSSH PRIVATE KEY-----\n" + self._large_text("protected material")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -147,8 +147,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_proxy_down_returns_original_for_eligible_lane(self):
         result = self._large_text("delegate diagnostics")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": False}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": False}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -167,9 +167,9 @@ class LaneExpansionContractTest(unittest.TestCase):
             return self._compressed_response()
 
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", side_effect=fake_compress
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", side_effect=fake_compress
         ):
             middleware.on_tool_execution(
                 tool_name="terminal",
@@ -187,9 +187,9 @@ class LaneExpansionContractTest(unittest.TestCase):
             + self._large_text("benign suffix", min_chars=10_000)
         )
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -210,9 +210,9 @@ class LaneExpansionContractTest(unittest.TestCase):
             + self._large_text("benign browser suffix", min_chars=10_000)
         )
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="browser_cdp",
@@ -229,9 +229,9 @@ class LaneExpansionContractTest(unittest.TestCase):
     def test_nested_sensitive_args_fail_closed_without_proxy_or_sidecar(self):
         result = self._large_text("qa trace")
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -247,8 +247,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_explicit_long_comments_history_without_anchor_fails_closed(self):
         result = self._huge_text("large comments blob with no stable comment thread message or timestamp fields")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -260,8 +260,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_explicit_raw_feed_snapshot_without_anchor_fails_closed(self):
         result = self._huge_text("large feed blob with no stable item feed source cursor or timestamp fields")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -275,8 +275,8 @@ class LaneExpansionContractTest(unittest.TestCase):
         result = self._huge_text(
             "comments comment_id=C-123 thread_id=T-9 status=open latest_actionable_comment=reply-with-source"
         )
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -294,9 +294,9 @@ class LaneExpansionContractTest(unittest.TestCase):
             f'CDP Network.getAllCookies cookie name=session value="{cookie_value}" domain=example.test'
         )
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="browser_cdp",
@@ -312,8 +312,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_browser_vision_final_like_result_must_remain_exact_unless_marked_intermediate(self):
         result = self._large_text("FINAL VISUAL ANSWER: the chart shows revenue rising")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="browser_vision",
@@ -327,8 +327,8 @@ class LaneExpansionContractTest(unittest.TestCase):
         result = self._large_text(
             'x_search answer with citation url=https://source.example/a title="Source A" degraded=false'
         )
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="x_search",
@@ -342,8 +342,8 @@ class LaneExpansionContractTest(unittest.TestCase):
         result = self._huge_text(
             "kanban task_id=TASK-1 run_id=7 status=in_progress acceptance=preserve-exact-header"
         )
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name="kanban_show",
@@ -358,8 +358,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_header_required_orchestration_without_critical_fields_fails_closed(self):
         result = self._huge_text("kanban history with no stable task identifier or status")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="kanban_show",
@@ -373,8 +373,8 @@ class LaneExpansionContractTest(unittest.TestCase):
         result = self._huge_text(
             "x_search answer citation url=https://source.example/a title=Source-A document_id=doc-123 degraded=false line=41"
         )
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name="x_search",
@@ -388,8 +388,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_header_required_research_without_citation_or_quality_anchor_fails_closed(self):
         result = self._huge_text("large answer-like corpus without durable citation anchors")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="x_search",
@@ -403,8 +403,8 @@ class LaneExpansionContractTest(unittest.TestCase):
         result = self._huge_text(
             "CDP method=DOM.getDocument url=https://example.test/app frame_id=FRAME-1 target_id=TARGET-1 selector=#submit bounds=10x20x100x32 status=ok"
         )
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name="browser_cdp",
@@ -419,8 +419,8 @@ class LaneExpansionContractTest(unittest.TestCase):
 
     def test_header_required_interaction_without_actionable_anchor_fails_closed(self):
         result = self._huge_text("large browser payload without url selector node id bounds or error")
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="browser_cdp",
@@ -433,9 +433,9 @@ class LaneExpansionContractTest(unittest.TestCase):
     def test_compressed_replacement_must_not_label_redacted_sidecar_as_exact_source(self):
         result = self._large_text("delegate diagnostics")
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=self._compressed_response()
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",

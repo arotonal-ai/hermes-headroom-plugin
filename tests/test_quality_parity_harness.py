@@ -108,9 +108,9 @@ class QualityParityHarnessTest(unittest.TestCase):
 
     def _reduced(self, *, tool_name: str, args: dict, result: str) -> str:
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=_compressed_response()
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=_compressed_response()
         ):
             out = middleware.on_tool_execution(
                 tool_name=tool_name,
@@ -179,9 +179,9 @@ class QualityParityHarnessTest(unittest.TestCase):
             "diagnostic status=FAIL authorization=Bearer SYNTHETICPROTECTEDTOKEN1234567890 error=Traceback"
         )
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=_compressed_response()
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=_compressed_response()
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="terminal",

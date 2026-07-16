@@ -8,8 +8,8 @@ from typing import Any
 
 from .health import audit
 from .hooks import headroom_status_marker, visible_status_marker_enabled
-from .middleware import auto_compression_enabled
-from .proxy import hermes_home, readyz, retrieve_stats, smoke
+from .config import auto_compression_enabled, hermes_home
+from .proxy import readyz, retrieve_stats, smoke
 
 USAGE = "Usage: /headroom status|smoke|audit|on|runtime|stats|cache|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities"
 REPEATED_TERMINAL_BELOW_MIN_CANDIDATE_CHARS = 28_000

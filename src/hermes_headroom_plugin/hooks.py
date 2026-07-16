@@ -9,8 +9,9 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from .middleware import remember_platform_context
-from .proxy import load_context_reduction_config, readyz
+from .config import load_context_reduction_config
+from .observability import remember_platform_context
+from .proxy import readyz
 
 _TRUTHY = {"1", "true", "yes", "y", "on"}
 _FALSEY = {"0", "false", "no", "n", "off"}

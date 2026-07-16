@@ -47,7 +47,7 @@ class RealProxyQualitySmokeTest(unittest.TestCase):
         sentinel = f"TASK-REAL-{uuid.uuid4().hex}"
         payload = _large_orchestration_payload(sentinel)
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ):
             reduced = middleware.on_tool_execution(
                 tool_name="kanban_show",

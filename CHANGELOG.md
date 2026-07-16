@@ -6,6 +6,8 @@
 - Add provider-neutral typed reduction contracts and fake-provider contract coverage.
 - Add one typed effective configuration resolver with explicit override → environment → YAML → default precedence and legacy aliases at the resolver boundary.
 - Preserve loopback-first endpoint validation, exact/protected behavior, direct provider routing, and copy-on-write fail-open behavior.
+- Split the Hermes middleware hot path into focused config, policy, observability, reduction, provider, tool-adapter, and request-adapter modules without changing plugin registration.
+- Keep `middleware.py` as an explicit compatibility facade; all 97 pre-v0.4 top-level symbols remain importable while internal dependency patching moves to the owning modules.
 
 ## v0.3.21 — 2026-07-15
 

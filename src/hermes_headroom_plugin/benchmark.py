@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from .middleware import auto_compression_enabled
+from .config import auto_compression_enabled
 from .proxy import compress_messages, readyz, retrieve, resolve_proxy_url, utc_now
 
 _MARKER_RE = re.compile(r"<<ccr:([^,>]+)")

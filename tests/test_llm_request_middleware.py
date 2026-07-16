@@ -39,11 +39,11 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
             return f"[COMPRESSED:{kwargs['tool_name']}:{kwargs['tool_call_id']}]"
 
         self.enabled = patch(
-            "hermes_headroom_plugin.middleware.llm_request_compression_enabled",
+            "hermes_headroom_plugin.middleware_request.llm_request_compression_enabled",
             return_value=True,
         )
         self.compressor = patch(
-            "hermes_headroom_plugin.middleware.compress_tool_result_for_context",
+            "hermes_headroom_plugin.middleware_request.compress_tool_result_for_context",
             side_effect=fake_compress,
         )
         self.enabled.start()
@@ -247,7 +247,7 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
             "stream": True,
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ):
             first, _ = self.invoke(request, "chat_completions")
             second, _ = self.invoke(request, "chat_completions")
@@ -263,7 +263,7 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
 
     def test_logical_source_dedupe_is_stable_across_api_requests(self):
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ):
             for api_request_id in ("api-1", "api-2"):
                 middleware._emit_headroom_event(
@@ -300,7 +300,7 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertIsNone(middleware.on_llm_request(request={"messages": []}, api_mode="future_protocol"))
         with patch(
-            "hermes_headroom_plugin.middleware.llm_request_compression_enabled",
+            "hermes_headroom_plugin.middleware_request.llm_request_compression_enabled",
             return_value=False,
         ):
             self.assertIsNone(middleware.on_llm_request(request=compressed_request, api_mode="chat_completions"))
@@ -318,7 +318,7 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
         }
         original = copy.deepcopy(request)
         with patch(
-            "hermes_headroom_plugin.middleware.compress_tool_result_for_context",
+            "hermes_headroom_plugin.middleware_request.compress_tool_result_for_context",
             side_effect=RuntimeError("synthetic failure"),
         ):
             self.assertIsNone(middleware.on_llm_request(request=request, api_mode="chat_completions"))
