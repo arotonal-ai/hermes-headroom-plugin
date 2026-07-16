@@ -50,7 +50,7 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs `headroom-ai[proxy]==0.31.0`, defaults CCR to memory with a 1,800-second TTL, starts the loopback proxy, verifies `/readyz`, and runs real compress → retrieve smoke. `llm-monitor` is opt-in via `--with-llm-monitor-companion` or `--companion-only`. Manual install is acceptable only if the same checks pass. See [portable-core.md](portable-core.md).
+The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs `headroom-ai[proxy]==0.31.0` with portable constraint `litellm==1.91.3`, defaults CCR to memory with a 1,800-second TTL, starts the loopback proxy, verifies `/readyz`, and runs real compress → retrieve smoke. The LiteLLM pin prevents macOS/Windows from falling back to a Rust source build after `1.92.0` dropped those wheels. `llm-monitor` is opt-in via `--with-llm-monitor-companion` or `--companion-only`. Manual install is acceptable only if the same checks pass. See [portable-core.md](portable-core.md).
 
 No-restart companion-only validation:
 

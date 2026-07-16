@@ -8,7 +8,7 @@ smoke verification.
 
 Default behavior:
 - create/update a persistent versioned venv at ~/.cache/hermes-headroom-venv-0.31.0
-- install pinned `headroom-ai[proxy]==0.31.0` unless --spec overrides it
+- install pinned `headroom-ai[proxy]==0.31.0` and `litellm==1.91.3` unless their specs are overridden
 - start `headroom proxy --host 127.0.0.1 --port 28787` when not already ready
 - run the plugin smoke against that endpoint
 - leave the bundled llm-monitor companion uninstalled unless explicitly requested
@@ -36,6 +36,8 @@ from typing import Any
 
 HEADROOM_RUNTIME_VERSION = "0.31.0"
 DEFAULT_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
+LITELLM_RUNTIME_VERSION = "1.91.3"
+DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 28787
 DEFAULT_SERVICE_NAME = "hermes-context-reduction.service"
@@ -377,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Install/start/verify Headroom runtime for Hermes plugin production use.")
     parser.add_argument("--venv", default=str(default_venv()), help=f"persistent versioned runtime venv path; default {default_venv()}")
     parser.add_argument("--spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_SPEC), help=f"pip package spec; reproducible default {DEFAULT_SPEC}")
+    parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", DEFAULT_LITELLM_SPEC), help=f"portable LiteLLM constraint; reproducible default {DEFAULT_LITELLM_SPEC}")
     parser.add_argument("--host", default=os.environ.get("HEADROOM_HOST", DEFAULT_HOST))
     parser.add_argument("--port", type=int, default=int(os.environ.get("HEADROOM_PORT", str(DEFAULT_PORT))))
     parser.add_argument("--ccr-backend", choices=("memory", "sqlite"), default=os.environ.get("HEADROOM_CCR_BACKEND", DEFAULT_CCR_BACKEND), help=f"CCR recovery backend; portable tool-core default {DEFAULT_CCR_BACKEND}")
@@ -422,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
         "proxy_url": proxy_url,
         "venv": str(venv_dir),
         "spec": args.spec,
+        "litellm_spec": args.litellm_spec,
         "ccr_backend": args.ccr_backend,
         "ccr_ttl_seconds": args.ccr_ttl_seconds,
         "log": str(log),
@@ -453,7 +457,7 @@ def main(argv: list[str] | None = None) -> int:
             python = bin_dir(venv_dir) / exe_name("python")
             headroom = bin_dir(venv_dir) / exe_name("headroom")
 
-            for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", "--upgrade", args.spec]):
+            for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", "--upgrade", args.spec, args.litellm_spec]):
                 proc = run(cmd, timeout=args.install_timeout, log=log)
                 if proc.returncode != 0:
                     result.update({"state": "FAIL", "phase": "install", "returncode": proc.returncode, "output_tail": proc.stdout[-2000:]})

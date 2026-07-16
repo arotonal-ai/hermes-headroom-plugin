@@ -24,6 +24,7 @@ import venv
 from pathlib import Path
 
 DEFAULT_SPEC = "headroom-ai[proxy]==0.31.0"
+DEFAULT_LITELLM_SPEC = "litellm==1.91.3"
 
 
 def bin_dir(venv_dir: Path) -> Path:
@@ -109,6 +110,7 @@ def terminate(proc: subprocess.Popen[str], log: Path) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Start a real Headroom proxy and run plugin smoke against it.")
     parser.add_argument("--spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_SPEC), help=f"package spec (default: {DEFAULT_SPEC})")
+    parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", DEFAULT_LITELLM_SPEC), help=f"portable LiteLLM constraint (default: {DEFAULT_LITELLM_SPEC})")
     parser.add_argument("--install-timeout", type=int, default=int(os.environ.get("HEADROOM_DEP_INSTALL_TIMEOUT", "600")))
     parser.add_argument("--ready-timeout", type=int, default=int(os.environ.get("HEADROOM_PROXY_READY_TIMEOUT", "90")))
     parser.add_argument("--keep", action="store_true", help="keep the temp venv/log directory")
@@ -126,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         python = bin_dir(venv_dir) / exe_name("python")
         headroom = bin_dir(venv_dir) / exe_name("headroom")
 
-        for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", args.spec]):
+        for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", args.spec, args.litellm_spec]):
             proc = run(cmd, timeout=args.install_timeout, log=log, env=runtime_env)
             if proc.returncode != 0:
                 print(f"FAIL: install command failed rc={proc.returncode}; log={log}", file=sys.stderr)
@@ -176,7 +178,7 @@ raise SystemExit(0 if result.get('ok') and result.get('sentinel_found') else 1)
             "PASS: plugin smoke compress/retrieve sentinel_found="
             f"{result.get('sentinel_found')} tokens_saved={result.get('tokens_saved')}"
         )
-        print(f"PASS: upstream Headroom runtime smoke complete ({args.spec})")
+        print(f"PASS: upstream Headroom runtime smoke complete ({args.spec}; {args.litellm_spec})")
         return 0
     finally:
         if proxy_proc is not None:

@@ -29,6 +29,8 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 HEADROOM_RUNTIME_VERSION = "0.31.0"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
+LITELLM_RUNTIME_VERSION = "1.91.3"
+DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"
 EPHEMERAL_ENV_DIRS = (
     "build-venv",
     "pytest-venv",
@@ -352,13 +354,13 @@ def isolated_runtime_env(run_dir: Path) -> dict[str, str]:
     return env
 
 
-def start_proxy_with_fresh_runtime(run_dir: Path, spec: str, install_timeout: int) -> tuple[subprocess.Popen[str] | None, str, Path, dict[str, Any]]:
+def start_proxy_with_fresh_runtime(run_dir: Path, spec: str, litellm_spec: str, install_timeout: int) -> tuple[subprocess.Popen[str] | None, str, Path, dict[str, Any]]:
     runtime_dir = run_dir / "headroom-runtime-venv"
     python = create_venv(runtime_dir)
     log = run_dir / "logs" / "headroom-runtime.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     env = isolated_runtime_env(run_dir)
-    for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", spec]):
+    for cmd in ([str(python), "-m", "pip", "install", "--upgrade", "pip"], [str(python), "-m", "pip", "install", spec, litellm_spec]):
         result = run(cmd, timeout=install_timeout, env=env)
         with log.open("a", encoding="utf-8") as fh:
             fh.write(f"\n$ {' '.join(cmd)}\n{result['stdout']}\n")
@@ -558,6 +560,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run local release-candidate gate for Hermes Headroom plugin.")
     parser.add_argument("--run-root", default=str(REPO / "release-candidate-runs"), help="directory for gate evidence")
     parser.add_argument("--headroom-spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_HEADROOM_SPEC))
+    parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", DEFAULT_LITELLM_SPEC))
     parser.add_argument("--install-timeout", type=int, default=int(os.environ.get("HEADROOM_DEP_INSTALL_TIMEOUT", "600")))
     parser.add_argument(
         "--keep-ephemeral-envs",
@@ -610,7 +613,7 @@ def main(argv: list[str] | None = None) -> int:
     write_json(run_dir / "commands" / "clean-temp-hermes-install.json", clean)
     gates["clean_temp_hermes_install"] = {"pass": clean_pass, "evidence": str(run_dir / "commands" / "clean-temp-hermes-install.json")}
 
-    runtime = run([sys.executable, "scripts/test-headroom-runtime-smoke.py", "--spec", args.headroom_spec, "--install-timeout", str(args.install_timeout)], timeout=args.install_timeout + 240)
+    runtime = run([sys.executable, "scripts/test-headroom-runtime-smoke.py", "--spec", args.headroom_spec, "--litellm-spec", args.litellm_spec, "--install-timeout", str(args.install_timeout)], timeout=args.install_timeout + 240)
     write_json(run_dir / "commands" / "runtime-smoke.json", runtime)
     gates["runtime_compress_retrieve_smoke"] = {"pass": runtime["returncode"] == 0, "evidence": str(run_dir / "commands" / "runtime-smoke.json")}
 
@@ -619,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
     proxy_url = ""
     proxy_log = ""
     try:
-        proxy_proc, proxy_url, proxy_log_path, ready = start_proxy_with_fresh_runtime(run_dir, args.headroom_spec, args.install_timeout)
+        proxy_proc, proxy_url, proxy_log_path, ready = start_proxy_with_fresh_runtime(run_dir, args.headroom_spec, args.litellm_spec, args.install_timeout)
         proxy_log = str(proxy_log_path)
         if ready.get("ok"):
             workload = workload_matrix(run_dir, proxy_url, wheel_result)

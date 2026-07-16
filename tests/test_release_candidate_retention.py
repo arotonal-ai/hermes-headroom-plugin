@@ -20,6 +20,9 @@ RUNTIME_SMOKE_SPEC.loader.exec_module(RUNTIME_SMOKE_MODULE)
 def test_release_candidate_default_runtime_is_pinned() -> None:
     assert MODULE.HEADROOM_RUNTIME_VERSION == "0.31.0"
     assert MODULE.DEFAULT_HEADROOM_SPEC == "headroom-ai[proxy]==0.31.0"
+    assert MODULE.LITELLM_RUNTIME_VERSION == "1.91.3"
+    assert MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
+    assert RUNTIME_SMOKE_MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
 
 
 def test_cleanup_ephemeral_envs_removes_only_allowlisted_dirs(tmp_path: Path) -> None:
