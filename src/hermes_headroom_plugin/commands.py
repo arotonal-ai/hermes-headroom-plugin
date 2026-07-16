@@ -8,8 +8,8 @@ from typing import Any
 
 from .health import audit
 from .hooks import headroom_status_marker, visible_status_marker_enabled
-from .middleware import auto_compression_enabled
-from .proxy import hermes_home, readyz, retrieve_stats, smoke
+from .config import hermes_home, resolve_effective_config
+from .proxy import readyz, retrieve_stats, smoke
 
 USAGE = "Usage: /headroom status|smoke|audit|on|runtime|stats|cache|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities"
 REPEATED_TERMINAL_BELOW_MIN_CANDIDATE_CHARS = 28_000
@@ -38,8 +38,12 @@ def _render_status(health: dict) -> str:
         detail = f" · detail={detail_text}"
     marker_state = "on" if visible_status_marker_enabled() else "off"
     marker = headroom_status_marker(health) if marker_state == "on" else "disabled"
-    auto_state = "on" if auto_compression_enabled() else "manual"
-    return f"Headroom status · ok={health['ok']} · proxy={health['proxy_url']} · status={health['status']} · visible_marker={marker_state}:{marker} · auto_compression={auto_state}{detail}"
+    effective_config = resolve_effective_config()
+    auto_state = "on" if effective_config.auto_compression else "manual"
+    warnings = ""
+    if effective_config.compatibility_warnings:
+        warnings = " · config_warnings=" + " | ".join(effective_config.compatibility_warnings)
+    return f"Headroom status · ok={health['ok']} · proxy={health['proxy_url']} · status={health['status']} · visible_marker={marker_state}:{marker} · auto_compression={auto_state}{warnings}{detail}"
 
 
 

@@ -3,18 +3,22 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from hermes_headroom_plugin import middleware
+import hermes_headroom_plugin.reduction as reduction
 
 
 class ToolExecutionMiddlewareTest(unittest.TestCase):
     def setUp(self):
+        reduction._NEGATIVE_OUTCOME_CACHE.clear()
+        middleware._LLM_REQUEST_TRANSFORM_CACHE.clear()
         self._auto_compression_env = patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "1"})
         self._auto_compression_env.start()
         self._hermes_home_tmp = tempfile.TemporaryDirectory()
         self._hermes_home_patch = patch(
-            "hermes_headroom_plugin.middleware.hermes_home",
+            "hermes_headroom_plugin.observability.hermes_home",
             return_value=Path(self._hermes_home_tmp.name),
         )
         self._hermes_home_patch.start()
@@ -23,6 +27,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self._hermes_home_patch.stop()
         self._hermes_home_tmp.cleanup()
         self._auto_compression_env.stop()
+        reduction._NEGATIVE_OUTCOME_CACHE.clear()
+        middleware._LLM_REQUEST_TRANSFORM_CACHE.clear()
 
     def _large_result(self, lines=1200):
         return "".join(
@@ -35,6 +41,40 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         if not path.exists():
             return []
         return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    def test_wrapped_tool_exception_propagates_unchanged(self):
+        error = RuntimeError("tool failed before middleware transformation")
+
+        def fail(_args):
+            raise error
+
+        with self.assertRaises(RuntimeError) as caught:
+            middleware.on_tool_execution(tool_name="terminal", args={}, next_call=fail)
+        self.assertIs(caught.exception, error)
+
+    def test_exact_and_protected_paths_do_not_probe_provider(self):
+        large = self._large_result()
+        cases = (
+            ("delegate_task", {"goal": "fan-in"}, "# Worker Final Packet\nstatus=PASS\n" + large),
+            ("terminal", {"command": "git diff --binary"}, "diff --git a/a b/a\n" + large),
+            ("terminal", {"command": "pytest -q"}, "[Headroom auto-compressed tool result · marker=abc123def456]\n" + large),
+            ("terminal", {"command": "journalctl --user"}, "private_key=-----BEGIN " + "PRIVATE KEY-----\n" + large),
+        )
+        with patch("hermes_headroom_plugin.reduction._provider_ready") as ready, patch(
+            "hermes_headroom_plugin.reduction._provider_compress"
+        ) as compress:
+            for index, (tool_name, args, result) in enumerate(cases):
+                output = middleware.on_tool_execution(
+                    tool_name=tool_name,
+                    args=args,
+                    next_call=lambda _args, value=result: value,
+                    task_id="task-exact",
+                    tool_call_id=f"exact-{index}",
+                    session_id="session-exact",
+                )
+                self.assertEqual(output, result)
+        ready.assert_not_called()
+        compress.assert_not_called()
 
     def test_delegate_task_large_result_is_compressed_when_proxy_ready(self):
         with tempfile.TemporaryDirectory() as td:
@@ -52,9 +92,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                     }
                 ],
             }
-            with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-                "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
-            ), patch("hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)):
+            with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+                "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+            ), patch("hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)):
                 out = middleware.on_tool_execution(
                     tool_name="delegate_task",
                     args={"goal": "fan-in worker diagnostics"},
@@ -67,6 +107,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                     platform="telegram",
                 )
                 events = self._events(td)
+                report = json.loads(Path(events[0]["report_path"]).read_text(encoding="utf-8"))
         self.assertIn("Headroom auto-compressed tool result", out)
         self.assertIn("tool=delegate_task", out)
         self.assertIn("marker=abc123def456", out)
@@ -82,15 +123,53 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(event["platform"], "telegram")
         self.assertEqual(event["tokens_saved"], 29700)
         self.assertEqual(event["marker"], "abc123def456")
+        self.assertEqual(event["telemetry_schema_version"], "headroom.attribution.v2")
+        self.assertEqual(len(event["event_id"]), 32)
+        self.assertEqual(len(event["dedupe_key"]), 64)
+        self.assertEqual(event["service_metric_scope"], "headroom_internal_messages")
+        self.assertEqual(event["model_facing_chars_before"], len(self._large_result()))
+        self.assertEqual(event["model_facing_chars_after"], len(out))
+        self.assertEqual(
+            event["model_facing_est_tokens_saved"],
+            middleware._rough_tokens_from_chars(len(self._large_result()))
+            - middleware._rough_tokens_from_chars(len(out)),
+        )
+        self.assertEqual(event["measurement_scope"], "tool_result")
+        self.assertTrue(event["new_savings_event"])
+        self.assertGreaterEqual(event["compression_latency_ms"], 0)
         self.assertIn("auto-tool-", event["report_path"])
+        self.assertEqual(report["model_facing_chars_before"], len(self._large_result()))
+        self.assertEqual(report["model_facing_chars_after"], len(out))
         self.assertNotIn("delegate line", json.dumps(event, ensure_ascii=False))
+
+    def test_event_ids_are_unique_while_logical_dedupe_keys_are_stable(self):
+        large = self._large_result()
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}):
+            for _ in range(2):
+                middleware.on_tool_execution(
+                    tool_name="write_file",
+                    args={"path": "same.py", "content": "replacement"},
+                    next_call=lambda args: large,
+                    task_id="task-dedupe",
+                    tool_call_id="tool-call-dedupe",
+                    session_id="session-dedupe",
+                    turn_id="turn-dedupe",
+                    api_request_id="api-dedupe",
+                )
+            events = self._events(td)
+        self.assertEqual(len(events), 2)
+        self.assertNotEqual(events[0]["event_id"], events[1]["event_id"])
+        self.assertEqual(events[0]["dedupe_key"], events[1]["dedupe_key"])
+        self.assertEqual(events[0]["model_facing_est_tokens_saved"], 0)
 
     def test_auto_compression_can_be_disabled_for_on_demand_mode(self):
         large = self._large_result()
         with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_AUTO_COMPRESSION": "0"}), patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz") as ready, patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz") as ready, patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -129,9 +208,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                 ],
             }
             structured = {"status": "success", "output": self._large_result(), "duration_seconds": 0.1}
-            with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-                "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
-            ), patch("hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)):
+            with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+                "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+            ), patch("hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)):
                 out = middleware.on_tool_execution(
                     tool_name="execute_code",
                     args={"code": "print synthetic diagnostics"},
@@ -139,6 +218,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                     task_id="t-exec",
                     tool_call_id="tc-exec",
                 )
+                events = self._events(td)
         self.assertIsInstance(out, dict)
         self.assertEqual(out["status"], "success")
         self.assertTrue(out["headroom_auto_compressed"])
@@ -146,6 +226,15 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertIn("Headroom auto-compressed tool result", out["output"])
         self.assertIn("tool=execute_code", out["output"])
         self.assertIn("marker=exec123def456", out["output"])
+        self.assertEqual(events[-1]["measurement_scope"], "structured_tool_result:output")
+        self.assertEqual(
+            events[-1]["model_facing_chars_before"],
+            len(json.dumps(structured, ensure_ascii=False, default=str)),
+        )
+        self.assertEqual(
+            events[-1]["model_facing_chars_after"],
+            len(json.dumps(out, ensure_ascii=False, default=str)),
+        )
 
     def test_large_read_file_is_compressible_with_exact_source_header(self):
         source = "".join(f"{i}|def function_{i}(): return {i}\n" for i in range(900))
@@ -158,9 +247,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "messages": [{"role": "tool", "content": "source outline hash=read123def456"}],
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
         ):
             out = middleware.on_tool_execution(
                 tool_name="read_file",
@@ -183,8 +272,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "truncated": False,
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.compress_messages") as compress:
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.compress_messages") as compress:
             out = middleware.on_tool_execution(
                 tool_name="read_file",
                 args={"path": "/tmp/machine-input.json", "offset": 1, "limit": 700},
@@ -209,9 +298,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "messages": [{"role": "tool", "content": "fact rows hash=fact123def456"}],
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
         ) as compress:
             read_out = middleware.on_tool_execution(
                 tool_name="fact_store",
@@ -237,9 +326,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "messages": [{"role": "tool", "content": "artifact outline hash=mcp123def456"}],
         }
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
         ) as compress:
             read_out = middleware.on_tool_execution(
                 tool_name="mcp__open_design__get_artifact",
@@ -257,8 +346,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_mutating_tools_remain_exact_even_when_large(self):
         large = self._large_result()
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="write_file",
@@ -272,9 +361,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_exact_mutation_events_use_specific_lanes_for_owner_attribution(self):
         large = self._large_result()
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="write_file",
@@ -311,9 +400,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         raw_output = self._large_result(lines=1400)
         terminal_result = json.dumps({"output": raw_output, "exit_code": 0, "error": None})
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}
-        ), patch("hermes_headroom_plugin.middleware.compress_messages", side_effect=fake_compress), patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+            "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}
+        ), patch("hermes_headroom_plugin.provider_headroom.compress_messages", side_effect=fake_compress), patch(
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ):
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -335,8 +424,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_git_diff_terminal_result_remains_exact(self):
         large = self._large_result()
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -350,13 +439,15 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         first = "terminal chunk A\n" * 1000
         second = "terminal chunk B\n" * 1000
         with tempfile.TemporaryDirectory() as td, patch.dict(
-            os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": ""}
-        ), patch.object(
-            middleware, "MIN_TOOL_RESULT_CHARS", 28_000
+            os.environ,
+            {
+                "HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "",
+                "HEADROOM_MIN_TOOL_RESULT_CHARS": "28000",
+            },
         ), patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
             out1 = middleware.on_tool_execution(
@@ -395,12 +486,16 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
         first = "tests/test_a.py::test_a FAILED warning chunk A\n" * 360
         second = "tests/test_b.py::test_b FAILED warning chunk B\n" * 360
-        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch.object(
-            middleware, "MIN_TOOL_RESULT_CHARS", 28_000
+        with tempfile.TemporaryDirectory() as td, patch.dict(
+            os.environ,
+            {
+                "HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1",
+                "HEADROOM_MIN_TOOL_RESULT_CHARS": "28000",
+            },
         ), patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages", side_effect=fake_compress
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", side_effect=fake_compress
         ):
             middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
             out1 = middleware.on_tool_execution(
@@ -441,8 +536,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_terminal_below_min_aggregate_does_not_override_exact_commands(self):
         first = "diff --git a/file b/file\n" * 2000
         with patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch(
-            "hermes_headroom_plugin.middleware.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}
-        ), patch("hermes_headroom_plugin.middleware.compress_messages") as compress:
+            "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}
+        ), patch("hermes_headroom_plugin.provider_headroom.compress_messages") as compress:
             middleware._BELOW_MIN_AGGREGATE_BUFFERS.clear()
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -460,9 +555,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             + "synthetic trace detail\n" * 2500
         )
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="terminal",
@@ -478,8 +573,8 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_small_delegate_result_remains_exact(self):
         small = "short final packet"
-        with patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+        with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -492,9 +587,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_unhealthy_proxy_fails_open(self):
         large = self._large_result()
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": False, "body": "down"}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": False, "body": "down"}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="delegate_task",
@@ -513,9 +608,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         protected = "-----BEGIN " + "OPENSSH PRIVATE KEY-----\nSYNTHETIC_PRIVATE_KEY_BODY\n" + large
         synthetic_secret = "SYNTHETIC_SECRET_1234567890"
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             self.assertEqual(
                 middleware.on_tool_execution(
@@ -557,9 +652,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_pre_llm_platform_context_fills_tool_event_platform(self):
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.compress_messages"
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages"
         ) as compress:
             middleware.remember_platform_context(session_id="s-platform", task_id="task-platform", turn_id="turn-platform", platform="telegram")
             out = middleware.on_tool_execution(
@@ -577,10 +672,10 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
     def test_event_log_rotates_when_size_limit_is_exceeded(self):
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
-        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
-            "hermes_headroom_plugin.middleware.load_context_reduction_config", return_value={"event_log_max_bytes": 64000}
-        ), patch("hermes_headroom_plugin.middleware.compress_messages"):
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.observability.load_context_reduction_config", return_value={"event_log_max_bytes": 64000}
+        ), patch("hermes_headroom_plugin.provider_headroom.compress_messages"):
             path = Path(td) / "control-plane" / "headroom" / "events" / "headroom-events.jsonl"
             path.parent.mkdir(parents=True)
             path.write_text("x" * 65000, encoding="utf-8")
@@ -604,6 +699,142 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_extract_markers_supports_ccr_hash_and_marker_forms(self):
         messages = [{"content": "<<ccr:abc123,base64,4KB>> and Retrieve more: hash=def4567890 marker=feedface1234."}]
         self.assertEqual(middleware._extract_markers(messages), ["abc123", "def4567890", "feedface1234"])
+
+    def test_request_surface_and_scope_are_recorded_on_compression_event(self):
+        compressed = {
+            "ok": True,
+            "tokens_before": 20000,
+            "tokens_after": 200,
+            "tokens_saved": 19800,
+            "compression_ratio": 0.01,
+            "messages": [{"role": "tool", "content": "Retrieve more: hash=requestsurface123"}],
+        }
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+        ):
+            out = middleware.compress_tool_result_for_context(
+                tool_name="terminal",
+                args={"command": "pytest -q"},
+                result=self._large_result(),
+                task_id="task-request",
+                tool_call_id="call-request",
+                session_id="session-request",
+                turn_id="turn-request",
+                api_request_id="api-request",
+                event_surface="llm_request",
+                measurement_scope_override="llm_request_tool_result:chat_completions",
+                allow_below_min_aggregate=False,
+            )
+            events = self._events(td)
+            report = json.loads(Path(events[-1]["report_path"]).read_text(encoding="utf-8"))
+        self.assertIsInstance(out, str)
+        self.assertEqual(events[-1]["surface"], "llm_request")
+        self.assertEqual(events[-1]["measurement_scope"], "llm_request_tool_result:chat_completions")
+        self.assertEqual(report["surface"], "llm_request")
+
+
+    def test_non_useful_outcome_is_reused_across_tool_and_request_surfaces(self):
+        large = self._large_result(lines=500)
+        not_useful = {
+            "ok": True,
+            "messages": [{"role": "tool", "content": large}],
+            "tokens_before": 9000,
+            "tokens_after": 8992,
+            "tokens_saved": 8,
+            "compression_ratio": 0.999,
+        }
+        request = {
+            "input": [
+                {"type": "function_call", "call_id": "cross-negative", "name": "terminal", "arguments": "{}"},
+                {"type": "function_call_output", "call_id": "cross-negative", "output": large},
+            ],
+            "stream": True,
+        }
+        with patch("hermes_headroom_plugin.reduction._provider_ready", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.reduction._provider_compress", return_value=not_useful
+        ) as compress, patch(
+            "hermes_headroom_plugin.middleware_request.llm_request_compression_enabled", return_value=True
+        ):
+            tool_out = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "generate diagnostics"},
+                next_call=lambda _args: large,
+                task_id="task-cross-negative",
+                tool_call_id="cross-negative",
+                session_id="session-cross-negative",
+                api_request_id="api-tool",
+                platform="telegram",
+            )
+            first_request = middleware.on_llm_request(
+                request=request,
+                api_mode="responses",
+                task_id="request-task-rebound",
+                session_id="session-cross-negative",
+                api_request_id="api-request-1",
+                platform="telegram",
+            )
+            second_request = middleware.on_llm_request(
+                request=request,
+                api_mode="responses",
+                task_id="request-task-rebound",
+                session_id="session-cross-negative",
+                api_request_id="api-request-2",
+                platform="telegram",
+            )
+            events = self._events(self._hermes_home_tmp.name)
+        self.assertEqual(tool_out, large)
+        self.assertIsNone(first_request)
+        self.assertIsNone(second_request)
+        self.assertEqual(compress.call_count, 1)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["surface"], "tool_execution")
+        self.assertEqual(events[0]["reason"], "compression_not_useful")
+        self.assertFalse(events[0]["new_savings_event"])
+
+    def test_negative_outcome_cache_expires_and_is_runtime_bounded(self):
+        keys = [
+            reduction._negative_outcome_key(
+                tool_name="terminal",
+                result=f"same source {index}",
+                task_id="task",
+                tool_call_id=f"call-{index}",
+                session_id="session",
+            )
+            for index in range(3)
+        ]
+        with patch(
+            "hermes_headroom_plugin.reduction.resolve_effective_config",
+            return_value=SimpleNamespace(llm_request_cache_max=2),
+        ):
+            reduction._negative_outcome_cache_put(keys[0], now=100.0)
+            reduction._negative_outcome_cache_put(keys[1], now=101.0)
+            reduction._negative_outcome_cache_put(keys[2], now=102.0)
+        self.assertNotIn(keys[0], reduction._NEGATIVE_OUTCOME_CACHE)
+        self.assertTrue(reduction._negative_outcome_cache_hit(keys[1], now=399.9))
+        self.assertFalse(reduction._negative_outcome_cache_hit(keys[1], now=401.0))
+        self.assertNotIn(keys[1], reduction._NEGATIVE_OUTCOME_CACHE)
+
+    def test_provider_failures_remain_retryable_and_are_not_negative_cached(self):
+        large = self._large_result(lines=500)
+        failed = {"ok": False, "error": "synthetic provider unavailable"}
+        with patch("hermes_headroom_plugin.reduction._provider_ready", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.reduction._provider_compress", return_value=failed
+        ) as compress:
+            for api_request_id in ("api-fail-1", "api-fail-2"):
+                out = middleware.compress_tool_result_for_context(
+                    tool_name="terminal",
+                    args={"command": "generate diagnostics"},
+                    result=large,
+                    task_id="task-fail-retry",
+                    tool_call_id="call-fail-retry",
+                    session_id="session-fail-retry",
+                    api_request_id=api_request_id,
+                )
+                self.assertIsNone(out)
+        self.assertEqual(compress.call_count, 2)
+        self.assertEqual(reduction._NEGATIVE_OUTCOME_CACHE, {})
 
 
 if __name__ == "__main__":

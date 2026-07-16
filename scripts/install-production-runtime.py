@@ -7,12 +7,13 @@ an isolated runtime venv, a loopback proxy, /readyz, and compress -> retrieve
 smoke verification.
 
 Default behavior:
-- create/update a persistent venv at ~/.cache/hermes-headroom-venv
-- install the latest available `headroom-ai[proxy]` unless --spec overrides it
+- create/update a persistent versioned venv at ~/.cache/hermes-headroom-venv-0.31.0
+- install pinned `headroom-ai[proxy]==0.31.0` unless --spec overrides it
 - start `headroom proxy --host 127.0.0.1 --port 28787` when not already ready
 - run the plugin smoke against that endpoint
-- install the bundled owner-local llm-monitor companion plugin unless skipped
-- exit 0 only for RUNTIME_FULL unless --no-smoke/--no-start/--companion-only is requested
+- leave the bundled llm-monitor companion uninstalled unless explicitly requested
+- exit 0 for a verified full/durable runtime, companion-only install, or an explicitly
+  requested successful --no-start/--no-smoke partial path
 
 Linux durable mode:
 - add `--systemd-user` to write, enable, and start a durable user service

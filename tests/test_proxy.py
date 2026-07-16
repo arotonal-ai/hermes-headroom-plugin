@@ -1,11 +1,13 @@
 import os
 import unittest
+from unittest.mock import patch
 
 from hermes_headroom_plugin.proxy import (
     ProxyConfigurationError,
     is_loopback_proxy_url,
     readyz,
     resolve_proxy_url,
+    retrieve,
     smoke,
 )
 
@@ -64,6 +66,28 @@ class ProxyResolutionTest(unittest.TestCase):
         finally:
             self._restore_env(old)
         self.assertEqual(resolve_proxy_url({"proxy_url": "http://192.168.1.5:28787", "allow_remote_proxy": True}), "http://192.168.1.5:28787")
+
+    def test_retrieve_posts_hash_only_and_returns_complete_payload(self):
+        retained = {"result": {"original_content": "complete exact retained payload"}}
+        with patch("hermes_headroom_plugin.proxy.http_json", return_value=(200, retained, "")) as call:
+            result = retrieve("<<ccr:abc123,base64,1KB>>", proxy_url="http://127.0.0.1:28787")
+        self.assertTrue(result["success"])
+        self.assertEqual(result["result"]["original_content"], "complete exact retained payload")
+        self.assertEqual(call.call_args.args[1], {"hash": "abc123"})
+        self.assertNotIn("query", call.call_args.args[1])
+
+    def test_retrieve_rejects_invalid_hash_without_network(self):
+        with patch("hermes_headroom_plugin.proxy.http_json") as call:
+            result = retrieve("not a valid marker", proxy_url="http://127.0.0.1:28787")
+        self.assertFalse(result["success"])
+        self.assertIn("hash", result["error"])
+        call.assert_not_called()
+
+    def test_retrieve_reports_missing_or_expired_provider_response(self):
+        with patch("hermes_headroom_plugin.proxy.http_json", return_value=(404, None, "marker missing or expired")):
+            result = retrieve("abc123", proxy_url="http://127.0.0.1:28787")
+        self.assertFalse(result["success"])
+        self.assertIn("status=404", result["error"])
 
 
 if __name__ == "__main__":

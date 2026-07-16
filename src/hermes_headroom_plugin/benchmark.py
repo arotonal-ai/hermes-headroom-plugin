@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from .middleware import auto_compression_enabled
+from .config import auto_compression_enabled
 from .proxy import compress_messages, readyz, retrieve, resolve_proxy_url, utc_now
 
 _MARKER_RE = re.compile(r"<<ccr:([^,>]+)")
@@ -134,7 +134,7 @@ def run_benchmark(config: BenchmarkConfig | None = None) -> dict[str, Any]:
             after = _json_len(compressed.get("messages"))
             retrieved_ok = False
             if marker:
-                retrieved = retrieve(marker, query=sentinel, proxy_url=proxy_url)
+                retrieved = retrieve(marker, proxy_url=proxy_url)
                 retrieved_ok = bool(retrieved.get("success", "error" not in retrieved)) and sentinel in _result_text(retrieved)
             if retrieved_ok:
                 quality_hits += 1

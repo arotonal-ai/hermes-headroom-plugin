@@ -10,6 +10,8 @@
 
 Use it when a Hermes instance needs a conservative bridge to Headroom: install the Hermes plugin surface first, then install or point it at a local Headroom runtime for actual compression. The plugin **does not compress by itself**; it calls the configured Headroom proxy for `/v1/compress`, `/v1/retrieve`, stats, and smoke tests. Without that runtime it is limited to install/status/readiness surfaces and fails open to exact outputs.
 
+`headroom_retrieve` is deliberately **hash-only**: it sends exactly the CCR hash to `/v1/retrieve` and returns the complete exact retained payload while that marker remains live. Focused slicing is not part of the Headroom retrieval contract; callers that need a bounded view must apply a separate deterministic operation without presenting it as exact hash retrieval.
+
 ```bash
 hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
 hermes gateway restart   # or /new in an active session
@@ -62,6 +64,8 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | Worker/background/preflight CLI wrappers | ✅ require runtime for compression | wrappers retain exact sidecars/final packets; compression of eligible bulky intermediates happens only through a healthy Headroom proxy |
 | Global/default provider route mutation | ❌ not included | install does not change model/provider defaults |
 | External telemetry/API keys | ❌ not included | no telemetry, no keys required |
+
+Canonical diagnostics are `status`, `smoke`, `audit`, `runtime`, `cache`, `usage`, `lanes`, `tail`, `decisions`, and `opportunities`. Read-only `on`, `stats`, `why`, `opp`, `enable`, `off`, and `disable` spellings remain v0.4 migration shims; new integrations should not depend on those aliases.
 
 ## Installation paths
 
@@ -187,6 +191,19 @@ context_reduction:
 
 This is a scoped development-loop override, not a portable-product default. It keeps `/headroom status`, `/headroom smoke`, `/headroom cache`, and `headroom_retrieve` available, but tool outputs return exact unless explicitly compressed through a wrapper/runtime path. Use it for plugin improvement sessions with repeated tests/gates; keep `HEADROOM_AUTO_COMPRESSION=1` or `context_reduction.auto_compression: true` for normal portable operation where eligible-intermediate compression is the point. The control disables only middleware auto-compression, not the runtime or the portable compression-first product posture.
 
+### Opt-in common LLM-request safety net
+
+Hermes exposes a native `llm_request` middleware boundary after protocol payload construction and before the real provider transport. The plugin can use it to compress eligible legacy or bypassed tool-result text across `chat_completions`, `codex_responses`, `anthropic_messages`, and `bedrock_converse`:
+
+```yaml
+context_reduction:
+  llm_request_middleware:
+    enabled: true
+    mode: tool_results
+```
+
+`HEADROOM_LLM_REQUEST_COMPRESSION=1` is the process-scoped equivalent. This path is off by default and remains copy-on-write/fail-open. It does not proxy or reroute model traffic and never intentionally rewrites system/user prompts, tool schemas, tool arguments, images, signed-thinking/cache blocks, Bedrock guardrails/sentinels, auth/header fields, or streaming controls. Attribution v2 reports it as `surface=llm_request`; an already compressed marker is left untouched. A bounded process cache reuses the compressed fragment by a content/tool-call fingerprint, and the ledger uses a stable logical dedupe key, so later API requests do not count the same canonical tool result as new savings.
+
 ### Cache / CCR store boundary
 
 There is no separate plugin-side CCR cache. The cache/store that makes CCR markers retrievable belongs to the Headroom runtime/proxy. `/headroom cache` is read-only and reports the runtime store posture: entries, max entries, TTL, backend type, bytes used when the runtime exposes it, retrieval/event counts, and recent retrieval count. It does not purge, mutate, or expose admin/debug APIs.
@@ -252,7 +269,7 @@ If you are another Hermes/AI instance installing or auditing this repo:
 7. Keep remote proxies disabled unless explicitly allowed by the operator.
 8. Do not invent token-savings metrics.
 
-Compact agent brief: [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md). Context-economy loop contract: [docs/context-economy-loop.md](docs/context-economy-loop.md). Full install/troubleshooting: [INSTALL.md](INSTALL.md).
+Compact agent brief: [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md). Context-economy loop contract: [docs/context-economy-loop.md](docs/context-economy-loop.md). v0.3.x migration: [docs/MIGRATION-v0.4.md](docs/MIGRATION-v0.4.md). Full install/troubleshooting: [INSTALL.md](INSTALL.md).
 
 ## Validation helpers
 
@@ -318,6 +335,24 @@ Hermes config override:
 context_reduction:
   proxy_url: http://127.0.0.1:28787
 ```
+
+Effective configuration is resolved once with `explicit override → environment → context_reduction YAML → portable default` precedence.
+
+| Concern | Canonical YAML | Environment | Legacy compatibility |
+|---|---|---|---|
+| Proxy endpoint | `proxy_url` | `HEADROOM_PROXY_URL` | `host` / `port` and `HEADROOM_HOST` / `HEADROOM_PORT`; accepted with `/headroom status` warning |
+| Automatic tool-result compression | `auto_compression` | `HEADROOM_AUTO_COMPRESSION` | `auto_compress`, `auto_terminal`; accepted with warning |
+| Compatibility mode spelling | `mode` | — | `compression_mode`; accepted with warning |
+| Request-boundary safety net | `llm_request_middleware.enabled`, `.mode` | `HEADROOM_LLM_REQUEST_COMPRESSION` | none; off by default |
+| Minimum tool-result size | `min_tool_result_chars` | `HEADROOM_MIN_TOOL_RESULT_CHARS` | none |
+| Event log bound | `event_log_max_bytes` | — | `events_max_bytes`; accepted with warning |
+| Request transform cache | `llm_request_cache_max` | `HEADROOM_LLM_REQUEST_CACHE_MAX` | none |
+| Visible readiness marker | `visible_status_marker` | `HEADROOM_VISIBLE_STATUS_MARKER` | none; off by default |
+| First-turn hint | `first_turn_hint` | `HEADROOM_FIRST_TURN_HINT` | none; off by default |
+| Experimental below-min aggregation | `experimental_below_min_terminal_aggregate` | `HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE` | none; off by default |
+| Report retention | `report_retention_days`, `report_max_bytes`, `report_prune_interval_seconds` | `HEADROOM_REPORT_RETENTION_DAYS`, `HEADROOM_REPORT_MAX_BYTES`, `HEADROOM_REPORT_PRUNE_INTERVAL_SECONDS` | none |
+
+Legacy names remain migration shims for v0.4, not parallel authorities. Use canonical names in new installs.
 
 Remote proxy guardrail:
 

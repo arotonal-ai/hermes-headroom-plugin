@@ -27,7 +27,8 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
-DEFAULT_HEADROOM_SPEC = "headroom-ai[proxy]"
+HEADROOM_RUNTIME_VERSION = "0.31.0"
+DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
 EPHEMERAL_ENV_DIRS = (
     "build-venv",
     "pytest-venv",
@@ -270,7 +271,10 @@ def build_and_inspect(run_dir: Path) -> dict[str, Any]:
     artifacts = sorted(dist_dir.glob("*")) if dist_dir.exists() else []
     issues: list[dict[str, Any]] = []
     for artifact in artifacts:
-        for member in archive_members(artifact):
+        members = archive_members(artifact)
+        if not any(member.endswith("/MIGRATION-v0.4.md") for member in members):
+            issues.append({"artifact": artifact.name, "kind": "missing_migration_doc"})
+        for member in members:
             lowered = member.lower()
             if any(bad in lowered for bad in (".git/", ".venv/", "__pycache__", ".pytest_cache", "release-candidate-runs")):
                 issues.append({"artifact": artifact.name, "member": member, "kind": "forbidden_member"})
@@ -310,6 +314,7 @@ def wheel_install_gate(run_dir: Path, build_gate: dict[str, Any]) -> dict[str, A
     steps = [
         run([str(python), "-m", "pip", "install", "--upgrade", "pip"], timeout=240),
         run([str(python), "-m", "pip", "install", str(wheel)], timeout=300),
+        run([str(python), "-m", "pip", "check"], timeout=60),
     ]
     checks = []
     for name in ("headroom-worker-lane", "headroom-background-lane", "headroom-command-preflight", "headroom-health-audit", "headroom-proxy-start"):
@@ -423,7 +428,7 @@ def workload_matrix(run_dir: Path, proxy_url: str, wheel_gate: dict[str, Any]) -
         {"name": "browser_debug_trace", "tool": "browser_snapshot", "args": {"lane": "browser debug", "data_class": "browser_debug_trace"}, "body": browser_trace(4200), "expect": "compress", "sentinel": "BROWSER_RC_SENTINEL"},
         {"name": "research_corpus_web_extract", "tool": "web_extract", "args": {"lane": "research", "data_class": "research_corpus"}, "body": research_corpus(4200), "expect": "compress", "sentinel": "RESEARCH_RC_SENTINEL"},
         {"name": "exact_git_diff_negative", "tool": "terminal", "args": {"command": "git diff -- README.md", "lane": "dev"}, "body": "*** Begin Patch\n" + bulky_log("diff", 2500) + "*** End Patch\n", "expect": "exact", "sentinel": "DIFF_RC_SENTINEL"},
-        {"name": "secret_material_negative", "tool": "terminal", "args": {"command": "diagnostic", "lane": "diagnostic"}, "body": (("[REDACTED " + "PRIVATE" + " KEY]\n") * 500), "expect": "exact", "sentinel": "SECRET_RC_SENTINEL"},
+        {"name": "secret_material_negative", "tool": "terminal", "args": {"command": "diagnostic", "lane": "diagnostic"}, "body": ("-----BEGIN " + "PRIVATE KEY-----\n" + ("[REDACTED KEY MATERIAL]\n" * 500) + "-----END " + "PRIVATE KEY-----\n"), "expect": "exact", "sentinel": "SECRET_RC_SENTINEL"},
         {"name": "worker_final_packet_negative", "tool": "delegate_task", "args": {"goal": "return final packet", "lane": "delegate"}, "body": "# Worker Final Packet\n\nstatus: PASS\nclaim_ledger: exact\n" + bulky_log("final", 2200), "expect": "exact", "sentinel": "FINAL_RC_SENTINEL"},
     ]
     results: list[dict[str, Any]] = []
@@ -451,7 +456,7 @@ source_has_sentinel = bool(source_path and source_path.exists() and {case['senti
 retrieve = {{}}
 retrieve_has_sentinel = False
 if marker:
-    retrieve = json.loads(handle_headroom_retrieve({{'hash': marker, 'query': {case['sentinel']!r}}}))
+    retrieve = json.loads(handle_headroom_retrieve({{'hash': marker}}))
     retrieve_has_sentinel = {case['sentinel']!r} in json.dumps(retrieve, ensure_ascii=False)
 out = {{
   'name': {case['name']!r},
@@ -470,7 +475,13 @@ out = {{
 if out['expect'] == 'compress':
     out['pass'] = bool(out['compressed'] and out['contains_auto_header'] and not out['contains_private_key'] and out['source_retained'] and out['source_has_sentinel'] and isinstance(out.get('tokens_saved'), int) and out['tokens_saved'] > 1000)
 else:
-    out['pass'] = not out['compressed']
+    out['pass'] = bool(
+        not out['compressed']
+        and not out['contains_auto_header']
+        and not out['marker']
+        and not out['source_retained']
+        and out['tokens_saved'] is None
+    )
 print(json.dumps(out, sort_keys=True))
 raise SystemExit(0 if out['pass'] else 1)
 """.strip()

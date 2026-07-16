@@ -40,6 +40,7 @@ _STATE_FILE = _MONITOR_DIR / "state.json"
 _LOCK = threading.RLock()
 _TURN_FILES: Dict[str, Path] = {}
 _TURN_ROOT_WRITTEN: set[str] = set()
+_LAST_RETENTION_CHECK = 0.0
 
 _OWNER_DEFAULT_LIGHT = [
     "terminal", "file", "code_execution", "web", "skills", "memory",
@@ -83,6 +84,10 @@ _LAST_TOOL_SCHEMA_CHARS_BY_COUNT: Dict[int, int] = {}
 _DEFAULT_STATE = {
     "enabled": False,
     "mode": "full",  # full = sanitized request/response payloads; metadata = counters only
+    "strict_metadata": True,
+    "retention_days": 14,
+    "max_trace_files": 2000,
+    "retention_max_deletes_per_check": 200,
     "visible_pre_call": False,
     # final_overlay prepends text into the assistant answer itself. Keep off by
     # default: visible status should live in platform status/draft rails, not
@@ -111,6 +116,10 @@ _VISIBLE_API_IDS: set[str] = set()
 _VISIBLE_CALLS_BY_TURN: Dict[str, int] = {}
 _VISIBLE_CALL_TIMES: List[float] = []
 _VISIBLE_TURN_STATS: Dict[str, Dict[str, Any]] = {}
+_HEADROOM_MARKERS_SEEN_BY_SESSION: Dict[str, set[str]] = {}
+_HEADROOM_MARKER_RE = re.compile(
+    r"(?:<<ccr:([A-Za-z0-9._-]{6,160})(?:,[^>]*)?>>|\b(?:hash|marker)=([A-Za-z0-9._-]{6,160}))"
+)
 
 
 def _format_pre_call_message(*, provider: Any, model: Any, call_no: Any, tokens: Any) -> str:
@@ -227,6 +236,170 @@ def _headroom_event_tail(limit: int = 2000) -> List[Dict[str, Any]]:
         return []
 
 
+def _legacy_headroom_dedupe_key(event: Dict[str, Any]) -> str:
+    """Best-effort key for v1 rows; avoid merging unattributed repeated calls."""
+    if not any(str(event.get(key) or "").strip() for key in ("tool_call_id", "api_request_id", "turn_id")):
+        return ""
+    values = (
+        event.get("session_id"),
+        event.get("turn_id"),
+        event.get("task_id"),
+        event.get("tool_call_id"),
+        event.get("api_request_id"),
+        event.get("tool_name"),
+        event.get("action"),
+        event.get("reason"),
+        event.get("original_chars"),
+        event.get("marker"),
+    )
+    return "legacy:" + "\x1f".join(str(value or "") for value in values)
+
+
+def _dedupe_headroom_events(events: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+    """Keep one row per logical transform while preserving unkeyed events."""
+    unique: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    duplicates = 0
+    for event in events:
+        key = str(event.get("dedupe_key") or "").strip() or _legacy_headroom_dedupe_key(event)
+        if key and key in seen:
+            duplicates += 1
+            continue
+        if key:
+            seen.add(key)
+        unique.append(event)
+    return unique, duplicates
+
+
+def _headroom_tool_payload_texts(request: Any, request_messages: Any = None) -> List[str]:
+    """Collect only model-facing tool-result payloads across common protocols."""
+    roots: List[Any] = []
+    if isinstance(request_messages, list):
+        roots.append(request_messages)
+    if isinstance(request, dict):
+        candidate_body = request.get("body")
+        body: Dict[str, Any] = candidate_body if isinstance(candidate_body, dict) else request
+        for key in ("messages", "input"):
+            if isinstance(body.get(key), list):
+                roots.append(body.get(key))
+
+    payloads: List[str] = []
+    tool_types = {"tool_result", "function_call_output", "computer_tool_result", "mcp_tool_result"}
+
+    def walk(node: Any, inherited_tool: bool = False) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item, inherited_tool)
+            return
+        if not isinstance(node, dict):
+            if inherited_tool and isinstance(node, str):
+                payloads.append(node)
+            return
+        role = str(node.get("role") or "").lower()
+        item_type = str(node.get("type") or "").lower()
+        is_tool = inherited_tool or role == "tool" or item_type in tool_types
+        if is_tool:
+            try:
+                payloads.append(json.dumps(node, ensure_ascii=False, default=str))
+            except Exception:
+                payloads.append(str(node))
+            return
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                walk(value, False)
+
+    for root in roots:
+        walk(root)
+    return payloads
+
+
+def _headroom_markers_in_request(request: Any, request_messages: Any = None) -> List[str]:
+    markers: List[str] = []
+    seen: set[str] = set()
+    for payload in _headroom_tool_payload_texts(request, request_messages):
+        for match in _HEADROOM_MARKER_RE.finditer(payload):
+            marker = next((group for group in match.groups() if group), "")
+            if marker and marker not in seen:
+                seen.add(marker)
+                markers.append(marker)
+    return markers
+
+
+def _headroom_request_attribution(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Correlate retained transforms; never count them as new request savings."""
+    markers = _headroom_markers_in_request(kwargs.get("request"), kwargs.get("request_messages"))
+    raw_events = _headroom_event_tail(limit=10000)
+    marker_events = [
+        event
+        for event in raw_events
+        if event.get("action") == "compressed" and str(event.get("marker") or "").strip() in markers
+    ]
+    events, duplicates = _dedupe_headroom_events(marker_events)
+    by_marker: Dict[str, Dict[str, Any]] = {}
+    for event in events:
+        marker = str(event.get("marker") or "").strip()
+        if marker and event.get("action") == "compressed":
+            by_marker[marker] = event
+    correlated = [by_marker[marker] for marker in markers if marker in by_marker]
+    metric_events = [
+        event
+        for event in correlated
+        if event.get("model_facing_est_tokens_before") is not None
+        and event.get("model_facing_est_tokens_after") is not None
+    ]
+    before = sum(_safe_int(event.get("model_facing_est_tokens_before")) for event in metric_events)
+    after = sum(_safe_int(event.get("model_facing_est_tokens_after")) for event in metric_events)
+    saved = sum(_safe_int(event.get("model_facing_est_tokens_saved")) for event in metric_events)
+    service_saved = sum(
+        _safe_int(event.get("service_tokens_saved") or event.get("tokens_saved")) for event in correlated
+    )
+    session_id = str(kwargs.get("session_id") or "")
+    with _LOCK:
+        seen = _HEADROOM_MARKERS_SEEN_BY_SESSION.setdefault(session_id, set())
+        first_observed = [marker for marker in markers if marker not in seen]
+        seen.update(markers)
+    if not markers:
+        coverage = "no_markers"
+    elif len(correlated) == len(markers):
+        coverage = "correlated"
+    elif correlated:
+        coverage = "partial"
+    else:
+        coverage = "unmatched"
+    if not correlated:
+        metric_coverage = "none"
+    elif len(metric_events) == len(correlated):
+        metric_coverage = "full"
+    elif metric_events:
+        metric_coverage = "partial"
+    else:
+        metric_coverage = "legacy_only"
+    marker_completeness = (len(correlated) / len(markers) * 100.0) if markers else 100.0
+    metric_completeness = (len(metric_events) / len(correlated) * 100.0) if correlated else 0.0
+    return {
+        "schema_version": "headroom.attribution.v2",
+        "coverage": coverage,
+        "marker_count": len(markers),
+        "correlated_event_count": len(correlated),
+        "metric_event_count": len(metric_events),
+        "legacy_metric_event_count": max(0, len(correlated) - len(metric_events)),
+        "unmatched_marker_count": max(0, len(markers) - len(correlated)),
+        "marker_correlation_completeness_pct": round(marker_completeness, 2),
+        "model_facing_metric_coverage": metric_coverage,
+        "model_facing_metric_completeness_pct": round(metric_completeness, 2),
+        "first_observed_in_process_count": len(first_observed),
+        "duplicate_events_ignored": duplicates,
+        "retained_transform_est_tokens_before": before,
+        "retained_transform_est_tokens_after": after,
+        "retained_transform_est_tokens_saved": saved,
+        "service_internal_tokens_saved": service_saved,
+        "metric_scope": "retained_tool_transforms_in_request",
+        "token_estimator": "chars_div4_ceil",
+        "counts_as_new_savings": False,
+        "full_request_counterfactual_available": False,
+    }
+
+
 def _headroom_proxy_summary_line() -> str:
     """Compact Headroom proxy savings line for llm-monitor.
 
@@ -297,43 +470,63 @@ def _headroom_turn_summary_line(stats: Dict[str, Any]) -> str:
             scoped.append(event)
         if not scoped:
             return ""
+        scoped, duplicate_count = _dedupe_headroom_events(scoped)
         counts: Dict[str, int] = {}
         lanes: Dict[str, int] = {}
-        saved = 0
+        service_saved = 0
+        model_before = 0
+        model_after = 0
+        model_saved = 0
         for event in scoped:
             action = str(event.get("action") or "unknown")
             lane = str(event.get("lane") or "unknown")
             counts[action] = counts.get(action, 0) + 1
             lanes[lane] = lanes.get(lane, 0) + 1
-            try:
-                saved += int(event.get("tokens_saved") or 0)
-            except Exception:
-                pass
+            if action != "compressed":
+                continue
+            service_saved += _safe_int(event.get("service_tokens_saved") or event.get("tokens_saved"))
+            if event.get("new_savings_event") is False:
+                continue
+            if event.get("model_facing_est_tokens_before") is not None:
+                model_before += _safe_int(event.get("model_facing_est_tokens_before"))
+                model_after += _safe_int(event.get("model_facing_est_tokens_after"))
+                model_saved += _safe_int(event.get("model_facing_est_tokens_saved"))
         lane_txt = ",".join(lane for lane, _ in sorted(lanes.items(), key=lambda item: item[1], reverse=True)[:3]) or "—"
         compressed_count = counts.get("compressed", 0)
         exact_count = counts.get("exact", 0)
         blocked_count = counts.get("blocked", 0)
         skipped_count = counts.get("skipped", 0)
         issue_count = counts.get("runtime_unavailable", 0) + counts.get("error", 0)
-        if issue_count:
-            parts = [f"tool-output issues `{issue_count}`", f"exact/skipped `{exact_count + skipped_count}`"]
-        elif compressed_count or saved:
+        if model_before:
+            pct = (model_saved / model_before * 100.0) if model_before else 0.0
             parts = [
                 "tool-output used",
-                f"saved `{_human_count(saved) if saved else '0'}`",
+                f"`{_human_count(model_before)}→{_human_count(model_after) if model_after else '0'}`",
+                f"saved `{_human_count(model_saved) if model_saved else '0'}` (`{pct:.1f}%`, est.)",
                 f"compressed `{compressed_count}`",
             ]
+        elif compressed_count or service_saved:
+            parts = [
+                "tool-output used",
+                f"internal saved `{_human_count(service_saved) if service_saved else '0'}`",
+                f"compressed `{compressed_count}`",
+            ]
+        elif issue_count:
+            parts = [f"tool-output issues `{issue_count}`", f"exact/skipped `{exact_count + skipped_count}`"]
+        elif blocked_count:
+            parts = ["tool-output no compression", f"safety-blocked `{blocked_count}`"]
+        else:
+            safe_count = exact_count + skipped_count
+            parts = ["tool-output ready", f"exact/skipped `{safe_count}`", "no compressed eligible output"]
+        if compressed_count or model_before or service_saved:
             if exact_count or skipped_count:
                 parts.append(f"exact/skipped `{exact_count + skipped_count}`")
             if blocked_count:
                 parts.append(f"safety-blocked `{blocked_count}`")
-        elif blocked_count:
-            parts = [f"tool-output no compression", f"safety-blocked `{blocked_count}`"]
-            if exact_count or skipped_count:
-                parts.append(f"exact/skipped `{exact_count + skipped_count}`")
-        else:
-            safe_count = exact_count + skipped_count
-            parts = ["tool-output ready", f"exact/skipped `{safe_count}`", "no compressed eligible output"]
+        if issue_count and not parts[0].startswith("tool-output issues"):
+            parts.append(f"issues `{issue_count}`")
+        if duplicate_count:
+            parts.append(f"dupes ignored `{duplicate_count}`")
         parts.append(f"lanes `{lane_txt}`")
         return "**HR:** " + " · ".join(parts)
     except Exception:
@@ -712,6 +905,39 @@ def _ensure_dirs() -> None:
         pass
 
 
+def _maybe_prune_traces(state: Dict[str, Any], *, now_ts: float | None = None, force: bool = False) -> Dict[str, int]:
+    """Bounded inline retention; never spawns a watcher/background loop."""
+    global _LAST_RETENTION_CHECK
+    now_value = float(now_ts if now_ts is not None else time.time())
+    with _LOCK:
+        if not force and now_value - _LAST_RETENTION_CHECK < 3600:
+            return {"checked": 0, "deleted": 0}
+        _LAST_RETENTION_CHECK = now_value
+        _ensure_dirs()
+        retention_days = _safe_positive_int(state.get("retention_days"), 14)
+        max_files = _safe_positive_int(state.get("max_trace_files"), 2000)
+        delete_cap = _safe_positive_int(state.get("retention_max_deletes_per_check"), 200)
+        protected = {path.resolve() for path in _TURN_FILES.values()}
+        files = sorted(
+            (path for path in _TRACE_DIR.glob("*.jsonl") if path.resolve() not in protected),
+            key=lambda path: path.stat().st_mtime if path.exists() else now_value,
+        )
+        cutoff = now_value - retention_days * 86400
+        victims = [path for path in files if path.stat().st_mtime < cutoff]
+        victim_set = set(victims)
+        remaining = [path for path in files if path not in victim_set]
+        if len(remaining) > max_files:
+            victims.extend(remaining[:len(remaining) - max_files])
+        deleted = 0
+        for path in victims[:delete_cap]:
+            try:
+                path.unlink()
+                deleted += 1
+            except (FileNotFoundError, OSError):
+                continue
+        return {"checked": len(files), "eligible": len(victims), "deleted": deleted}
+
+
 def _read_state() -> Dict[str, Any]:
     with _LOCK:
         if not _STATE_FILE.exists():
@@ -728,10 +954,13 @@ def _read_state() -> Dict[str, Any]:
             mode = str(state.get("mode") or "full").lower()
             state["mode"] = "metadata" if mode == "metadata" else "full"
             state["enabled"] = bool(state.get("enabled"))
-            for key in ("visible_pre_call", "final_overlay", "local_visibility", "fallback_send_message", "disable_visibility_on_error", "headroom_summary"):
+            for key in ("visible_pre_call", "final_overlay", "local_visibility", "fallback_send_message", "disable_visibility_on_error", "headroom_summary", "strict_metadata"):
                 state[key] = bool(state.get(key))
             state["max_visible_calls_per_turn"] = _safe_positive_int(state.get("max_visible_calls_per_turn"), 3)
             state["max_visible_calls_per_minute"] = _safe_positive_int(state.get("max_visible_calls_per_minute"), 10)
+            state["retention_days"] = _safe_positive_int(state.get("retention_days"), 14)
+            state["max_trace_files"] = _safe_positive_int(state.get("max_trace_files"), 2000)
+            state["retention_max_deletes_per_check"] = _safe_positive_int(state.get("retention_max_deletes_per_check"), 200)
             return state
         except Exception:
             return dict(_DEFAULT_STATE)
@@ -905,15 +1134,20 @@ def _notify_visible_pre_call(**kwargs: Any) -> None:
             result = {"scheduled": False, "delivery": "suppressed_no_status", "status_key": status_key}
             _disable_visible_due_to_error("pre_status_unavailable")
         path = _trace_file(kwargs.get("session_id"), kwargs.get("turn_id"), platform, kwargs.get("task_id"))
-        _append_event(path, {
+        visibility_event: Dict[str, Any] = {
             "type": "llm_pre_call_visible_marker",
             "api_request_id": api_request_id,
             "session_id": kwargs.get("session_id"),
             "turn_id": kwargs.get("turn_id"),
             "platform": platform,
-            "target": target,
-            "send_result": _json_redacted(result),
-        })
+        }
+        if state.get("mode") == "metadata" and state.get("strict_metadata"):
+            visibility_event["delivery"] = result.get("delivery") if isinstance(result, dict) else "unknown"
+            visibility_event["scheduled"] = bool(result.get("scheduled")) if isinstance(result, dict) else False
+        else:
+            visibility_event["target"] = target
+            visibility_event["send_result"] = _json_redacted(result)
+        _append_event(path, visibility_event)
     except Exception as exc:
         try:
             path = _trace_file(kwargs.get("session_id"), kwargs.get("turn_id"), platform, kwargs.get("task_id"))
@@ -927,20 +1161,24 @@ def _notify_visible_pre_call(**kwargs: Any) -> None:
             pass
 
 
-def _maybe_write_root(path: Path, *, session_id: Any, task_id: Any, turn_id: Any, platform: Any, user_message: Any) -> None:
+def _maybe_write_root(path: Path, *, session_id: Any, task_id: Any, turn_id: Any, platform: Any, user_message: Any, strict_metadata: bool = False) -> None:
     key = _turn_key(session_id, turn_id, task_id)
     with _LOCK:
         if key in _TURN_ROOT_WRITTEN:
             return
         _TURN_ROOT_WRITTEN.add(key)
-    _append_event(path, {
+    event: Dict[str, Any] = {
         "type": "owner_request",
         "session_id": session_id,
         "task_id": task_id,
         "turn_id": turn_id,
         "platform": platform,
-        "user_message": redact_sensitive_text(str(user_message or "")),
-    })
+    }
+    if strict_metadata:
+        event["user_message_chars"] = len(str(user_message or ""))
+    else:
+        event["user_message"] = redact_sensitive_text(str(user_message or ""))
+    _append_event(path, event)
 
 
 def _is_enabled() -> bool:
@@ -1371,7 +1609,7 @@ def handle_command(raw_args: str = "") -> str:
     action = (args[0].lower() if args else "status")
 
     if action == "on":
-        mode = "metadata" if len(args) > 1 and args[1].lower() == "metadata" else "full"
+        mode = "full" if len(args) > 1 and args[1].lower() == "full" else "metadata"
         state = _read_state()
         state.update({
             "enabled": True,
@@ -1463,6 +1701,7 @@ def handle_command(raw_args: str = "") -> str:
     status = "ON" if state.get("enabled") else "OFF"
     return (
         f"LLM monitor {status} · mode={state.get('mode', 'full')} · "
+        f"strict_metadata={state.get('strict_metadata')} · retention_days={state.get('retention_days')} · "
         f"visible={state.get('visible_pre_call')} · local_visibility={state.get('local_visibility')} · visible_status_mode={_visible_mode(state)} · "
         f"final_overlay={state.get('final_overlay')} · guardrails=turn:{state.get('max_visible_calls_per_turn')}/min:{state.get('max_visible_calls_per_minute')} · "
         f"traces={_TRACE_DIR} · reports={_REPORT_DIR}"
@@ -1473,6 +1712,8 @@ def on_pre_api_request(**kwargs: Any) -> None:
     if not state.get("enabled"):
         return
 
+    _maybe_prune_traces(state)
+    strict_metadata = state.get("mode") == "metadata" and bool(state.get("strict_metadata"))
     path = _trace_file(kwargs.get("session_id"), kwargs.get("turn_id"), kwargs.get("platform"), kwargs.get("task_id"))
     _maybe_write_root(
         path,
@@ -1481,6 +1722,7 @@ def on_pre_api_request(**kwargs: Any) -> None:
         turn_id=kwargs.get("turn_id"),
         platform=kwargs.get("platform"),
         user_message=kwargs.get("user_message"),
+        strict_metadata=strict_metadata,
     )
 
     request = kwargs.get("request")
@@ -1507,11 +1749,23 @@ def on_pre_api_request(**kwargs: Any) -> None:
             tool_count=kwargs.get("tool_count"),
         ),
     }
+    if state.get("headroom_summary", True):
+        try:
+            event["headroom_attribution"] = _headroom_request_attribution(kwargs)
+        except Exception:
+            event["headroom_attribution"] = {
+                "schema_version": "headroom.attribution.v2",
+                "coverage": "collector_error",
+                "counts_as_new_savings": False,
+            }
     prompt_preview = _request_prompt_preview(kwargs)
     if kwargs.get("api_request_id") and prompt_preview:
         with _LOCK:
             _REQUEST_PREVIEWS[str(kwargs.get("api_request_id"))] = prompt_preview
-    event["prompt_preview"] = prompt_preview
+    if strict_metadata:
+        event["prompt_preview_chars"] = len(prompt_preview)
+    else:
+        event["prompt_preview"] = prompt_preview
     if state.get("mode") == "metadata":
         event["request_summary"] = _compact_request(request)
     else:
@@ -1524,6 +1778,7 @@ def on_post_api_request(**kwargs: Any) -> None:
     state = _read_state()
     if not state.get("enabled"):
         return
+    strict_metadata = state.get("mode") == "metadata" and bool(state.get("strict_metadata"))
     path = _trace_file(kwargs.get("session_id"), kwargs.get("turn_id"), kwargs.get("platform"), kwargs.get("task_id"))
     event: Dict[str, Any] = {
         "type": "llm_response",
@@ -1541,7 +1796,11 @@ def on_post_api_request(**kwargs: Any) -> None:
         "assistant_content_chars": kwargs.get("assistant_content_chars"),
         "assistant_tool_call_count": kwargs.get("assistant_tool_call_count"),
     }
-    event["response_preview"] = _response_preview(kwargs)
+    response_preview = _response_preview(kwargs)
+    if strict_metadata:
+        event["response_preview_chars"] = len(response_preview)
+    else:
+        event["response_preview"] = response_preview
     if state.get("mode") != "metadata":
         event["response"] = _json_redacted(kwargs.get("response"))
     _append_event(path, event)

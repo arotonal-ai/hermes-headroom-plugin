@@ -47,7 +47,7 @@ class RealProxyQualitySmokeTest(unittest.TestCase):
         sentinel = f"TASK-REAL-{uuid.uuid4().hex}"
         payload = _large_orchestration_payload(sentinel)
         with tempfile.TemporaryDirectory() as td, patch(
-            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ):
             reduced = middleware.on_tool_execution(
                 tool_name="kanban_show",
@@ -62,7 +62,7 @@ class RealProxyQualitySmokeTest(unittest.TestCase):
         if markers:
             self.assertIn("Headroom auto-compressed tool result", reduced)
             self.assertIn("classification: orchestration_fanin", reduced)
-            retrieved = retrieve(markers[0], query=sentinel)
+            retrieved = retrieve(markers[0])
             self.assertTrue(retrieved.get("success", "error" not in retrieved), retrieved)
             self.assertIn(sentinel, str(retrieved))
         else:

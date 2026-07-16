@@ -23,10 +23,14 @@ class SmokeTest(unittest.TestCase):
         self._auto_compression_env.stop()
 
     def test_smoke_compress_retrieve_pass(self):
+        retained = {"content": ""}
+
         def fake_http_json(url, payload=None, timeout=15):
+            del timeout
             if url.endswith('/readyz'):
                 return 200, {"ready": True}, ""
             if url.endswith('/v1/compress'):
+                retained["content"] = json.dumps((payload or {})["messages"], ensure_ascii=False)
                 return 200, {
                     "messages": [{"role": "tool", "content": "<<ccr:abc123,base64,1KB>>"}],
                     "tokens_before": 1000,
@@ -34,7 +38,8 @@ class SmokeTest(unittest.TestCase):
                     "tokens_saved": 900,
                 }, ""
             if url.endswith('/v1/retrieve'):
-                return 200, {"result": {"count": 1, "original_content": payload.get("query", proxy.SMOKE_SENTINEL)}}, ""
+                self.assertEqual(payload, {"hash": "abc123"})
+                return 200, {"result": {"count": 1, "original_content": retained["content"]}}, ""
             raise AssertionError(url)
 
         with patch('hermes_headroom_plugin.proxy.http_json', fake_http_json):

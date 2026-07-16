@@ -4,22 +4,22 @@ from __future__ import annotations
 import argparse
 import ipaddress
 import json
-import os
 import re
 import urllib.error
 import urllib.request
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-try:
-    import yaml
-except Exception:  # pragma: no cover - package can still report env/default status.
-    yaml = None
+from .config import (
+    DEFAULT_PROXY_URL,
+    hermes_home,
+    load_context_reduction_config,
+    resolve_effective_config,
+)
+from .contracts import normalize_ccr_hash
 
-DEFAULT_PROXY_URL = "http://127.0.0.1:28787"
 DEFAULT_SERVICE = "hermes-context-reduction.service"
 SMOKE_SENTINEL = "SYNTHETIC_SENTINEL_HEADROOM_PLUGIN"
 _MARKER_RE = re.compile(r"<<ccr:([^,>]+)")
@@ -31,31 +31,6 @@ class ProxyConfigurationError(ValueError):
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def hermes_home() -> Path:
-    try:
-        from hermes_constants import get_hermes_home  # type: ignore
-        return Path(get_hermes_home())
-    except Exception:
-        return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes").expanduser()
-
-
-def load_context_reduction_config(home: Path | None = None) -> dict[str, Any]:
-    home = home or hermes_home()
-    path = home / "config.yaml"
-    if yaml is None or not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except Exception:
-        return {}
-    cr = data.get("context_reduction") if isinstance(data, dict) else {}
-    return cr if isinstance(cr, dict) else {}
-
-
-def _truthy(value: Any) -> bool:
-    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def is_loopback_proxy_url(url: str) -> bool:
@@ -70,8 +45,7 @@ def is_loopback_proxy_url(url: str) -> bool:
 
 
 def remote_proxy_allowed(config: dict[str, Any] | None = None) -> bool:
-    config = config or {}
-    return _truthy(os.environ.get("HEADROOM_ALLOW_REMOTE_PROXY")) or _truthy(config.get("allow_remote_proxy"))
+    return resolve_effective_config(raw_config=config or {}).allow_remote_proxy
 
 
 def validate_proxy_url(proxy_url: str, config: dict[str, Any] | None = None) -> str:
@@ -90,20 +64,9 @@ def validate_proxy_url(proxy_url: str, config: dict[str, Any] | None = None) -> 
 
 def resolve_proxy_url(config: dict[str, Any] | None = None) -> str:
     """Resolve and validate the Headroom proxy URL without owner-local paths."""
-    config = config or load_context_reduction_config()
-    cfg_url = str(config.get("proxy_url") or DEFAULT_PROXY_URL).strip().rstrip("/")
-    parsed = urlparse(cfg_url)
-    cfg_host = str(config.get("host") or parsed.hostname or "127.0.0.1").strip() or "127.0.0.1"
-    cfg_port = int(config.get("port") or parsed.port or 28787)
-
-    host = os.environ.get("HEADROOM_HOST")
-    port = os.environ.get("HEADROOM_PORT")
-    if host or port:
-        return validate_proxy_url(f"http://{(host or cfg_host).strip()}:{int(port or cfg_port)}", config)
-    explicit = os.environ.get("HEADROOM_PROXY_URL")
-    if explicit:
-        return validate_proxy_url(explicit, config)
-    return validate_proxy_url(f"http://{cfg_host}:{cfg_port}", config)
+    raw = config if isinstance(config, dict) else load_context_reduction_config()
+    effective = resolve_effective_config(raw_config=raw)
+    return validate_proxy_url(effective.proxy_url, raw)
 
 
 def http_json(url: str, payload: dict[str, Any] | None = None, timeout: int = 15) -> tuple[int | None, dict[str, Any] | None, str]:
@@ -136,16 +99,17 @@ def readyz(proxy_url: str | None = None) -> dict[str, Any]:
     return {"ok": ok, "status": status, "proxy_url": proxy_url, "body": data or body}
 
 
-def retrieve(hash_key: str, query: str = "", proxy_url: str | None = None) -> dict[str, Any]:
+def retrieve(hash_key: str, proxy_url: str | None = None) -> dict[str, Any]:
+    """Retrieve the complete exact retained payload for one CCR hash."""
+    hash_key = normalize_ccr_hash(hash_key)
+    if not hash_key:
+        return {"success": False, "error": "missing or invalid Headroom hash", "proxy_url": proxy_url}
     try:
         proxy_url = validate_proxy_url(proxy_url) if proxy_url else resolve_proxy_url()
     except ProxyConfigurationError as exc:
         return {"success": False, "error": f"proxy configuration blocked: {exc}", "proxy_url": proxy_url}
     proxy_url = proxy_url.rstrip("/")
-    payload = {"hash": hash_key}
-    if query:
-        payload["query"] = query
-    status, data, body = http_json(f"{proxy_url}/v1/retrieve", payload, timeout=30)
+    status, data, body = http_json(f"{proxy_url}/v1/retrieve", {"hash": hash_key}, timeout=30)
     if status != 200 or not isinstance(data, dict):
         return {"success": False, "error": f"headroom retrieve failed status={status} body={body}", "proxy_url": proxy_url}
     data.setdefault("success", True)
@@ -238,7 +202,7 @@ def smoke(proxy_url: str | None = None, *, require_marker: bool = True) -> dict[
         }
 
     marker = markers[0].split()[0]
-    retrieved = retrieve(marker, query=sentinel, proxy_url=proxy_url)
+    retrieved = retrieve(marker, proxy_url=proxy_url)
     sentinel_found = sentinel in _result_text(retrieved)
     result = retrieved.get("result") if isinstance(retrieved.get("result"), dict) else retrieved
     retrieve_count = result.get("count") if isinstance(result, dict) else None

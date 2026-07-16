@@ -6,46 +6,25 @@ portable core.
 """
 from __future__ import annotations
 
-import os
 from typing import Any
 
-from .middleware import remember_platform_context
-from .proxy import load_context_reduction_config, readyz
+from .config import load_context_reduction_config, resolve_effective_config
+from .observability import remember_platform_context
+from .proxy import readyz
 
-_TRUTHY = {"1", "true", "yes", "y", "on"}
-_FALSEY = {"0", "false", "no", "n", "off"}
 _STATUS_PREFIXES = ("[HR✓]", "[HR!]", "[HR?]")
-
-
-def _boolish(value: Any, *, default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return default
-    text = str(value).strip().lower()
-    if text in _TRUTHY:
-        return True
-    if text in _FALSEY:
-        return False
-    return default
 
 
 def visible_status_marker_enabled(config: dict[str, Any] | None = None) -> bool:
     """Return whether the optional final-answer status marker is enabled."""
-    env_value = os.environ.get("HEADROOM_VISIBLE_STATUS_MARKER")
-    if env_value is not None:
-        return _boolish(env_value, default=False)
     cfg = config if isinstance(config, dict) else load_context_reduction_config()
-    return _boolish(cfg.get("visible_status_marker"), default=False)
+    return resolve_effective_config(raw_config=cfg).visible_status_marker
 
 
 def first_turn_hint_enabled(config: dict[str, Any] | None = None) -> bool:
     """Return whether the optional first-turn Headroom availability hint is enabled."""
-    env_value = os.environ.get("HEADROOM_FIRST_TURN_HINT")
-    if env_value is not None:
-        return _boolish(env_value, default=False)
     cfg = config if isinstance(config, dict) else load_context_reduction_config()
-    return _boolish(cfg.get("first_turn_hint"), default=False)
+    return resolve_effective_config(raw_config=cfg).first_turn_hint
 
 
 def headroom_status_marker(health: dict[str, Any] | None = None) -> str:
