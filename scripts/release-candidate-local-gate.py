@@ -27,7 +27,8 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
-DEFAULT_HEADROOM_SPEC = "headroom-ai[proxy]"
+HEADROOM_RUNTIME_VERSION = "0.31.0"
+DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
 EPHEMERAL_ENV_DIRS = (
     "build-venv",
     "pytest-venv",
