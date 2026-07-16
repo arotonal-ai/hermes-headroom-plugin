@@ -4,6 +4,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from hermes_headroom_plugin import middleware
@@ -260,6 +261,26 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
         self.assertEqual(events[-1]["reason"], "request_cache_reuse")
         self.assertFalse(events[-1]["new_savings_event"])
         self.assertEqual(events[-1]["logical_source_id"], self.calls[0]["logical_source_id"])
+        self.assertEqual(len(events), 1)
+        self.assertEqual(sum(bool(event.get("new_savings_event")) for event in events), 0)
+
+    def test_request_cache_bound_is_runtime_resolved(self):
+        with patch(
+            "hermes_headroom_plugin.middleware_request.resolve_effective_config",
+            return_value=SimpleNamespace(llm_request_cache_max=64),
+        ):
+            for index in range(65):
+                middleware._request_cache_put(f"source-{index}", f"compressed-{index}")
+        self.assertEqual(len(middleware._LLM_REQUEST_TRANSFORM_CACHE), 64)
+        self.assertNotIn("source-0", middleware._LLM_REQUEST_TRANSFORM_CACHE)
+
+        with patch(
+            "hermes_headroom_plugin.middleware_request.resolve_effective_config",
+            return_value=SimpleNamespace(llm_request_cache_max=128),
+        ):
+            for index in range(65, 100):
+                middleware._request_cache_put(f"source-{index}", f"compressed-{index}")
+        self.assertEqual(len(middleware._LLM_REQUEST_TRANSFORM_CACHE), 99)
 
     def test_logical_source_dedupe_is_stable_across_api_requests(self):
         with tempfile.TemporaryDirectory() as td, patch(

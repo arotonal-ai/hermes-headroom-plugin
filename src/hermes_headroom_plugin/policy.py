@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .config import DEFAULT_MIN_TOOL_RESULT_CHARS
+from .config import DEFAULT_MIN_TOOL_RESULT_CHARS, resolve_effective_config
 
 MIN_TOOL_RESULT_CHARS = DEFAULT_MIN_TOOL_RESULT_CHARS
 ALWAYS_TOOL_RESULT_CHARS = 120_000
@@ -198,7 +198,7 @@ def _lane_eligible(
     *,
     min_chars: int | None = None,
 ) -> tuple[bool, str]:
-    effective_min = MIN_TOOL_RESULT_CHARS if min_chars is None else min_chars
+    effective_min = resolve_effective_config().min_tool_result_chars if min_chars is None else min_chars
     if len(result) >= ALWAYS_TOOL_RESULT_CHARS:
         return True, "always_chars"
     if len(result) < effective_min:

@@ -1,6 +1,8 @@
 import ast
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import hermes_headroom_plugin.middleware as facade
 from hermes_headroom_plugin import middleware_request, middleware_tool, observability, reduction
@@ -78,6 +80,19 @@ class MiddlewareModuleBoundaryTest(unittest.TestCase):
                 any(value == "middleware" or value.endswith(".middleware") for value in imports),
                 f"{name} imports the compatibility facade",
             )
+
+    def test_exported_lane_eligibility_uses_effective_threshold_by_default(self):
+        with patch(
+            "hermes_headroom_plugin.policy.resolve_effective_config",
+            return_value=SimpleNamespace(min_tool_result_chars=20_000),
+        ):
+            eligible, reason = facade._lane_eligible(
+                "terminal",
+                {"command": "pytest -q"},
+                "diagnostic PASS\n" * 700,
+            )
+        self.assertFalse(eligible)
+        self.assertEqual(reason, "below_min_chars")
 
     def test_reduction_orchestrates_through_provider_adapter(self):
         self.assertIs(reduction.HeadroomReductionProvider, HeadroomReductionProvider)

@@ -3,18 +3,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-
 import threading
 from collections import OrderedDict
 from copy import deepcopy
 from typing import Any
 
-from .config import llm_request_compression_enabled, resolve_effective_config
+from .config import DEFAULT_LLM_REQUEST_CACHE_MAX, llm_request_compression_enabled, resolve_effective_config
 from .observability import _emit_headroom_event
 from .policy import _already_compressed, _extract_markers
 from .reduction import compress_tool_result_for_context
 
-_LLM_REQUEST_CACHE_MAX = resolve_effective_config().llm_request_cache_max
+# Legacy import surface only. The active bound is resolved per cache mutation so
+# a long-lived Hermes process observes explicit config/environment changes.
+_LLM_REQUEST_CACHE_MAX = DEFAULT_LLM_REQUEST_CACHE_MAX
 _LLM_REQUEST_TRANSFORM_CACHE: OrderedDict[str, str] = OrderedDict()
 _LLM_REQUEST_CACHE_LOCK = threading.RLock()
 
@@ -68,7 +69,8 @@ def _request_cache_put(fingerprint: str, transformed: str) -> None:
     with _LLM_REQUEST_CACHE_LOCK:
         _LLM_REQUEST_TRANSFORM_CACHE[fingerprint] = transformed
         _LLM_REQUEST_TRANSFORM_CACHE.move_to_end(fingerprint)
-        while len(_LLM_REQUEST_TRANSFORM_CACHE) > _LLM_REQUEST_CACHE_MAX:
+        cache_max = resolve_effective_config().llm_request_cache_max
+        while len(_LLM_REQUEST_TRANSFORM_CACHE) > cache_max:
             _LLM_REQUEST_TRANSFORM_CACHE.popitem(last=False)
 
 

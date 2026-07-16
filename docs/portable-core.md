@@ -90,7 +90,7 @@ Core plugin configuration resolves once into a typed effective contract with thi
 - `tool_execution` is the primary compression and savings-attribution surface.
 - `llm_request` is off by default. When enabled, it only transforms eligible tool-result text that did not already carry a Headroom marker from `tool_execution`.
 - A marker produced by `tool_execution` is recognized as already compressed at the request boundary, so it is neither recompressed nor emitted as a second new-savings event.
-- Repeated request-boundary transforms use a logical-source fingerprint scoped by session, tool call, protocol family, tool name, and source digest. Cache reuse and downstream `llm-monitor` marker correlation are retained-pressure observations with `new_savings_event=false` / `counts_as_new_savings=false`.
+- Repeated request-boundary transforms use a logical-source fingerprint scoped by session, tool call, protocol family, tool name, and source digest. Plugin cache-reuse events set `new_savings_event=false`; downstream `llm-monitor` marker correlations independently set `counts_as_new_savings=false`.
 - Savings totals must count only rows explicitly marked as new savings; retained correlations, experimental aggregates, and legacy internal-service token counters use separate scopes.
 
 ## Storage contract
