@@ -187,6 +187,19 @@ context_reduction:
 
 This is a scoped development-loop override, not a portable-product default. It keeps `/headroom status`, `/headroom smoke`, `/headroom cache`, and `headroom_retrieve` available, but tool outputs return exact unless explicitly compressed through a wrapper/runtime path. Use it for plugin improvement sessions with repeated tests/gates; keep `HEADROOM_AUTO_COMPRESSION=1` or `context_reduction.auto_compression: true` for normal portable operation where eligible-intermediate compression is the point. The control disables only middleware auto-compression, not the runtime or the portable compression-first product posture.
 
+### Opt-in common LLM-request safety net
+
+Hermes exposes a native `llm_request` middleware boundary after protocol payload construction and before the real provider transport. The plugin can use it to compress eligible legacy or bypassed tool-result text across `chat_completions`, `codex_responses`, `anthropic_messages`, and `bedrock_converse`:
+
+```yaml
+context_reduction:
+  llm_request_middleware:
+    enabled: true
+    mode: tool_results
+```
+
+`HEADROOM_LLM_REQUEST_COMPRESSION=1` is the process-scoped equivalent. This path is off by default and remains copy-on-write/fail-open. It does not proxy or reroute model traffic and never intentionally rewrites system/user prompts, tool schemas, tool arguments, images, signed-thinking/cache blocks, Bedrock guardrails/sentinels, auth/header fields, or streaming controls. Attribution v2 reports it as `surface=llm_request`; an already compressed marker is left untouched. A bounded process cache reuses the compressed fragment by a content/tool-call fingerprint, and the ledger uses a stable logical dedupe key, so later API requests do not count the same canonical tool result as new savings.
+
 ### Cache / CCR store boundary
 
 There is no separate plugin-side CCR cache. The cache/store that makes CCR markers retrievable belongs to the Headroom runtime/proxy. `/headroom cache` is read-only and reports the runtime store posture: entries, max entries, TTL, backend type, bytes used when the runtime exposes it, retrieval/event counts, and recent retrieval count. It does not purge, mutate, or expose admin/debug APIs.

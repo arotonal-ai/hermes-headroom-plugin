@@ -2,14 +2,21 @@
 
 The packaged plugin keeps provider/global routing off, but it may compress
 eligible bulky intermediate tool/lane results when the local Headroom proxy is
-healthy. Exact/edit-critical/sensitive classes fail closed to the original
-result.
+healthy. An explicitly enabled LLM-request adapter can also catch eligible
+legacy or bypassed tool results at Hermes's common pre-transport boundary.
+Exact/edit-critical/sensitive classes fail closed to the original result.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import threading
+import time
+import uuid
+from collections import OrderedDict
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -26,9 +33,15 @@ EVENT_LOG_ROTATIONS = 3
 _PLATFORM_CONTEXT_MAX = 512
 _PLATFORM_BY_KEY: dict[str, str] = {}
 _BELOW_MIN_AGGREGATE_BUFFERS: dict[str, dict[str, Any]] = {}
+_LLM_REQUEST_CACHE_MAX = max(64, int(os.environ.get("HEADROOM_LLM_REQUEST_CACHE_MAX", "2048")))
+_LLM_REQUEST_TRANSFORM_CACHE: OrderedDict[str, str] = OrderedDict()
+_LLM_REQUEST_CACHE_LOCK = threading.RLock()
+_EVENT_WRITE_LOCK = threading.RLock()
 BELOW_MIN_AGGREGATE_CHARS = 28_000
 BELOW_MIN_AGGREGATE_MAX_CHUNKS = 24
 BELOW_MIN_AGGREGATE_MAX_BUFFER_KEYS = 128
+ATTRIBUTION_SCHEMA_VERSION = "headroom.attribution.v2"
+TOKEN_ESTIMATOR = "chars_div4_ceil"
 
 ELIGIBLE_TOOLS = {
     "delegate_task",
@@ -171,6 +184,28 @@ def auto_compression_enabled(config: dict[str, Any] | None = None) -> bool:
     return True
 
 
+def llm_request_compression_enabled(config: dict[str, Any] | None = None) -> bool:
+    """Return whether the common pre-transport tool-result adapter is enabled.
+
+    This is deliberately opt-in even when tool-execution compression is active.
+    It mutates only tool-result text, never routing, credentials, system/user
+    prompts, tool schemas, tool arguments, or streaming controls.
+    """
+    env_value = os.environ.get("HEADROOM_LLM_REQUEST_COMPRESSION")
+    if env_value is not None:
+        return not _falsey(env_value)
+    cfg = config if isinstance(config, dict) else load_context_reduction_config()
+    value = cfg.get("llm_request_middleware")
+    if isinstance(value, dict):
+        mode = str(value.get("mode") or "").strip().lower().replace("-", "_")
+        if mode in {"off", "disabled", "observe", "audit"}:
+            return False
+        if mode in {"tool_results", "on", "enabled", "auto"}:
+            return not _falsey(value.get("enabled", True))
+        return not _falsey(value.get("enabled")) if "enabled" in value else False
+    return not _falsey(value) if value is not None else False
+
+
 def _rotate_event_log_if_needed(path: Path) -> None:
     """Bound local observability JSONL growth before appending a new event."""
     try:
@@ -299,6 +334,79 @@ def _infer_lane(tool_name: str, args: dict[str, Any], data_class: Any = None) ->
     return "unknown"
 
 
+def _rough_tokens_from_chars(value: Any) -> int:
+    """Cheap provider-neutral estimate; exact character counts remain authoritative."""
+    try:
+        chars = max(0, int(value or 0))
+    except Exception:
+        return 0
+    return (chars + 3) // 4 if chars else 0
+
+
+def _event_dedupe_key(
+    *,
+    session_id: Any,
+    turn_id: Any,
+    task_id: Any,
+    tool_call_id: Any,
+    api_request_id: Any,
+    tool_name: Any,
+    action: Any,
+    reason: Any,
+    original_chars: Any,
+    marker: Any,
+    logical_source_id: Any = "",
+) -> str:
+    """Stable logical-event key; blank when Hermes supplied no call identity."""
+    if str(logical_source_id or "").strip():
+        identity = {
+            "telemetry_schema_version": ATTRIBUTION_SCHEMA_VERSION,
+            "session_id": str(session_id or ""),
+            "tool_call_id": str(tool_call_id or ""),
+            "tool_name": str(tool_name or ""),
+            "action": str(action or ""),
+            "logical_source_id": str(logical_source_id),
+        }
+        canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if not any(str(value or "").strip() for value in (tool_call_id, api_request_id, turn_id)):
+        return ""
+    identity = {
+        "session_id": str(session_id or ""),
+        "turn_id": str(turn_id or ""),
+        "task_id": str(task_id or ""),
+        "tool_call_id": str(tool_call_id or ""),
+        "api_request_id": str(api_request_id or ""),
+        "tool_name": str(tool_name or ""),
+        "action": str(action or ""),
+        "reason": str(reason or ""),
+        "original_chars": original_chars,
+        "marker": str(marker or ""),
+    }
+    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _event_log_contains_dedupe_key(path: Path, dedupe_key: str) -> bool:
+    """Best-effort cross-restart idempotence over the bounded event-log rotations."""
+    if not dedupe_key:
+        return False
+    for candidate in (path, *(path.with_name(f"{path.name}.{idx}") for idx in range(1, EVENT_LOG_ROTATIONS + 1))):
+        if not candidate.exists():
+            continue
+        try:
+            with candidate.open("r", encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    try:
+                        if str(json.loads(line).get("dedupe_key") or "") == dedupe_key:
+                            return True
+                    except (json.JSONDecodeError, AttributeError):
+                        continue
+        except OSError:
+            continue
+    return False
+
+
 def _emit_headroom_event(
     *,
     action: str,
@@ -318,17 +426,45 @@ def _emit_headroom_event(
     tokens_before: Any = None,
     tokens_after: Any = None,
     tokens_saved: Any = None,
+    model_facing_chars_before: int | None = None,
+    model_facing_chars_after: int | None = None,
+    measurement_scope: str = "tool_result",
+    compression_latency_ms: Any = None,
+    new_savings_event: bool | None = None,
     marker: str | None = None,
     report_path: Path | None = None,
     source_path: Path | None = None,
     compressed_path: Path | None = None,
     exact_authority: str = "none",
+    logical_source_id: str = "",
     error: Any = None,
 ) -> None:
-    """Append a local-only observability event without changing tool behavior."""
+    """Append one local attribution event without changing tool behavior."""
     try:
+        before_chars = original_chars if model_facing_chars_before is None else model_facing_chars_before
+        after_chars = before_chars if model_facing_chars_after is None else model_facing_chars_after
+        before_est = _rough_tokens_from_chars(before_chars)
+        after_est = _rough_tokens_from_chars(after_chars)
+        saved_est = max(0, before_est - after_est)
+        dedupe_key = _event_dedupe_key(
+            session_id=session_id,
+            turn_id=turn_id,
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            api_request_id=api_request_id,
+            tool_name=tool_name,
+            action=action,
+            reason=reason,
+            original_chars=original_chars,
+            marker=marker,
+            logical_source_id=logical_source_id,
+        )
         event: dict[str, Any] = {
             "type": "headroom_tool_result",
+            "telemetry_schema_version": ATTRIBUTION_SCHEMA_VERSION,
+            "event_id": uuid.uuid4().hex,
+            "dedupe_key": dedupe_key,
+            "logical_source_id": _safe_event_text(logical_source_id, limit=80),
             "ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "session_id": _safe_event_text(session_id, limit=120),
             "turn_id": _safe_event_text(turn_id, limit=120),
@@ -344,9 +480,30 @@ def _emit_headroom_event(
             "reason": _safe_event_text(reason, limit=240),
             "original_chars": original_chars,
             "redacted_chars": redacted_chars,
+            # Back-compatible internal Headroom counters. These do not describe
+            # the final payload returned to the model.
             "tokens_before": tokens_before,
             "tokens_after": tokens_after,
             "tokens_saved": tokens_saved,
+            "service_tokens_before": tokens_before,
+            "service_tokens_after": tokens_after,
+            "service_tokens_saved": tokens_saved,
+            "service_metric_scope": "headroom_internal_messages",
+            # Attribution v2: exact chars plus a labelled provider-neutral estimate
+            # for the payload fragment actually returned by this middleware.
+            "model_facing_chars_before": before_chars,
+            "model_facing_chars_after": after_chars,
+            "model_facing_est_tokens_before": before_est,
+            "model_facing_est_tokens_after": after_est,
+            "model_facing_est_tokens_saved": saved_est,
+            "model_facing_token_estimator": TOKEN_ESTIMATOR,
+            "measurement_scope": _safe_event_text(measurement_scope, limit=120),
+            "new_savings_event": (
+                bool(action == "compressed" and saved_est > 0)
+                if new_savings_event is None
+                else bool(new_savings_event)
+            ),
+            "compression_latency_ms": compression_latency_ms,
             "marker": _safe_event_text(marker, limit=160),
             "report_path": str(report_path) if report_path else "",
             "source_path": str(source_path) if source_path else "",
@@ -358,9 +515,13 @@ def _emit_headroom_event(
         if error:
             event["error"] = _safe_event_text(error, limit=500)
         path = _event_log_path()
-        _rotate_event_log_if_needed(path)
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+        with _EVENT_WRITE_LOCK:
+            if event["new_savings_event"] and logical_source_id and _event_log_contains_dedupe_key(path, dedupe_key):
+                event["new_savings_event"] = False
+                event["attribution_duplicate"] = True
+            _rotate_event_log_if_needed(path)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
         try:
             path.chmod(0o600)
         except Exception:
@@ -967,7 +1128,9 @@ def _maybe_compress_terminal_below_min_aggregate(
         {"role": "user", "content": "Compress this bounded aggregate of repeated below-min terminal chunks. Preserve errors, warnings, paths, counts, status, and gate fields. Exact raw aggregate sidecar is retained."},
         {"role": "tool", "tool_call_id": _safe_name(tool_call_id or tool_name), "name": "worker_trace", "content": trace},
     ]
+    compression_started = time.perf_counter()
     compressed = compress_messages(messages, proxy_url=health.get("proxy_url"))
+    compression_latency_ms = round((time.perf_counter() - compression_started) * 1000, 3)
     compressed_path.write_text(json.dumps(compressed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     markers = _extract_markers(compressed.get("messages")) if compressed.get("ok") else []
     marker = markers[0] if markers else None
@@ -991,6 +1154,9 @@ def _maybe_compress_terminal_below_min_aggregate(
         "tokens_before": before,
         "tokens_after": after,
         "tokens_saved": saved,
+        "service_metric_scope": "headroom_internal_messages",
+        "attribution_schema_version": ATTRIBUTION_SCHEMA_VERSION,
+        "compression_latency_ms": compression_latency_ms,
         "compression_ratio": compressed.get("compression_ratio"),
         "compression_input_shape": "terminal_below_min_per_turn_aggregate",
         "policy_mutation": False,
@@ -1004,29 +1170,6 @@ def _maybe_compress_terminal_below_min_aggregate(
         return None
 
     _BELOW_MIN_AGGREGATE_BUFFERS.pop(key, None)
-    _emit_headroom_event(
-        action="compressed",
-        tool_name=tool_name,
-        args=args,
-        reason="below_min_aggregate",
-        task_id=task_id,
-        tool_call_id=tool_call_id,
-        session_id=session_id,
-        turn_id=turn_id,
-        api_request_id=api_request_id,
-        platform=platform,
-        data_class="diagnostic_trace",
-        original_chars=int(buffer.get("chars") or 0),
-        redacted_chars=int(buffer.get("chars") or 0),
-        tokens_before=before,
-        tokens_after=after,
-        tokens_saved=saved,
-        marker=marker,
-        report_path=report_path,
-        source_path=source_path,
-        compressed_path=compressed_path,
-        exact_authority="redacted_aggregate_sidecar",
-    )
     payload = (
         f"[Headroom auto-compressed below-min terminal aggregate · chunks={len(chunks)} aggregate_chars={buffer.get('chars')} "
         f"tokens_before={before} tokens_after={after} saved={saved} marker={marker}]\n"
@@ -1043,7 +1186,53 @@ def _maybe_compress_terminal_below_min_aggregate(
         "contract: compressed body is intermediate only; verify material claims against exact source/authorized retrieval before final decisions.\n"
         f"Use headroom_retrieve(hash='{marker}', query='<focused query>') for exact slices."
     )
-    return _shorten(payload)
+    final_payload = _shorten(payload)
+    aggregate_chars = int(buffer.get("chars") or 0)
+    report.update(
+        {
+            "model_facing_chars_before": aggregate_chars,
+            "model_facing_chars_after": len(final_payload),
+            "model_facing_est_tokens_before": _rough_tokens_from_chars(aggregate_chars),
+            "model_facing_est_tokens_after": _rough_tokens_from_chars(len(final_payload)),
+            "model_facing_est_tokens_saved": max(
+                0,
+                _rough_tokens_from_chars(aggregate_chars) - _rough_tokens_from_chars(len(final_payload)),
+            ),
+            "model_facing_token_estimator": TOKEN_ESTIMATOR,
+            "measurement_scope": "experimental_aggregate_not_request_delta",
+            "new_savings_event": False,
+        }
+    )
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _emit_headroom_event(
+        action="compressed",
+        tool_name=tool_name,
+        args=args,
+        reason="below_min_aggregate",
+        task_id=task_id,
+        tool_call_id=tool_call_id,
+        session_id=session_id,
+        turn_id=turn_id,
+        api_request_id=api_request_id,
+        platform=platform,
+        data_class="diagnostic_trace",
+        original_chars=aggregate_chars,
+        redacted_chars=aggregate_chars,
+        tokens_before=before,
+        tokens_after=after,
+        tokens_saved=saved,
+        model_facing_chars_before=aggregate_chars,
+        model_facing_chars_after=len(final_payload),
+        measurement_scope="experimental_aggregate_not_request_delta",
+        compression_latency_ms=compression_latency_ms,
+        new_savings_event=False,
+        marker=marker,
+        report_path=report_path,
+        source_path=source_path,
+        compressed_path=compressed_path,
+        exact_authority="redacted_aggregate_sidecar",
+    )
+    return final_payload
 
 
 def _compression_body_for_tool_result(tool_name: str, redacted_result: str) -> tuple[str, str]:
@@ -1103,8 +1292,15 @@ def compress_tool_result_for_context(
     api_request_id: str = "",
     platform: str = "",
     duration_ms: Any = None,
+    structured_result: dict[str, Any] | None = None,
+    structured_field_key: str = "",
+    event_surface: str = "tool_execution",
+    measurement_scope_override: str = "",
+    allow_below_min_aggregate: bool = True,
+    logical_source_id: str = "",
 ) -> str | None:
     """Return a compressed replacement for an eligible tool result, else None."""
+    event_measurement_scope = measurement_scope_override or "tool_result"
     if not isinstance(result, str) or not result:
         return None
     if not auto_compression_enabled():
@@ -1119,7 +1315,9 @@ def compress_tool_result_for_context(
             turn_id=turn_id,
             api_request_id=api_request_id,
             platform=platform,
+            surface=event_surface,
             original_chars=len(result),
+            measurement_scope=event_measurement_scope,
             exact_authority="original_tool_result",
         )
         return None
@@ -1136,7 +1334,9 @@ def compress_tool_result_for_context(
             turn_id=turn_id,
             api_request_id=api_request_id,
             platform=platform,
+            surface=event_surface,
             original_chars=len(result),
+            measurement_scope=event_measurement_scope,
             error=health.get("body") or health.get("error"),
         )
         return None
@@ -1152,7 +1352,9 @@ def compress_tool_result_for_context(
             turn_id=turn_id,
             api_request_id=api_request_id,
             platform=platform,
+            surface=event_surface,
             original_chars=len(result),
+            measurement_scope=event_measurement_scope,
             exact_authority="original_tool_result",
         )
         return None
@@ -1169,13 +1371,15 @@ def compress_tool_result_for_context(
             turn_id=turn_id,
             api_request_id=api_request_id,
             platform=platform,
+            surface=event_surface,
             original_chars=len(result),
+            measurement_scope=event_measurement_scope,
             exact_authority="original_tool_result",
         )
         return None
     eligible, reason = _lane_eligible(tool_name, args, result)
     if not eligible:
-        if reason == "below_min_chars":
+        if allow_below_min_aggregate and reason == "below_min_chars":
             aggregate = _maybe_compress_terminal_below_min_aggregate(
                 tool_name=tool_name,
                 args=args,
@@ -1202,7 +1406,9 @@ def compress_tool_result_for_context(
             turn_id=turn_id,
             api_request_id=api_request_id,
             platform=platform,
+            surface=event_surface,
             original_chars=len(result),
+            measurement_scope=event_measurement_scope,
             exact_authority="original_tool_result",
         )
         return None
@@ -1222,9 +1428,11 @@ def compress_tool_result_for_context(
             turn_id=turn_id,
             api_request_id=api_request_id,
             platform=platform,
+            surface=event_surface,
             data_class=header_data.get("data_class"),
             original_chars=len(result),
             redacted_chars=len(redacted),
+            measurement_scope=event_measurement_scope,
             exact_authority="original_tool_result",
         )
         return None
@@ -1245,7 +1453,9 @@ def compress_tool_result_for_context(
         {"role": "user", "content": f"Compress only the bulky body of this intermediate Hermes lane/tool result. Eligibility: {reason}. A deterministic exact header has already been extracted and will remain visible; do not invent identifiers or citations. Preserve errors, warnings, decisions, paths, counts, changed files, verification status, and final status indicators in the compressed body when useful."},
         {"role": "tool", "tool_call_id": _safe_name(tool_call_id or tool_name), "name": _compression_proxy_tool_name(tool_name), "content": trace},
     ]
+    compression_started = time.perf_counter()
     compressed = compress_messages(messages)
+    compression_latency_ms = round((time.perf_counter() - compression_started) * 1000, 3)
     if not compressed.get("ok"):
         _emit_headroom_event(
             action="error",
@@ -1258,11 +1468,14 @@ def compress_tool_result_for_context(
             turn_id=turn_id,
             api_request_id=api_request_id,
             platform=platform,
+            surface=event_surface,
             data_class=header_data.get("data_class"),
             original_chars=len(result),
             redacted_chars=len(redacted),
+            measurement_scope=event_measurement_scope,
             exact_authority="redacted_sidecar",
             source_path=source_path,
+            compression_latency_ms=compression_latency_ms,
             error=compressed.get("error"),
         )
         return None
@@ -1279,6 +1492,7 @@ def compress_tool_result_for_context(
     report = {
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "kind": "auto-tool-result",
+        "surface": event_surface,
         "tool_name": tool_name,
         "task_id": task_id,
         "tool_call_id": tool_call_id,
@@ -1304,6 +1518,9 @@ def compress_tool_result_for_context(
         "tokens_before": before,
         "tokens_after": after,
         "tokens_saved": saved,
+        "service_metric_scope": "headroom_internal_messages",
+        "attribution_schema_version": ATTRIBUTION_SCHEMA_VERSION,
+        "compression_latency_ms": compression_latency_ms,
         "compression_ratio": compressed.get("compression_ratio"),
         "source_retention": "redacted_sidecar",
     }
@@ -1322,6 +1539,7 @@ def compress_tool_result_for_context(
             turn_id=turn_id,
             api_request_id=api_request_id,
             platform=platform,
+            surface=event_surface,
             data_class=header_data.get("data_class"),
             original_chars=len(result),
             redacted_chars=len(redacted),
@@ -1333,32 +1551,10 @@ def compress_tool_result_for_context(
             source_path=source_path,
             compressed_path=compressed_path,
             exact_authority="redacted_sidecar",
+            compression_latency_ms=compression_latency_ms,
+            measurement_scope=event_measurement_scope,
         )
         return None
-
-    _emit_headroom_event(
-        action="compressed",
-        tool_name=tool_name,
-        args=args,
-        reason=reason,
-        task_id=task_id,
-        tool_call_id=tool_call_id,
-        session_id=session_id,
-        turn_id=turn_id,
-        api_request_id=api_request_id,
-        platform=platform,
-        data_class=header_data.get("data_class"),
-        original_chars=len(result),
-        redacted_chars=len(redacted),
-        tokens_before=before,
-        tokens_after=after,
-        tokens_saved=saved,
-        marker=marker,
-        report_path=report_path,
-        source_path=source_path,
-        compressed_path=compressed_path,
-        exact_authority="redacted_sidecar",
-    )
 
     exact_header = _format_exact_header(
         header_data,
@@ -1384,7 +1580,68 @@ def compress_tool_result_for_context(
             f"Compressed excerpt:\n{_compressed_excerpt(compressed)}\n\n"
             f"Raw edge excerpt:\n{_edge_excerpt(redacted)}"
         )
-    return _shorten(payload)
+    final_payload = _shorten(payload)
+
+    measurement_scope = event_measurement_scope
+    model_before_chars = len(result)
+    model_after_chars = len(final_payload)
+    if isinstance(structured_result, dict) and structured_field_key:
+        before_structured = json.dumps(structured_result, ensure_ascii=False, default=str)
+        after_structured = dict(structured_result)
+        after_structured[structured_field_key] = final_payload
+        after_structured.setdefault("headroom_auto_compressed", True)
+        after_structured.setdefault("headroom_compressed_field", structured_field_key)
+        after_serialized = json.dumps(after_structured, ensure_ascii=False, default=str)
+        model_before_chars = len(before_structured)
+        model_after_chars = len(after_serialized)
+        measurement_scope = f"structured_tool_result:{structured_field_key}"
+
+    report.update(
+        {
+            "model_facing_chars_before": model_before_chars,
+            "model_facing_chars_after": model_after_chars,
+            "model_facing_est_tokens_before": _rough_tokens_from_chars(model_before_chars),
+            "model_facing_est_tokens_after": _rough_tokens_from_chars(model_after_chars),
+            "model_facing_est_tokens_saved": max(
+                0,
+                _rough_tokens_from_chars(model_before_chars) - _rough_tokens_from_chars(model_after_chars),
+            ),
+            "model_facing_token_estimator": TOKEN_ESTIMATOR,
+            "measurement_scope": measurement_scope,
+        }
+    )
+    report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    _emit_headroom_event(
+        action="compressed",
+        tool_name=tool_name,
+        args=args,
+        reason=reason,
+        task_id=task_id,
+        tool_call_id=tool_call_id,
+        session_id=session_id,
+        turn_id=turn_id,
+        api_request_id=api_request_id,
+        platform=platform,
+        surface=event_surface,
+        data_class=header_data.get("data_class"),
+        original_chars=len(result),
+        redacted_chars=len(redacted),
+        tokens_before=before,
+        tokens_after=after,
+        tokens_saved=saved,
+        model_facing_chars_before=model_before_chars,
+        model_facing_chars_after=model_after_chars,
+        measurement_scope=measurement_scope,
+        compression_latency_ms=compression_latency_ms,
+        marker=marker,
+        report_path=report_path,
+        source_path=source_path,
+        compressed_path=compressed_path,
+        exact_authority="redacted_sidecar",
+        logical_source_id=logical_source_id,
+    )
+    return final_payload
 
 
 def _compress_structured_result_for_context(
@@ -1423,6 +1680,8 @@ def _compress_structured_result_for_context(
             api_request_id=api_request_id,
             platform=platform,
             duration_ms=duration_ms,
+            structured_result=result,
+            structured_field_key=key,
         )
         if transformed:
             out = dict(result)
@@ -1556,9 +1815,430 @@ def on_tool_execution(
     return result
 
 
-def on_llm_request(**kwargs):
-    # This packaged plugin intentionally does not mutate provider/model routing.
-    # Tool-result compression above is lane-scoped and fail-open; global/default
-    # provider proxy routing remains an explicit, separate gate.
-    del kwargs
-    return None
+def _request_tool_info(
+    *,
+    tool_name: Any,
+    tool_args: Any,
+) -> tuple[str, dict[str, Any]]:
+    name = str(tool_name or "").strip() or "unknown_tool"
+    if isinstance(tool_args, dict):
+        return name, tool_args
+    if isinstance(tool_args, str):
+        try:
+            parsed = json.loads(tool_args)
+        except Exception:
+            parsed = {}
+        return name, parsed if isinstance(parsed, dict) else {}
+    return name, {}
+
+
+def _request_source_fingerprint(
+    *,
+    text: str,
+    tool_name: str,
+    tool_call_id: Any,
+    api_mode: str,
+    context: dict[str, Any],
+) -> str:
+    identity = {
+        "schema": "headroom.llm_request_source.v1",
+        "session_id": str(context.get("session_id") or ""),
+        "tool_call_id": str(tool_call_id or ""),
+        "api_mode": api_mode,
+        "tool_name": tool_name,
+        "content_sha256": hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest(),
+    }
+    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _request_cache_get(fingerprint: str) -> str | None:
+    with _LLM_REQUEST_CACHE_LOCK:
+        value = _LLM_REQUEST_TRANSFORM_CACHE.get(fingerprint)
+        if value is not None:
+            _LLM_REQUEST_TRANSFORM_CACHE.move_to_end(fingerprint)
+        return value
+
+
+def _request_cache_put(fingerprint: str, transformed: str) -> None:
+    with _LLM_REQUEST_CACHE_LOCK:
+        _LLM_REQUEST_TRANSFORM_CACHE[fingerprint] = transformed
+        _LLM_REQUEST_TRANSFORM_CACHE.move_to_end(fingerprint)
+        while len(_LLM_REQUEST_TRANSFORM_CACHE) > _LLM_REQUEST_CACHE_MAX:
+            _LLM_REQUEST_TRANSFORM_CACHE.popitem(last=False)
+
+
+def _emit_request_cache_reuse(
+    *,
+    original: str,
+    transformed: str,
+    tool_name: str,
+    tool_args: dict[str, Any],
+    tool_call_id: Any,
+    api_mode: str,
+    context: dict[str, Any],
+    logical_source_id: str,
+) -> None:
+    markers = _extract_markers([transformed])
+    _emit_headroom_event(
+        action="retained",
+        tool_name=tool_name,
+        args=tool_args,
+        reason="request_cache_reuse",
+        task_id=str(context.get("task_id") or ""),
+        tool_call_id=str(tool_call_id or ""),
+        session_id=str(context.get("session_id") or ""),
+        turn_id=str(context.get("turn_id") or ""),
+        api_request_id=str(context.get("api_request_id") or ""),
+        platform=str(context.get("platform") or ""),
+        surface="llm_request",
+        original_chars=len(original),
+        model_facing_chars_before=len(original),
+        model_facing_chars_after=len(transformed),
+        measurement_scope=f"llm_request_tool_result:{api_mode}",
+        new_savings_event=False,
+        marker=markers[0] if markers else "",
+        exact_authority="request_transform_cache",
+        logical_source_id=logical_source_id,
+    )
+
+
+def _compress_request_text(
+    text: Any,
+    *,
+    tool_name: Any,
+    tool_args: Any,
+    tool_call_id: Any,
+    api_mode: str,
+    context: dict[str, Any],
+) -> tuple[Any, bool]:
+    """Compress one textual tool result at the common request boundary."""
+    if not isinstance(text, str) or len(text) < MIN_TOOL_RESULT_CHARS or _already_compressed(text):
+        return text, False
+    name, args = _request_tool_info(tool_name=tool_name, tool_args=tool_args)
+    logical_source_id = _request_source_fingerprint(
+        text=text,
+        tool_name=name,
+        tool_call_id=tool_call_id,
+        api_mode=api_mode,
+        context=context,
+    )
+    cached = _request_cache_get(logical_source_id)
+    if cached is not None:
+        _emit_request_cache_reuse(
+            original=text,
+            transformed=cached,
+            tool_name=name,
+            tool_args=args,
+            tool_call_id=tool_call_id,
+            api_mode=api_mode,
+            context=context,
+            logical_source_id=logical_source_id,
+        )
+        return cached, True
+    transformed = compress_tool_result_for_context(
+        tool_name=name,
+        args=args,
+        result=text,
+        task_id=str(context.get("task_id") or ""),
+        tool_call_id=str(tool_call_id or ""),
+        session_id=str(context.get("session_id") or ""),
+        turn_id=str(context.get("turn_id") or ""),
+        api_request_id=str(context.get("api_request_id") or ""),
+        platform=str(context.get("platform") or ""),
+        event_surface="llm_request",
+        measurement_scope_override=f"llm_request_tool_result:{api_mode}",
+        allow_below_min_aggregate=False,
+        logical_source_id=logical_source_id,
+    )
+    if transformed:
+        _request_cache_put(logical_source_id, transformed)
+        return transformed, True
+    return text, False
+
+
+def _compress_text_parts(
+    parts: Any,
+    *,
+    accepted_types: set[str],
+    text_key: str,
+    tool_name: Any,
+    tool_args: Any,
+    tool_call_id: Any,
+    api_mode: str,
+    context: dict[str, Any],
+) -> int:
+    """Compress text blocks in place while preserving image/metadata blocks."""
+    if not isinstance(parts, list):
+        return 0
+    changed = 0
+    for part in parts:
+        if not isinstance(part, dict) or str(part.get("type") or "") not in accepted_types:
+            continue
+        replacement, did_change = _compress_request_text(
+            part.get(text_key),
+            tool_name=tool_name,
+            tool_args=tool_args,
+            tool_call_id=tool_call_id,
+            api_mode=api_mode,
+            context=context,
+        )
+        if did_change:
+            part[text_key] = replacement
+            changed += 1
+    return changed
+
+
+def _adapt_chat_completions_request(request: dict[str, Any], context: dict[str, Any]) -> int:
+    messages = request.get("messages")
+    if not isinstance(messages, list):
+        return 0
+    calls: dict[str, tuple[str, dict[str, Any]]] = {}
+    changed = 0
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "assistant":
+            for call in message.get("tool_calls") or []:
+                if not isinstance(call, dict):
+                    continue
+                raw_function = call.get("function")
+                function: dict[str, Any] = raw_function if isinstance(raw_function, dict) else {}
+                call_id = str(call.get("id") or call.get("call_id") or "")
+                if call_id:
+                    calls[call_id] = _request_tool_info(
+                        tool_name=function.get("name"),
+                        tool_args=function.get("arguments"),
+                    )
+            continue
+        if message.get("role") != "tool":
+            continue
+        call_id = str(message.get("tool_call_id") or "")
+        name, args = calls.get(
+            call_id,
+            _request_tool_info(
+                tool_name=message.get("name") or message.get("tool_name"),
+                tool_args={},
+            ),
+        )
+        content = message.get("content")
+        if isinstance(content, str):
+            replacement, did_change = _compress_request_text(
+                content,
+                tool_name=name,
+                tool_args=args,
+                tool_call_id=call_id,
+                api_mode="chat_completions",
+                context=context,
+            )
+            if did_change:
+                message["content"] = replacement
+                changed += 1
+        else:
+            changed += _compress_text_parts(
+                content,
+                accepted_types={"text", "input_text", "output_text"},
+                text_key="text",
+                tool_name=name,
+                tool_args=args,
+                tool_call_id=call_id,
+                api_mode="chat_completions",
+                context=context,
+            )
+    return changed
+
+
+def _adapt_responses_request(request: dict[str, Any], context: dict[str, Any]) -> int:
+    items = request.get("input")
+    if not isinstance(items, list):
+        return 0
+    calls: dict[str, tuple[str, dict[str, Any]]] = {}
+    changed = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_type = item.get("type")
+        call_id = str(item.get("call_id") or "")
+        if item_type == "function_call" and call_id:
+            calls[call_id] = _request_tool_info(
+                tool_name=item.get("name"),
+                tool_args=item.get("arguments"),
+            )
+            continue
+        if item_type != "function_call_output" or not call_id:
+            continue
+        name, args = calls.get(call_id, ("unknown_tool", {}))
+        output = item.get("output")
+        if isinstance(output, str):
+            replacement, did_change = _compress_request_text(
+                output,
+                tool_name=name,
+                tool_args=args,
+                tool_call_id=call_id,
+                api_mode="codex_responses",
+                context=context,
+            )
+            if did_change:
+                item["output"] = replacement
+                changed += 1
+        else:
+            changed += _compress_text_parts(
+                output,
+                accepted_types={"input_text"},
+                text_key="text",
+                tool_name=name,
+                tool_args=args,
+                tool_call_id=call_id,
+                api_mode="codex_responses",
+                context=context,
+            )
+    return changed
+
+
+def _adapt_anthropic_request(request: dict[str, Any], context: dict[str, Any]) -> int:
+    messages = request.get("messages")
+    if not isinstance(messages, list):
+        return 0
+    calls: dict[str, tuple[str, dict[str, Any]]] = {}
+    changed = 0
+    for message in messages:
+        if not isinstance(message, dict) or not isinstance(message.get("content"), list):
+            continue
+        for block in message["content"]:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("type")
+            if block_type == "tool_use":
+                call_id = str(block.get("id") or "")
+                if call_id:
+                    calls[call_id] = _request_tool_info(
+                        tool_name=block.get("name"),
+                        tool_args=block.get("input"),
+                    )
+                continue
+            if block_type != "tool_result":
+                continue
+            call_id = str(block.get("tool_use_id") or "")
+            name, args = calls.get(call_id, ("unknown_tool", {}))
+            content = block.get("content")
+            if isinstance(content, str):
+                replacement, did_change = _compress_request_text(
+                    content,
+                    tool_name=name,
+                    tool_args=args,
+                    tool_call_id=call_id,
+                    api_mode="anthropic_messages",
+                    context=context,
+                )
+                if did_change:
+                    block["content"] = replacement
+                    changed += 1
+            else:
+                changed += _compress_text_parts(
+                    content,
+                    accepted_types={"text"},
+                    text_key="text",
+                    tool_name=name,
+                    tool_args=args,
+                    tool_call_id=call_id,
+                    api_mode="anthropic_messages",
+                    context=context,
+                )
+    return changed
+
+
+def _adapt_bedrock_request(request: dict[str, Any], context: dict[str, Any]) -> int:
+    messages = request.get("messages")
+    if not isinstance(messages, list):
+        return 0
+    calls: dict[str, tuple[str, dict[str, Any]]] = {}
+    changed = 0
+    for message in messages:
+        if not isinstance(message, dict) or not isinstance(message.get("content"), list):
+            continue
+        for block in message["content"]:
+            if not isinstance(block, dict):
+                continue
+            tool_use = block.get("toolUse")
+            if isinstance(tool_use, dict):
+                call_id = str(tool_use.get("toolUseId") or "")
+                if call_id:
+                    calls[call_id] = _request_tool_info(
+                        tool_name=tool_use.get("name"),
+                        tool_args=tool_use.get("input"),
+                    )
+                continue
+            tool_result = block.get("toolResult")
+            if not isinstance(tool_result, dict):
+                continue
+            call_id = str(tool_result.get("toolUseId") or "")
+            name, args = calls.get(call_id, ("unknown_tool", {}))
+            content = tool_result.get("content")
+            if isinstance(content, str):
+                replacement, did_change = _compress_request_text(
+                    content,
+                    tool_name=name,
+                    tool_args=args,
+                    tool_call_id=call_id,
+                    api_mode="bedrock_converse",
+                    context=context,
+                )
+                if did_change:
+                    tool_result["content"] = replacement
+                    changed += 1
+            elif isinstance(content, list):
+                for part in content:
+                    if not isinstance(part, dict) or not isinstance(part.get("text"), str):
+                        continue
+                    replacement, did_change = _compress_request_text(
+                        part.get("text"),
+                        tool_name=name,
+                        tool_args=args,
+                        tool_call_id=call_id,
+                        api_mode="bedrock_converse",
+                        context=context,
+                    )
+                    if did_change:
+                        part["text"] = replacement
+                        changed += 1
+    return changed
+
+
+def on_llm_request(request: dict[str, Any] | None = None, api_mode: str = "", **context: Any):
+    """Compress eligible tool results at Hermes's common pre-transport boundary.
+
+    Provider/model routing is never changed. The adapter is opt-in, copy-on-write,
+    protocol-aware, and fail-open. Unsupported shapes return no middleware result.
+    """
+    if not isinstance(request, dict) or not llm_request_compression_enabled():
+        return None
+    normalized_mode = str(api_mode or "").strip().lower()
+    aliases = {
+        "responses": "codex_responses",
+        "openai_responses": "codex_responses",
+        "anthropic": "anthropic_messages",
+        "bedrock": "bedrock_converse",
+        "openai_chat": "chat_completions",
+    }
+    normalized_mode = aliases.get(normalized_mode, normalized_mode)
+    adapters = {
+        "chat_completions": _adapt_chat_completions_request,
+        "codex_responses": _adapt_responses_request,
+        "anthropic_messages": _adapt_anthropic_request,
+        "bedrock_converse": _adapt_bedrock_request,
+    }
+    adapter = adapters.get(normalized_mode)
+    if adapter is None:
+        return None
+    try:
+        effective_request = deepcopy(request)
+        changed = adapter(effective_request, {**context, "api_mode": normalized_mode})
+    except Exception:
+        return None
+    if changed <= 0:
+        return None
+    return {
+        "request": effective_request,
+        "source": "headroom_retrieve",
+        "reason": f"compressed_tool_results:{normalized_mode}:{changed}",
+    }

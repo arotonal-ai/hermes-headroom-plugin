@@ -11,19 +11,26 @@ Hermes tool result
   -> compressed intermediate + CCR marker
   -> model
 
+Hermes common LLM request boundary (explicit opt-in)
+  -> protocol adapter selects tool-result text only
+  -> same admission + redaction policy
+  -> loopback Headroom /v1/compress
+  -> original provider/model transport remains direct
+
 CCR marker
   -> headroom_retrieve
   -> loopback Headroom /v1/retrieve
   -> exact cached source while the marker is live
 ```
 
-The primary model/provider route stays direct. Provider-proxy routing is experimental and must not be enabled by this installer.
+The primary model/provider route stays direct. Provider-proxy routing is experimental and must not be enabled by this installer. `context_reduction.llm_request_middleware` is a separate opt-in safety net for eligible legacy/bypassed tool results at Hermes's native post-build/pre-transport middleware boundary; it does not rewrite routing, auth, headers, tools, tool arguments, system/user prompts, signatures, images, or streaming controls.
 
 ## Reproducible defaults
 
 | Setting | Default |
 |---|---|
-| Plugin | `hermes-headroom-plugin==0.3.18` |
+| Plugin | `hermes-headroom-plugin==0.3.21` |
+| LLM request middleware | off; explicit `mode: tool_results` opt-in |
 | Headroom runtime | `headroom-ai[proxy]==0.31.0` |
 | Runtime venv | `~/.cache/hermes-headroom-venv-0.31.0` |
 | Bind | `127.0.0.1:28787` |

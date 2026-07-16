@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.3.21 — 2026-07-15
+
+- Add an opt-in, provider-agnostic `llm_request` safety net at Hermes's native post-build/pre-transport boundary.
+- Adapt tool-result text for `chat_completions`, `codex_responses`, `anthropic_messages`, and `bedrock_converse` without changing provider/model routing.
+- Preserve system/user prompts, tool schemas and arguments, images, Anthropic signed-thinking/cache blocks, Bedrock sentinels/guardrails, headers, auth fields, and streaming controls.
+- Keep the adapter copy-on-write and fail-open; protected/exact content remains unchanged and Attribution v2 records `surface=llm_request` with protocol-scoped model-facing metrics.
+- Reuse each logical request-boundary transform from a bounded process cache and derive a stable source fingerprint/dedupe key so repeated API requests do not re-compress or re-attribute the same canonical tool result.
+
+## v0.3.20 — 2026-07-15
+
+- Make per-request duplicate counts marker-scoped instead of reporting duplicate rows from the entire retained event tail.
+- Expose marker-correlation and model-facing-metric completeness separately, including mixed legacy/v2 retained contexts.
+- Bump the bundled `llm-monitor` companion to `0.4.1` after the live activation canary identified the completeness ambiguity.
+
+## v0.3.19 — 2026-07-15
+
+- Add Headroom Attribution v2 events with unique `event_id`, stable logical `dedupe_key`, exact model-facing character deltas, labelled token estimates, internal-service counters, compression latency, and measurement scope.
+- Make `llm-monitor` aggregation idempotent and render model-facing `before→after`, saved tokens, percentage, duplicate count, and legacy internal metrics without mixing denominators.
+- Correlate retained Headroom markers with individual Hermes `pre_api_request` events across Chat/Responses-style tool-result shapes while explicitly excluding retained pressure from new-savings totals.
+- Keep provider/model routing unchanged; the companion remains an observer and tool-result middleware remains fail-open.
+
 ## v0.3.18 — 2026-07-15
 
 - Reject unsafe `--service-name` / `HEADROOM_SERVICE` values before writing a systemd user unit.

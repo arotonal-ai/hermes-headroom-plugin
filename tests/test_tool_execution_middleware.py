@@ -67,6 +67,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                     platform="telegram",
                 )
                 events = self._events(td)
+                report = json.loads(Path(events[0]["report_path"]).read_text(encoding="utf-8"))
         self.assertIn("Headroom auto-compressed tool result", out)
         self.assertIn("tool=delegate_task", out)
         self.assertIn("marker=abc123def456", out)
@@ -82,8 +83,46 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(event["platform"], "telegram")
         self.assertEqual(event["tokens_saved"], 29700)
         self.assertEqual(event["marker"], "abc123def456")
+        self.assertEqual(event["telemetry_schema_version"], "headroom.attribution.v2")
+        self.assertEqual(len(event["event_id"]), 32)
+        self.assertEqual(len(event["dedupe_key"]), 64)
+        self.assertEqual(event["service_metric_scope"], "headroom_internal_messages")
+        self.assertEqual(event["model_facing_chars_before"], len(self._large_result()))
+        self.assertEqual(event["model_facing_chars_after"], len(out))
+        self.assertEqual(
+            event["model_facing_est_tokens_saved"],
+            middleware._rough_tokens_from_chars(len(self._large_result()))
+            - middleware._rough_tokens_from_chars(len(out)),
+        )
+        self.assertEqual(event["measurement_scope"], "tool_result")
+        self.assertTrue(event["new_savings_event"])
+        self.assertGreaterEqual(event["compression_latency_ms"], 0)
         self.assertIn("auto-tool-", event["report_path"])
+        self.assertEqual(report["model_facing_chars_before"], len(self._large_result()))
+        self.assertEqual(report["model_facing_chars_after"], len(out))
         self.assertNotIn("delegate line", json.dumps(event, ensure_ascii=False))
+
+    def test_event_ids_are_unique_while_logical_dedupe_keys_are_stable(self):
+        large = self._large_result()
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}):
+            for _ in range(2):
+                middleware.on_tool_execution(
+                    tool_name="write_file",
+                    args={"path": "same.py", "content": "replacement"},
+                    next_call=lambda args: large,
+                    task_id="task-dedupe",
+                    tool_call_id="tool-call-dedupe",
+                    session_id="session-dedupe",
+                    turn_id="turn-dedupe",
+                    api_request_id="api-dedupe",
+                )
+            events = self._events(td)
+        self.assertEqual(len(events), 2)
+        self.assertNotEqual(events[0]["event_id"], events[1]["event_id"])
+        self.assertEqual(events[0]["dedupe_key"], events[1]["dedupe_key"])
+        self.assertEqual(events[0]["model_facing_est_tokens_saved"], 0)
 
     def test_auto_compression_can_be_disabled_for_on_demand_mode(self):
         large = self._large_result()
@@ -139,6 +178,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                     task_id="t-exec",
                     tool_call_id="tc-exec",
                 )
+                events = self._events(td)
         self.assertIsInstance(out, dict)
         self.assertEqual(out["status"], "success")
         self.assertTrue(out["headroom_auto_compressed"])
@@ -146,6 +186,15 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertIn("Headroom auto-compressed tool result", out["output"])
         self.assertIn("tool=execute_code", out["output"])
         self.assertIn("marker=exec123def456", out["output"])
+        self.assertEqual(events[-1]["measurement_scope"], "structured_tool_result:output")
+        self.assertEqual(
+            events[-1]["model_facing_chars_before"],
+            len(json.dumps(structured, ensure_ascii=False, default=str)),
+        )
+        self.assertEqual(
+            events[-1]["model_facing_chars_after"],
+            len(json.dumps(out, ensure_ascii=False, default=str)),
+        )
 
     def test_large_read_file_is_compressible_with_exact_source_header(self):
         source = "".join(f"{i}|def function_{i}(): return {i}\n" for i in range(900))
@@ -604,6 +653,40 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
     def test_extract_markers_supports_ccr_hash_and_marker_forms(self):
         messages = [{"content": "<<ccr:abc123,base64,4KB>> and Retrieve more: hash=def4567890 marker=feedface1234."}]
         self.assertEqual(middleware._extract_markers(messages), ["abc123", "def4567890", "feedface1234"])
+
+    def test_request_surface_and_scope_are_recorded_on_compression_event(self):
+        compressed = {
+            "ok": True,
+            "tokens_before": 20000,
+            "tokens_after": 200,
+            "tokens_saved": 19800,
+            "compression_ratio": 0.01,
+            "messages": [{"role": "tool", "content": "Retrieve more: hash=requestsurface123"}],
+        }
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.middleware.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.middleware.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.middleware.compress_messages", return_value=compressed
+        ):
+            out = middleware.compress_tool_result_for_context(
+                tool_name="terminal",
+                args={"command": "pytest -q"},
+                result=self._large_result(),
+                task_id="task-request",
+                tool_call_id="call-request",
+                session_id="session-request",
+                turn_id="turn-request",
+                api_request_id="api-request",
+                event_surface="llm_request",
+                measurement_scope_override="llm_request_tool_result:chat_completions",
+                allow_below_min_aggregate=False,
+            )
+            events = self._events(td)
+            report = json.loads(Path(events[-1]["report_path"]).read_text(encoding="utf-8"))
+        self.assertIsInstance(out, str)
+        self.assertEqual(events[-1]["surface"], "llm_request")
+        self.assertEqual(events[-1]["measurement_scope"], "llm_request_tool_result:chat_completions")
+        self.assertEqual(report["surface"], "llm_request")
 
 
 if __name__ == "__main__":
