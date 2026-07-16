@@ -66,14 +66,36 @@ class HeadroomReductionProvider:
         if not normalized:
             return RetrievalResult(success=False, hash="", error="Missing or invalid hash", provider=self.name)
         result = retrieve(normalized, proxy_url=self.proxy_url)
-        success = bool(result.get("success")) and "content" in result
-        status = _status_code(result)
-        error = str(result.get("error") or "")
+        nested = result.get("result")
+        payload = nested if isinstance(nested, Mapping) else result
+        candidates = (payload, result) if payload is not result else (result,)
+        content = next(
+            (
+                candidate[key]
+                for candidate in candidates
+                for key in ("content", "original_content")
+                if isinstance(candidate.get(key), str)
+            ),
+            None,
+        )
+        has_exact_content = isinstance(content, str)
+        status = _status_code(payload) or _status_code(result)
+        error = str(result.get("error") or payload.get("error") or "")
+        provider_success = bool(result.get("success"))
+        if payload is not result and "success" in payload:
+            provider_success = provider_success and bool(payload.get("success"))
+        response_hash = str(payload.get("hash") or result.get("hash") or "")
+        hash_mismatch = bool(response_hash) and normalize_ccr_hash(response_hash) != normalized
+        if hash_mismatch:
+            error = "Headroom retrieve response hash did not match the requested hash"
+        if bool(result.get("success")) and not has_exact_content and not error:
+            error = "Headroom retrieve response omitted exact content"
+        success = provider_success and has_exact_content and not error and not hash_mismatch
         missing = status in {404, 410} or "expired" in error.lower() or "not found" in error.lower()
         return RetrievalResult(
             success=success,
             hash=normalized,
-            content=result.get("content") if success else None,
+            content=content if success else None,
             error=error,
             provider=self.name,
             expired_or_missing=missing,

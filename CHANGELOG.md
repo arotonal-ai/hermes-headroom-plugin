@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.0 — 2026-07-16
+
+- Promote the verified v0.4 architecture with `tool_execution` primary and `llm_request/tool_results` remaining an explicit default-off opt-in.
+- Retain the bounded five-minute cross-surface negative-outcome cache added in RC2 so unchanged sources that returned `compression_not_useful` are not submitted or attributed again; provider failures remain retryable.
+- Normalize exact Headroom retrieval across live `content`/`original_content` and top-level/nested response shapes, reject responses that omit exact content, and fail closed on a mismatched response hash.
+- Verify the final candidate through focused retrieval tests, the full local suite, a fresh-process cross-surface canary, and the release-candidate local gate before active-instance promotion.
+
 ## v0.4.0-rc2 — 2026-07-16
 
 - Add a process-local, bounded five-minute negative-outcome cache for unchanged logical tool sources that already returned `compression_not_useful`.

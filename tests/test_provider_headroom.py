@@ -60,6 +60,48 @@ class HeadroomProviderAdapterTest(unittest.TestCase):
         retrieve.assert_called_once_with("abc123", proxy_url="http://127.0.0.1:28787")
 
     @patch("hermes_headroom_plugin.provider_headroom.retrieve")
+    def test_retrieve_accepts_live_headroom_original_content_shape(self, retrieve):
+        retrieve.return_value = {
+            "success": True,
+            "hash": "abc123",
+            "original_content": "complete exact live source",
+        }
+        result = HeadroomReductionProvider().retrieve("abc123")
+        self.assertTrue(result.success)
+        self.assertTrue(result.exact)
+        self.assertEqual(result.content, "complete exact live source")
+
+    @patch("hermes_headroom_plugin.provider_headroom.retrieve")
+    def test_retrieve_accepts_nested_live_headroom_shape(self, retrieve):
+        retrieve.return_value = {
+            "success": True,
+            "result": {"hash": "abc123", "original_content": "complete nested exact source"},
+        }
+        result = HeadroomReductionProvider().retrieve("abc123")
+        self.assertTrue(result.success)
+        self.assertEqual(result.content, "complete nested exact source")
+
+    @patch("hermes_headroom_plugin.provider_headroom.retrieve")
+    def test_retrieve_rejects_success_without_exact_content(self, retrieve):
+        retrieve.return_value = {"success": True, "hash": "abc123"}
+        result = HeadroomReductionProvider().retrieve("abc123")
+        self.assertFalse(result.success)
+        self.assertIsNone(result.content)
+        self.assertIn("omitted exact content", result.error)
+
+    @patch("hermes_headroom_plugin.provider_headroom.retrieve")
+    def test_retrieve_rejects_mismatched_response_hash(self, retrieve):
+        retrieve.return_value = {
+            "success": True,
+            "hash": "def456",
+            "original_content": "content from the wrong retrieval key",
+        }
+        result = HeadroomReductionProvider().retrieve("abc123")
+        self.assertFalse(result.success)
+        self.assertIsNone(result.content)
+        self.assertIn("did not match", result.error)
+
+    @patch("hermes_headroom_plugin.provider_headroom.retrieve")
     def test_expired_or_missing_hash_is_explicit(self, retrieve):
         retrieve.return_value = {"success": False, "status": 404, "error": "not found or expired"}
         result = HeadroomReductionProvider().retrieve("abc123")
