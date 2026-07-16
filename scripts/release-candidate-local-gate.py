@@ -423,7 +423,7 @@ def workload_matrix(run_dir: Path, proxy_url: str, wheel_gate: dict[str, Any]) -
         {"name": "browser_debug_trace", "tool": "browser_snapshot", "args": {"lane": "browser debug", "data_class": "browser_debug_trace"}, "body": browser_trace(4200), "expect": "compress", "sentinel": "BROWSER_RC_SENTINEL"},
         {"name": "research_corpus_web_extract", "tool": "web_extract", "args": {"lane": "research", "data_class": "research_corpus"}, "body": research_corpus(4200), "expect": "compress", "sentinel": "RESEARCH_RC_SENTINEL"},
         {"name": "exact_git_diff_negative", "tool": "terminal", "args": {"command": "git diff -- README.md", "lane": "dev"}, "body": "*** Begin Patch\n" + bulky_log("diff", 2500) + "*** End Patch\n", "expect": "exact", "sentinel": "DIFF_RC_SENTINEL"},
-        {"name": "secret_material_negative", "tool": "terminal", "args": {"command": "diagnostic", "lane": "diagnostic"}, "body": (("[REDACTED " + "PRIVATE" + " KEY]\n") * 500), "expect": "exact", "sentinel": "SECRET_RC_SENTINEL"},
+        {"name": "secret_material_negative", "tool": "terminal", "args": {"command": "diagnostic", "lane": "diagnostic"}, "body": ("-----BEGIN " + "PRIVATE KEY-----\n" + ("[REDACTED KEY MATERIAL]\n" * 500) + "-----END " + "PRIVATE KEY-----\n"), "expect": "exact", "sentinel": "SECRET_RC_SENTINEL"},
         {"name": "worker_final_packet_negative", "tool": "delegate_task", "args": {"goal": "return final packet", "lane": "delegate"}, "body": "# Worker Final Packet\n\nstatus: PASS\nclaim_ledger: exact\n" + bulky_log("final", 2200), "expect": "exact", "sentinel": "FINAL_RC_SENTINEL"},
     ]
     results: list[dict[str, Any]] = []
@@ -470,7 +470,13 @@ out = {{
 if out['expect'] == 'compress':
     out['pass'] = bool(out['compressed'] and out['contains_auto_header'] and not out['contains_private_key'] and out['source_retained'] and out['source_has_sentinel'] and isinstance(out.get('tokens_saved'), int) and out['tokens_saved'] > 1000)
 else:
-    out['pass'] = not out['compressed']
+    out['pass'] = bool(
+        not out['compressed']
+        and not out['contains_auto_header']
+        and not out['marker']
+        and not out['source_retained']
+        and out['tokens_saved'] is None
+    )
 print(json.dumps(out, sort_keys=True))
 raise SystemExit(0 if out['pass'] else 1)
 """.strip()

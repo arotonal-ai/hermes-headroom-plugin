@@ -54,7 +54,7 @@ Compressed lanes must prove:
 Exact/blocked controls must remain uncompressed:
 
 - patch/diff-like output;
-- secret/private-key-like material;
+- secret/private-key-like material, with no provider report, marker, or retained sidecar;
 - worker final packets / claim ledgers.
 
 ## Release boundary
