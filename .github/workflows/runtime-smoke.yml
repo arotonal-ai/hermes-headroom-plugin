@@ -6,7 +6,11 @@ on:
       headroom_spec:
         description: "headroom-ai package spec to test"
         required: false
-        default: "headroom-ai[proxy]"
+        default: "headroom-ai[proxy]==0.31.0"
+      litellm_spec:
+        description: "LiteLLM constraint to test; certified default remains portable across the matrix"
+        required: false
+        default: "litellm==1.91.3"
   schedule:
     # Weekly certification smoke. Keep push CI fast; use this for real proxy runtime drift.
     - cron: "17 9 * * 1"
@@ -27,4 +31,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Full upstream proxy + plugin runtime smoke
-        run: python scripts/test-headroom-runtime-smoke.py --spec "${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]' }}" --install-timeout 600
+        env:
+          HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.31.0' }}
+          HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.91.3' }}
+        run: python scripts/test-headroom-runtime-smoke.py --install-timeout 600

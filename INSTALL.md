@@ -132,7 +132,7 @@ Validate plugin install in a temporary Hermes home:
 scripts/test-clean-hermes-install.sh --local
 ```
 
-Compatibility: production install defaults to latest available `headroom-ai[proxy]` rather than pinning a historical version. If upstream releases regress, use `--spec` / `HEADROOM_AI_SPEC` as an explicit rollback override and capture dependency + runtime smoke evidence before changing the documented default. See [docs/compatibility.md](docs/compatibility.md) for certified vs experimental runtime support; Python 3.13/3.14 are monitored separately and are not certified by default.
+Compatibility: production install defaults to the certified pair `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`. Use `--spec` / `HEADROOM_AI_SPEC` or `--litellm-spec` / `HEADROOM_LITELLM_SPEC` only for an explicit rollback, target-host diagnostic, or non-blocking canary until dependency and real runtime smoke evidence supports promotion. See [docs/compatibility.md](docs/compatibility.md) for certified vs experimental runtime support; Python 3.13/3.14 and newer dependency ranges are monitored separately and are not certified by default.
 
 ## 5. Scoped on-demand mode and cache
 Portable plugin operation should favor compression and savings by default. For this repo's own heavy iterative improvement loops, disable middleware auto-compression without stopping the runtime: set `HEADROOM_AUTO_COMPRESSION=0` for the development process, or `context_reduction.auto_compression: false` in Hermes config plus fresh session/gateway restart. Status/smoke/cache/retrieve still work; eligible tool outputs return exact unless an explicit wrapper/runtime path compresses them. Re-enable automatic compression for normal portable operation.

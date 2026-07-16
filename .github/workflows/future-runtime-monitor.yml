@@ -7,8 +7,12 @@ on:
         description: "headroom-ai package spec to test"
         required: false
         default: "headroom-ai[proxy]"
+      litellm_spec:
+        description: "experimental LiteLLM range for the latest-dependency lane"
+        required: false
+        default: "litellm>=1.86.2,<2.0"
   schedule:
-    # Monthly non-blocking drift monitor for newer Python runtimes.
+    # Monthly non-blocking drift monitor for newer Python runtimes and LiteLLM releases.
     - cron: "37 9 1 * *"
 
 jobs:
@@ -59,4 +63,58 @@ jobs:
         with:
           name: future-runtime-smoke-${{ matrix.os }}-py${{ matrix.python-version }}
           path: future-runtime-smoke.log
+          if-no-files-found: ignore
+
+  latest-litellm-monitor:
+    name: latest-litellm-monitor (${{ matrix.os }}, py3.12)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Experimental latest LiteLLM proxy + plugin runtime smoke (non-blocking)
+        shell: bash
+        env:
+          HEADROOM_SPEC: "headroom-ai[proxy]==0.31.0"
+          LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm>=1.86.2,<2.0' }}
+        run: |
+          set +e
+          python scripts/test-headroom-runtime-smoke.py --spec "$HEADROOM_SPEC" --litellm-spec "$LITELLM_SPEC" --install-timeout 600 > latest-litellm-smoke.log 2>&1
+          status=$?
+          cat latest-litellm-smoke.log
+          resolved_line="$(grep -E '^INFO: resolved runtime versions ' latest-litellm-smoke.log | tail -n 1 || true)"
+          if [ -z "$resolved_line" ]; then
+            resolved_line="not resolved; installation or runtime failed before version readback"
+          fi
+          {
+            echo "### Latest LiteLLM monitor"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| OS | ${{ matrix.os }} |"
+            echo "| Python | 3.12 |"
+            echo "| Certified Headroom | \`$HEADROOM_SPEC\` |"
+            echo "| Candidate LiteLLM | \`$LITELLM_SPEC\` |"
+            echo "| Resolved | \`$resolved_line\` |"
+            echo "| Smoke exit code | \`$status\` |"
+            echo ""
+            if [ "$status" -eq 0 ]; then
+              echo "Result: experimental PASS. The certified LiteLLM pin is unchanged; promotion still requires repeated multi-OS evidence and a blocking release-candidate gate."
+            else
+              echo "Result: experimental FAIL. This is an allowed drift signal and does not change or block the certified LiteLLM pin."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: latest-litellm-smoke-${{ matrix.os }}-py3.12
+          path: latest-litellm-smoke.log
           if-no-files-found: ignore

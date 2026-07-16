@@ -135,6 +135,26 @@ def main(argv: list[str] | None = None) -> int:
                 print(proc.stdout[-4000:], file=sys.stderr)
                 return proc.returncode or 1
 
+        version_code = (
+            "import json; from importlib.metadata import version; "
+            "print(json.dumps({'headroom-ai': version('headroom-ai'), "
+            "'litellm': version('litellm')}, sort_keys=True))"
+        )
+        version_proc = run([str(python), "-c", version_code], timeout=60, log=log, env=runtime_env)
+        if version_proc.returncode != 0:
+            print(f"FAIL: installed runtime version readback failed rc={version_proc.returncode}; log={log}", file=sys.stderr)
+            return version_proc.returncode or 1
+        try:
+            resolved_versions = json.loads(version_proc.stdout.strip().splitlines()[-1])
+        except (IndexError, json.JSONDecodeError):
+            print(f"FAIL: installed runtime version readback was not JSON; log={log}", file=sys.stderr)
+            return 1
+        print(
+            "INFO: resolved runtime versions "
+            f"headroom-ai={resolved_versions.get('headroom-ai')} "
+            f"litellm={resolved_versions.get('litellm')}"
+        )
+
         port = args.port or free_loopback_port()
         proxy_url = f"http://127.0.0.1:{port}"
         proxy_cmd = [str(headroom), "proxy", "--host", "127.0.0.1", "--port", str(port)]

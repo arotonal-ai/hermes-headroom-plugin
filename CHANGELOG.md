@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Modernize GitHub Actions workflows to Node.js 24-compatible majors.
+- Keep the certified LiteLLM pin blocking while adding a separate monthly, non-blocking multi-OS canary for newer allowed LiteLLM releases.
+- Record resolved Headroom/LiteLLM versions in runtime smoke evidence and correct compatibility docs that still described unpinned dependencies as the production default.
+
 ## v0.4.0 — 2026-07-16
 
 - Promote the verified v0.4 architecture with `tool_execution` primary and `llm_request/tool_results` remaining an explicit default-off opt-in.
