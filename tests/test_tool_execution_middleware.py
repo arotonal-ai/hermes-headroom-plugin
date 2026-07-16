@@ -409,9 +409,11 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         first = "terminal chunk A\n" * 1000
         second = "terminal chunk B\n" * 1000
         with tempfile.TemporaryDirectory() as td, patch.dict(
-            os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": ""}
-        ), patch(
-            "hermes_headroom_plugin.reduction.MIN_TOOL_RESULT_CHARS", 28_000
+            os.environ,
+            {
+                "HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "",
+                "HEADROOM_MIN_TOOL_RESULT_CHARS": "28000",
+            },
         ), patch(
             "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
@@ -454,8 +456,12 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
 
         first = "tests/test_a.py::test_a FAILED warning chunk A\n" * 360
         second = "tests/test_b.py::test_b FAILED warning chunk B\n" * 360
-        with tempfile.TemporaryDirectory() as td, patch.dict(os.environ, {"HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1"}), patch(
-            "hermes_headroom_plugin.reduction.MIN_TOOL_RESULT_CHARS", 28_000
+        with tempfile.TemporaryDirectory() as td, patch.dict(
+            os.environ,
+            {
+                "HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE": "1",
+                "HEADROOM_MIN_TOOL_RESULT_CHARS": "28000",
+            },
         ), patch(
             "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787"}), patch(

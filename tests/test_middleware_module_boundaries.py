@@ -111,6 +111,19 @@ class MiddlewareModuleBoundaryTest(unittest.TestCase):
         self.assertNotIn("provider_headroom", self._local_imports("policy"))
         self.assertNotIn("provider_headroom", self._local_imports("observability"))
 
+    def test_core_runtime_settings_do_not_bypass_effective_config(self):
+        allowed = {"config.py", "wrappers.py"}
+        offenders = []
+        for path in PACKAGE_ROOT.glob("*.py"):
+            if path.name in allowed:
+                continue
+            source = path.read_text(encoding="utf-8")
+            if 'os.environ.get("HEADROOM_' in source or "os.environ.get('HEADROOM_" in source:
+                offenders.append(path.name)
+            if '__import__("os").environ' in source or "__import__('os').environ" in source:
+                offenders.append(path.name)
+        self.assertEqual(offenders, [])
+
     def test_tests_do_not_patch_dependencies_through_legacy_facade(self):
         forbidden = (
             "hermes_headroom_plugin.middleware.readyz",

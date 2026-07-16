@@ -149,7 +149,7 @@ Default plugin/runtime target:
 http://127.0.0.1:28787
 ```
 
-By default, assistant final answers include `[HR✓]` when proxy readiness is healthy and `[HR!]` when the visible marker is enabled but readiness fails. This reports runtime readiness only, not per-message compression. Disable it with `context_reduction.visible_status_marker: false` or `HEADROOM_VISIBLE_STATUS_MARKER=0`.
+The `[HR✓]` / `[HR!]` final-answer marker is disabled by default. Enable it with `context_reduction.visible_status_marker: true` or `HEADROOM_VISIBLE_STATUS_MARKER=1`. It reports runtime readiness only, not per-message compression.
 
 This integration intentionally uses `28787` for the Hermes-facing Headroom proxy. Upstream Headroom may have a different CLI default; do not rely on that default. Start production runtime with `headroom proxy --host 127.0.0.1 --port 28787` or use `scripts/install-production-runtime.py`, which passes the port explicitly.
 
@@ -199,8 +199,9 @@ If installed from a local checkout with `--local`, remove the plugin directory/s
 rm -rf "${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
 ```
 
-## 8. Metrics and savings table
+If `scripts/install-production-runtime.py --systemd-user` was used, also stop and disable only the recorded `hermes-context-reduction.service`, restore/remove its recorded user-unit file, run `systemctl --user daemon-reload`, and verify the service state. The versioned runtime venv (`~/.cache/hermes-headroom-venv-0.31.0` by default) is separate from the plugin; remove or replace it only after confirming no deployment still references it. Restore the previous plugin commit/snapshot and re-run load/status plus compress → retrieve smoke when runtime capability is retained. See `docs/portable-core.md` for the canonical end-to-end rollback contract.
 
+## 9. Metrics and savings table
 Savings tables are generated from JSONL evidence, grouped by Monday. If no evidence exists, the table stays as placeholders rather than estimated numbers.
 
 ```bash
@@ -209,8 +210,7 @@ python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.json
 
 See [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md).
 
-## 9. Troubleshooting
-
+## 10. Troubleshooting
 ### `hermes plugins install` works but `/headroom` is unknown
 
 Start a fresh session or restart the gateway:

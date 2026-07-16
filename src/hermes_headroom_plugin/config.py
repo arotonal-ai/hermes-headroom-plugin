@@ -21,6 +21,10 @@ except Exception:  # pragma: no cover - package still works with env/defaults.
 DEFAULT_PROXY_URL = "http://127.0.0.1:28787"
 DEFAULT_MIN_TOOL_RESULT_CHARS = 8_000
 DEFAULT_EVENT_LOG_MAX_BYTES = 5_000_000
+DEFAULT_LLM_REQUEST_CACHE_MAX = 2_048
+DEFAULT_REPORT_RETENTION_DAYS = 14
+DEFAULT_REPORT_MAX_BYTES = 256 * 1024 * 1024
+DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS = 3_600
 _TRUE = {"1", "true", "yes", "y", "on", "enabled", "enable", "auto", "automatic"}
 _FALSE = {"0", "false", "no", "n", "off", "disabled", "disable", "manual", "on_demand", "ondemand"}
 
@@ -105,6 +109,14 @@ class EffectiveConfig:
     llm_request_mode: str = "tool_results"
     min_tool_result_chars: int = DEFAULT_MIN_TOOL_RESULT_CHARS
     event_log_max_bytes: int = DEFAULT_EVENT_LOG_MAX_BYTES
+    llm_request_cache_max: int = DEFAULT_LLM_REQUEST_CACHE_MAX
+    visible_status_marker: bool = False
+    first_turn_hint: bool = False
+    experimental_below_min_terminal_aggregate: bool = False
+    report_retention_days: int = DEFAULT_REPORT_RETENTION_DAYS
+    report_max_bytes: int = DEFAULT_REPORT_MAX_BYTES
+    report_prune_interval_seconds: int = DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS
+    compatibility_warnings: tuple[str, ...] = ()
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
 
@@ -183,6 +195,69 @@ def resolve_effective_config(
         min_chars_value = environment.get("HEADROOM_MIN_TOOL_RESULT_CHARS")
     event_bytes = configured("event_log_max_bytes", "events_max_bytes", default=DEFAULT_EVENT_LOG_MAX_BYTES)
 
+    def env_config_value(env_name: str, *keys: str, default: Any = None) -> Any:
+        explicit_value = _first(explicit, *keys, default=None)
+        if explicit_value is not None:
+            return explicit_value
+        if environment.get(env_name) is not None:
+            return environment.get(env_name)
+        return _first(raw, *keys, default=default)
+
+    llm_cache_max = env_config_value(
+        "HEADROOM_LLM_REQUEST_CACHE_MAX",
+        "llm_request_cache_max",
+        default=DEFAULT_LLM_REQUEST_CACHE_MAX,
+    )
+    visible_status_marker = _boolish(
+        env_config_value("HEADROOM_VISIBLE_STATUS_MARKER", "visible_status_marker", default=False),
+        default=False,
+    )
+    first_turn_hint = _boolish(
+        env_config_value("HEADROOM_FIRST_TURN_HINT", "first_turn_hint", default=False),
+        default=False,
+    )
+    experimental_below_min = _boolish(
+        env_config_value(
+            "HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE",
+            "experimental_below_min_terminal_aggregate",
+            default=False,
+        ),
+        default=False,
+    )
+    report_retention_days = env_config_value(
+        "HEADROOM_REPORT_RETENTION_DAYS",
+        "report_retention_days",
+        default=DEFAULT_REPORT_RETENTION_DAYS,
+    )
+    report_max_bytes = env_config_value(
+        "HEADROOM_REPORT_MAX_BYTES",
+        "report_max_bytes",
+        default=DEFAULT_REPORT_MAX_BYTES,
+    )
+    report_prune_interval = env_config_value(
+        "HEADROOM_REPORT_PRUNE_INTERVAL_SECONDS",
+        "report_prune_interval_seconds",
+        default=DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS,
+    )
+    legacy_aliases = {
+        "host": "proxy_url",
+        "port": "proxy_url",
+        "auto_compress": "auto_compression",
+        "auto_terminal": "auto_compression",
+        "compression_mode": "mode",
+        "events_max_bytes": "event_log_max_bytes",
+    }
+    compatibility_warning_list = [
+        f"legacy context_reduction.{key}; use context_reduction.{replacement}"
+        for key, replacement in legacy_aliases.items()
+        if key in raw or key in explicit
+    ]
+    if environment.get("HEADROOM_HOST") is not None:
+        compatibility_warning_list.append("legacy HEADROOM_HOST; use HEADROOM_PROXY_URL")
+    if environment.get("HEADROOM_PORT") is not None:
+        compatibility_warning_list.append("legacy HEADROOM_PORT; use HEADROOM_PROXY_URL")
+    compatibility_warnings = tuple(compatibility_warning_list)
+
     return EffectiveConfig(
         enabled=_boolish(configured("enabled", default=True), default=True),
         provider=str(configured("provider", default="headroom") or "headroom").strip().lower(),
@@ -193,5 +268,18 @@ def resolve_effective_config(
         llm_request_mode=llm_mode,
         min_tool_result_chars=_bounded_int(min_chars_value, default=DEFAULT_MIN_TOOL_RESULT_CHARS, minimum=2_000, maximum=10_000_000),
         event_log_max_bytes=_bounded_int(event_bytes, default=DEFAULT_EVENT_LOG_MAX_BYTES, minimum=64_000, maximum=1_000_000_000),
+        llm_request_cache_max=_bounded_int(llm_cache_max, default=DEFAULT_LLM_REQUEST_CACHE_MAX, minimum=64, maximum=100_000),
+        visible_status_marker=visible_status_marker,
+        first_turn_hint=first_turn_hint,
+        experimental_below_min_terminal_aggregate=experimental_below_min,
+        report_retention_days=_bounded_int(report_retention_days, default=DEFAULT_REPORT_RETENTION_DAYS, minimum=0, maximum=3_650),
+        report_max_bytes=_bounded_int(report_max_bytes, default=DEFAULT_REPORT_MAX_BYTES, minimum=0, maximum=10_000_000_000),
+        report_prune_interval_seconds=_bounded_int(
+            report_prune_interval,
+            default=DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS,
+            minimum=0,
+            maximum=31_536_000,
+        ),
+        compatibility_warnings=compatibility_warnings,
         raw=raw,
     )

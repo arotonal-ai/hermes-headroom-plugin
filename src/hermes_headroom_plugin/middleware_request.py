@@ -3,18 +3,18 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
+
 import threading
 from collections import OrderedDict
 from copy import deepcopy
 from typing import Any
 
-from .config import llm_request_compression_enabled
+from .config import llm_request_compression_enabled, resolve_effective_config
 from .observability import _emit_headroom_event
-from .policy import MIN_TOOL_RESULT_CHARS, _already_compressed, _extract_markers
+from .policy import _already_compressed, _extract_markers
 from .reduction import compress_tool_result_for_context
 
-_LLM_REQUEST_CACHE_MAX = max(64, int(os.environ.get("HEADROOM_LLM_REQUEST_CACHE_MAX", "2048")))
+_LLM_REQUEST_CACHE_MAX = resolve_effective_config().llm_request_cache_max
 _LLM_REQUEST_TRANSFORM_CACHE: OrderedDict[str, str] = OrderedDict()
 _LLM_REQUEST_CACHE_LOCK = threading.RLock()
 
@@ -117,7 +117,7 @@ def _compress_request_text(
     context: dict[str, Any],
 ) -> tuple[Any, bool]:
     """Compress one textual tool result at the common request boundary."""
-    if not isinstance(text, str) or len(text) < MIN_TOOL_RESULT_CHARS or _already_compressed(text):
+    if not isinstance(text, str) or len(text) < resolve_effective_config().min_tool_result_chars or _already_compressed(text):
         return text, False
     name, args = _request_tool_info(tool_name=tool_name, tool_args=tool_args)
     logical_source_id = _request_source_fingerprint(

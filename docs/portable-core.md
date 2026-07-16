@@ -83,7 +83,15 @@ second provider and an injection/selection gate are implemented and tested.
 | First-turn availability hint | off |
 | `llm-monitor` companion | not installed unless explicitly requested |
 
-Core plugin configuration resolves once into a typed effective contract with this precedence: explicit function override, environment, `context_reduction` YAML, then portable defaults. Legacy YAML aliases are accepted only at that resolver boundary. Environment variables or `context_reduction` configuration may override report retention. Runtime overrides must be explicit installer arguments or environment variables and recorded in deployment evidence.
+Core plugin configuration resolves once into a typed effective contract with this precedence: explicit function override, environment, `context_reduction` YAML, then portable defaults. Legacy `host`/`port`, `auto_compress`, `auto_terminal`, `compression_mode`, and `events_max_bytes` aliases are accepted only at that resolver boundary and are reported by `/headroom status`; `HEADROOM_HOST`/`HEADROOM_PORT` remain deprecated endpoint shims. Environment variables or `context_reduction` configuration may override report retention. Runtime overrides must be explicit installer arguments or environment variables and recorded in deployment evidence. The complete mapping is in the README configuration matrix.
+
+## Attribution invariant
+
+- `tool_execution` is the primary compression and savings-attribution surface.
+- `llm_request` is off by default. When enabled, it only transforms eligible tool-result text that did not already carry a Headroom marker from `tool_execution`.
+- A marker produced by `tool_execution` is recognized as already compressed at the request boundary, so it is neither recompressed nor emitted as a second new-savings event.
+- Repeated request-boundary transforms use a logical-source fingerprint scoped by session, tool call, protocol family, tool name, and source digest. Cache reuse and downstream `llm-monitor` marker correlation are retained-pressure observations with `new_savings_event=false` / `counts_as_new_savings=false`.
+- Savings totals must count only rows explicitly marked as new savings; retained correlations, experimental aggregates, and legacy internal-service token counters use separate scopes.
 
 ## Storage contract
 
@@ -138,9 +146,11 @@ systemctl --user show hermes-context-reduction.service -p ExecStart -p Environme
 
 ## Rollback
 
-1. Restore the previous user-unit file.
-2. Run `systemctl --user daemon-reload` and restart only `hermes-context-reduction.service`.
-3. Switch the plugin repo to the previously recorded commit.
-4. If SQLite recovery is required, reinstall with `--ccr-backend sqlite`; accept renewed disk-persistence risk explicitly.
+1. Disable or remove `headroom_retrieve` with Hermes, then reload only the affected Hermes session/gateway when required.
+2. If a durable runtime was installed, stop and disable `hermes-context-reduction.service`; restore or remove only its recorded user-unit path, then run `systemctl --user daemon-reload`.
+3. Switch the plugin repo to the previously recorded commit or restore the recorded plugin snapshot.
+4. Keep or delete the versioned runtime venv only after confirming no other deployment references it. Reinstall the prior pinned runtime spec when rollback requires runtime parity.
+5. If SQLite recovery is required, restore the approved database separately or reinstall with `--ccr-backend sqlite`; accept renewed disk-persistence risk explicitly. Memory-backend CCR entries are intentionally not restart-recoverable.
+6. Re-run plugin load/status and, if runtime remains enabled, compress → retrieve smoke. Do not call rollback complete from service state alone.
 
 No Hermes model/provider route or global provider configuration should need rollback because the portable core does not mutate them.

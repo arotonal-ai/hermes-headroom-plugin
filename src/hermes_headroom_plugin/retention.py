@@ -6,57 +6,29 @@ Failures are reported as metadata and never break tool execution.
 """
 from __future__ import annotations
 
-import os
 import threading
 import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-DEFAULT_REPORT_RETENTION_DAYS = 14
-DEFAULT_REPORT_MAX_BYTES = 256 * 1024 * 1024
-DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS = 3600
+from .config import (
+    DEFAULT_REPORT_MAX_BYTES,
+    DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS,
+    DEFAULT_REPORT_RETENTION_DAYS,
+    resolve_effective_config,
+)
 _PIN_SUFFIXES = (".keep", ".retain")
 _LOCK = threading.Lock()
 _LAST_PRUNE_MONOTONIC: dict[str, float] = {}
 
 
-def _integer_setting(
-    env_name: str,
-    config: dict[str, Any],
-    config_name: str,
-    default: int,
-) -> int:
-    raw = os.environ.get(env_name)
-    if raw is None:
-        raw = config.get(config_name, default)
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return default
-
-
 def retention_settings(config: dict[str, Any] | None = None) -> dict[str, int]:
-    cfg = config if isinstance(config, dict) else {}
+    cfg = resolve_effective_config(raw_config=config if isinstance(config, dict) else None)
     return {
-        "retention_days": _integer_setting(
-            "HEADROOM_REPORT_RETENTION_DAYS",
-            cfg,
-            "report_retention_days",
-            DEFAULT_REPORT_RETENTION_DAYS,
-        ),
-        "max_bytes": _integer_setting(
-            "HEADROOM_REPORT_MAX_BYTES",
-            cfg,
-            "report_max_bytes",
-            DEFAULT_REPORT_MAX_BYTES,
-        ),
-        "interval_seconds": _integer_setting(
-            "HEADROOM_REPORT_PRUNE_INTERVAL_SECONDS",
-            cfg,
-            "report_prune_interval_seconds",
-            DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS,
-        ),
+        "retention_days": cfg.report_retention_days,
+        "max_bytes": cfg.report_max_bytes,
+        "interval_seconds": cfg.report_prune_interval_seconds,
     }
 
 

@@ -6,7 +6,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-MIN_TOOL_RESULT_CHARS = max(2_000, int(__import__("os").environ.get("HEADROOM_MIN_TOOL_RESULT_CHARS", "8000")))
+from .config import DEFAULT_MIN_TOOL_RESULT_CHARS
+
+MIN_TOOL_RESULT_CHARS = DEFAULT_MIN_TOOL_RESULT_CHARS
 ALWAYS_TOOL_RESULT_CHARS = 120_000
 MAX_RETURN_CHARS = 12_000
 RAW_EDGE_CHARS = 1_200

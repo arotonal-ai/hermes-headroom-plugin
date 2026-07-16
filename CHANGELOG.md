@@ -8,6 +8,9 @@
 - Preserve loopback-first endpoint validation, exact/protected behavior, direct provider routing, and copy-on-write fail-open behavior.
 - Split the Hermes middleware hot path into focused config, policy, observability, reduction, provider, tool-adapter, and request-adapter modules without changing plugin registration.
 - Keep `middleware.py` as an explicit compatibility facade; all 97 pre-v0.4 top-level symbols remain importable while internal dependency patching moves to the owning modules.
+- Route core thresholds, request-cache bounds, optional markers/hints, experimental aggregation, and report retention through the typed effective configuration authority; retain legacy settings as warned migration shims rather than parallel authorities.
+- Enforce and test the attribution invariant that `tool_execution` is primary, marked results are not recompressed/recredited at `llm_request`, and logical request fingerprints separate protocol, tool-call, and session identities.
+- Reconcile runtime installer defaults, canonical/legacy configuration documentation, marker defaults, and end-to-end plugin/runtime/venv rollback guidance.
 
 ## v0.3.21 — 2026-07-15
 

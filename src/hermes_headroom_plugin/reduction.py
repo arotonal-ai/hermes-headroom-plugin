@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from datetime import datetime, timezone
 from typing import Any
 
-from .config import auto_compression_enabled, load_context_reduction_config
+from .config import resolve_effective_config
 from .observability import ATTRIBUTION_SCHEMA_VERSION, TOKEN_ESTIMATOR, _emit_headroom_event, _report_dir, _rough_tokens_from_chars, _safe_event_text, _utc_stamp
-from .policy import MIN_TOOL_RESULT_CHARS, READ_ONLY_MCP_HINTS, _build_exact_header_data, _build_trace, _compressed_excerpt, _contains_protected_control, _edge_excerpt, _exact_or_blocked_reason, _extract_markers, _format_exact_header, _lane_eligible, _redact_text, _safe_header_value, _safe_name, _shorten
+from .policy import READ_ONLY_MCP_HINTS, _build_exact_header_data, _build_trace, _compressed_excerpt, _contains_protected_control, _edge_excerpt, _exact_or_blocked_reason, _extract_markers, _format_exact_header, _lane_eligible, _redact_text, _safe_header_value, _safe_name, _shorten
 from .provider_headroom import HeadroomReductionProvider
 
 BELOW_MIN_AGGREGATE_CHARS = 28_000
@@ -46,13 +45,7 @@ def _truthy(value: Any) -> bool:
 
 
 def _below_min_aggregate_enabled() -> bool:
-    if _truthy(os.environ.get("HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE")):
-        return True
-    try:
-        cfg = load_context_reduction_config()
-    except Exception:
-        cfg = {}
-    return _truthy(cfg.get("experimental_below_min_terminal_aggregate"))
+    return resolve_effective_config().experimental_below_min_terminal_aggregate
 
 
 def _below_min_aggregate_key(*, session_id: str, turn_id: str, task_id: str, api_request_id: str) -> str:
@@ -246,7 +239,12 @@ def _maybe_compress_terminal_below_min_aggregate(
     return final_payload
 
 
-def _compression_body_for_tool_result(tool_name: str, redacted_result: str) -> tuple[str, str]:
+def _compression_body_for_tool_result(
+    tool_name: str,
+    redacted_result: str,
+    *,
+    min_tool_result_chars: int,
+) -> tuple[str, str]:
     """Return the payload shape to send to Headroom for compression.
 
     Hermes terminal results can arrive as a JSON object string such as
@@ -268,7 +266,7 @@ def _compression_body_for_tool_result(tool_name: str, redacted_result: str) -> t
     if not isinstance(data, dict):
         return redacted_result, "original"
     output = data.get("output")
-    if not isinstance(output, str) or len(output) < MIN_TOOL_RESULT_CHARS:
+    if not isinstance(output, str) or len(output) < min_tool_result_chars:
         return redacted_result, "original"
     metadata: list[str] = []
     if "exit_code" in data:
@@ -314,7 +312,8 @@ def compress_tool_result_for_context(
     event_measurement_scope = measurement_scope_override or "tool_result"
     if not isinstance(result, str) or not result:
         return None
-    if not auto_compression_enabled():
+    effective_config = resolve_effective_config()
+    if not effective_config.auto_compression:
         _emit_headroom_event(
             action="skipped",
             tool_name=tool_name,
@@ -388,7 +387,7 @@ def compress_tool_result_for_context(
             exact_authority="original_tool_result",
         )
         return None
-    eligible, reason = _lane_eligible(tool_name, args, result, min_chars=MIN_TOOL_RESULT_CHARS)
+    eligible, reason = _lane_eligible(tool_name, args, result, min_chars=effective_config.min_tool_result_chars)
     if not eligible:
         if allow_below_min_aggregate and reason == "below_min_chars":
             aggregate = _maybe_compress_terminal_below_min_aggregate(
@@ -425,7 +424,11 @@ def compress_tool_result_for_context(
         return None
 
     redacted = _redact_text(result)
-    compression_body, compression_input_shape = _compression_body_for_tool_result(tool_name, redacted)
+    compression_body, compression_input_shape = _compression_body_for_tool_result(
+        tool_name,
+        redacted,
+        min_tool_result_chars=effective_config.min_tool_result_chars,
+    )
     header_data = _build_exact_header_data(tool_name, args, compression_body, reason)
     if not header_data.get("header_ok"):
         _emit_headroom_event(

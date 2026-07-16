@@ -65,6 +65,8 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | Global/default provider route mutation | ❌ not included | install does not change model/provider defaults |
 | External telemetry/API keys | ❌ not included | no telemetry, no keys required |
 
+Canonical diagnostics are `status`, `smoke`, `audit`, `runtime`, `cache`, `usage`, `lanes`, `tail`, `decisions`, and `opportunities`. Read-only `on`, `stats`, `why`, `opp`, `enable`, `off`, and `disable` spellings remain v0.4 migration shims; new integrations should not depend on those aliases.
+
 ## Installation paths
 
 ### Recommended: native Hermes plugin install
@@ -333,6 +335,24 @@ Hermes config override:
 context_reduction:
   proxy_url: http://127.0.0.1:28787
 ```
+
+Effective configuration is resolved once with `explicit override → environment → context_reduction YAML → portable default` precedence.
+
+| Concern | Canonical YAML | Environment | Legacy compatibility |
+|---|---|---|---|
+| Proxy endpoint | `proxy_url` | `HEADROOM_PROXY_URL` | `host` / `port` and `HEADROOM_HOST` / `HEADROOM_PORT`; accepted with `/headroom status` warning |
+| Automatic tool-result compression | `auto_compression` | `HEADROOM_AUTO_COMPRESSION` | `auto_compress`, `auto_terminal`; accepted with warning |
+| Compatibility mode spelling | `mode` | — | `compression_mode`; accepted with warning |
+| Request-boundary safety net | `llm_request_middleware.enabled`, `.mode` | `HEADROOM_LLM_REQUEST_COMPRESSION` | none; off by default |
+| Minimum tool-result size | `min_tool_result_chars` | `HEADROOM_MIN_TOOL_RESULT_CHARS` | none |
+| Event log bound | `event_log_max_bytes` | — | `events_max_bytes`; accepted with warning |
+| Request transform cache | `llm_request_cache_max` | `HEADROOM_LLM_REQUEST_CACHE_MAX` | none |
+| Visible readiness marker | `visible_status_marker` | `HEADROOM_VISIBLE_STATUS_MARKER` | none; off by default |
+| First-turn hint | `first_turn_hint` | `HEADROOM_FIRST_TURN_HINT` | none; off by default |
+| Experimental below-min aggregation | `experimental_below_min_terminal_aggregate` | `HEADROOM_EXPERIMENTAL_BELOW_MIN_AGGREGATE` | none; off by default |
+| Report retention | `report_retention_days`, `report_max_bytes`, `report_prune_interval_seconds` | `HEADROOM_REPORT_RETENTION_DAYS`, `HEADROOM_REPORT_MAX_BYTES`, `HEADROOM_REPORT_PRUNE_INTERVAL_SECONDS` | none |
+
+Legacy names remain migration shims for v0.4, not parallel authorities. Use canonical names in new installs.
 
 Remote proxy guardrail:
 

@@ -290,6 +290,22 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
         self.assertFalse(events[1]["new_savings_event"])
         self.assertTrue(events[1]["attribution_duplicate"])
 
+    def test_request_source_fingerprint_separates_protocol_tool_call_and_session(self):
+        base = {
+            "text": self.large,
+            "tool_name": "search_files",
+            "tool_call_id": "call-1",
+            "api_mode": "chat_completions",
+            "context": {"session_id": "session-1"},
+        }
+        fingerprints = {
+            middleware._request_source_fingerprint(**base),
+            middleware._request_source_fingerprint(**{**base, "api_mode": "codex_responses"}),
+            middleware._request_source_fingerprint(**{**base, "tool_call_id": "call-2"}),
+            middleware._request_source_fingerprint(**{**base, "context": {"session_id": "session-2"}}),
+        }
+        self.assertEqual(len(fingerprints), 4)
+
     def test_already_compressed_unsupported_and_disabled_are_noops(self):
         compressed_request = {
             "messages": [
@@ -323,6 +339,77 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
         ):
             self.assertIsNone(middleware.on_llm_request(request=request, api_mode="chat_completions"))
         self.assertEqual(request, original)
+
+
+class CrossSurfaceAttributionTest(unittest.TestCase):
+    def test_tool_execution_credit_is_not_recredited_by_llm_request(self):
+        large = "".join(
+            f"diagnostic line {i} WARNING status=PASS path=/tmp/cross/{i}\n"
+            for i in range(700)
+        )
+        compressed = {
+            "ok": True,
+            "tokens_before": 12000,
+            "tokens_after": 600,
+            "tokens_saved": 11400,
+            "compression_ratio": 0.05,
+            "messages": [
+                {
+                    "role": "tool",
+                    "content": "[cross-surface summary. Retrieve more: hash=crosslane123456]",
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as td, patch.dict(
+            os.environ,
+            {
+                "HEADROOM_AUTO_COMPRESSION": "1",
+                "HEADROOM_LLM_REQUEST_COMPRESSION": "1",
+            },
+        ), patch(
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch(
+            "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}
+        ), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+        ) as compress:
+            middleware._LLM_REQUEST_TRANSFORM_CACHE.clear()
+            transformed = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "pytest -q"},
+                next_call=lambda args: large,
+                task_id="task-cross",
+                tool_call_id="call-cross",
+                session_id="session-cross",
+                turn_id="turn-cross",
+                api_request_id="tool-api-cross",
+                platform="telegram",
+            )
+            request = {
+                "messages": [
+                    {"role": "tool", "tool_call_id": "call-cross", "name": "terminal", "content": transformed}
+                ]
+            }
+            request_result = middleware.on_llm_request(
+                request=request,
+                api_mode="chat_completions",
+                task_id="task-cross",
+                session_id="session-cross",
+                turn_id="turn-cross",
+                api_request_id="request-api-cross",
+                platform="telegram",
+            )
+            event_path = Path(td) / "control-plane" / "headroom" / "events" / "headroom-events.jsonl"
+            events = [json.loads(line) for line in event_path.read_text(encoding="utf-8").splitlines()]
+        self.assertIn("Headroom auto-compressed tool result", transformed)
+        self.assertIsNone(request_result)
+        self.assertEqual(compress.call_count, 1)
+        new_savings = [event for event in events if event.get("new_savings_event")]
+        self.assertEqual(len(new_savings), 1)
+        self.assertEqual(new_savings[0]["surface"], "tool_execution")
+        self.assertEqual(new_savings[0]["marker"], "crosslane123456")
+        self.assertEqual(len(events), 1)
+
 
 
 if __name__ == "__main__":

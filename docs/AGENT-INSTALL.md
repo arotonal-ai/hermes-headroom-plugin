@@ -156,8 +156,7 @@ python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.json
 
 ## Rollback
 
-```bash
-hermes plugins disable headroom_retrieve
-hermes plugins remove headroom_retrieve
-hermes gateway restart || true
-```
+1. Disable or remove `headroom_retrieve`, then reload only the affected Hermes session/gateway if needed.
+2. If durable runtime installation was used, stop/disable only the recorded `hermes-context-reduction.service`, restore or remove its recorded user-unit file, and run `systemctl --user daemon-reload`.
+3. Restore the previous plugin commit/snapshot. Treat the versioned runtime venv as a separate artifact; remove or replace it only after confirming no deployment references it.
+4. Re-run plugin load/status and, when runtime capability is retained, compress → retrieve smoke. See `docs/portable-core.md` for storage-backend and SQLite recovery caveats.
