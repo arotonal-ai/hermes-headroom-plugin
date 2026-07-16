@@ -46,6 +46,30 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             middleware.on_tool_execution(tool_name="terminal", args={}, next_call=fail)
         self.assertIs(caught.exception, error)
 
+    def test_exact_and_protected_paths_do_not_probe_provider(self):
+        large = self._large_result()
+        cases = (
+            ("delegate_task", {"goal": "fan-in"}, "# Worker Final Packet\nstatus=PASS\n" + large),
+            ("terminal", {"command": "git diff --binary"}, "diff --git a/a b/a\n" + large),
+            ("terminal", {"command": "pytest -q"}, "[Headroom auto-compressed tool result · marker=abc123def456]\n" + large),
+            ("terminal", {"command": "journalctl --user"}, "private_key=-----BEGIN " + "PRIVATE KEY-----\n" + large),
+        )
+        with patch("hermes_headroom_plugin.reduction._provider_ready") as ready, patch(
+            "hermes_headroom_plugin.reduction._provider_compress"
+        ) as compress:
+            for index, (tool_name, args, result) in enumerate(cases):
+                output = middleware.on_tool_execution(
+                    tool_name=tool_name,
+                    args=args,
+                    next_call=lambda _args, value=result: value,
+                    task_id="task-exact",
+                    tool_call_id=f"exact-{index}",
+                    session_id="session-exact",
+                )
+                self.assertEqual(output, result)
+        ready.assert_not_called()
+        compress.assert_not_called()
+
     def test_delegate_task_large_result_is_compressed_when_proxy_ready(self):
         with tempfile.TemporaryDirectory() as td:
             compressed = {

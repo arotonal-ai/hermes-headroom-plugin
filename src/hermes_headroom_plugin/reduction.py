@@ -331,25 +331,6 @@ def compress_tool_result_for_context(
             exact_authority="original_tool_result",
         )
         return None
-    health = _provider_ready()
-    if not health.get("ok"):
-        _emit_headroom_event(
-            action="runtime_unavailable",
-            tool_name=tool_name,
-            args=args,
-            reason="proxy_not_ready",
-            task_id=task_id,
-            tool_call_id=tool_call_id,
-            session_id=session_id,
-            turn_id=turn_id,
-            api_request_id=api_request_id,
-            platform=platform,
-            surface=event_surface,
-            original_chars=len(result),
-            measurement_scope=event_measurement_scope,
-            error=health.get("body") or health.get("error"),
-        )
-        return None
     if _contains_protected_control(tool_name, args, result):
         _emit_headroom_event(
             action="blocked",
@@ -385,6 +366,25 @@ def compress_tool_result_for_context(
             original_chars=len(result),
             measurement_scope=event_measurement_scope,
             exact_authority="original_tool_result",
+        )
+        return None
+    health = _provider_ready()
+    if not health.get("ok"):
+        _emit_headroom_event(
+            action="runtime_unavailable",
+            tool_name=tool_name,
+            args=args,
+            reason="proxy_not_ready",
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            surface=event_surface,
+            original_chars=len(result),
+            measurement_scope=event_measurement_scope,
+            error=health.get("body") or health.get("error"),
         )
         return None
     eligible, reason = _lane_eligible(tool_name, args, result, min_chars=effective_config.min_tool_result_chars)
