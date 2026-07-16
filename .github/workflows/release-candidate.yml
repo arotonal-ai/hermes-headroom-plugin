@@ -6,7 +6,11 @@ on:
       headroom_spec:
         description: "headroom-ai package spec to test"
         required: false
-        default: "headroom-ai[proxy]"
+        default: "headroom-ai[proxy]==0.31.0"
+      litellm_spec:
+        description: "LiteLLM constraint to test; certified default remains portable across the matrix"
+        required: false
+        default: "litellm==1.91.3"
 
 jobs:
   release-candidate-local-gate:
@@ -19,7 +23,10 @@ jobs:
         with:
           python-version: "3.11"
       - name: Run local release-candidate gate
-        run: python scripts/release-candidate-local-gate.py --headroom-spec "${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]' }}" --install-timeout 600
+        env:
+          HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.31.0' }}
+          HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.91.3' }}
+        run: python scripts/release-candidate-local-gate.py --install-timeout 600
       - name: Upload release-candidate evidence
         if: always()
         uses: actions/upload-artifact@v7

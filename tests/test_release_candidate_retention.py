@@ -4,13 +4,14 @@ import importlib.util
 from pathlib import Path
 
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "release-candidate-local-gate.py"
+REPO = Path(__file__).resolve().parents[1]
+SCRIPT = REPO / "scripts" / "release-candidate-local-gate.py"
 SPEC = importlib.util.spec_from_file_location("release_candidate_local_gate", SCRIPT)
 assert SPEC and SPEC.loader
 MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
-RUNTIME_SMOKE_SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "test-headroom-runtime-smoke.py"
+RUNTIME_SMOKE_SCRIPT = REPO / "scripts" / "test-headroom-runtime-smoke.py"
 RUNTIME_SMOKE_SPEC = importlib.util.spec_from_file_location("headroom_runtime_smoke", RUNTIME_SMOKE_SCRIPT)
 assert RUNTIME_SMOKE_SPEC and RUNTIME_SMOKE_SPEC.loader
 RUNTIME_SMOKE_MODULE = importlib.util.module_from_spec(RUNTIME_SMOKE_SPEC)
@@ -23,6 +24,28 @@ def test_release_candidate_default_runtime_is_pinned() -> None:
     assert MODULE.LITELLM_RUNTIME_VERSION == "1.91.3"
     assert MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
     assert RUNTIME_SMOKE_MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
+
+
+def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> None:
+    runtime_smoke = (REPO / ".github" / "workflows" / "runtime-smoke.yml").read_text(encoding="utf-8")
+    release_candidate = (REPO / ".github" / "workflows" / "release-candidate.yml").read_text(encoding="utf-8")
+    future_monitor = (REPO / ".github" / "workflows" / "future-runtime-monitor.yml").read_text(encoding="utf-8")
+    runtime_script = RUNTIME_SMOKE_SCRIPT.read_text(encoding="utf-8")
+
+    for workflow in (runtime_smoke, release_candidate):
+        assert 'default: "headroom-ai[proxy]==0.31.0"' in workflow
+        assert 'default: "litellm==1.91.3"' in workflow
+        assert "HEADROOM_AI_SPEC:" in workflow
+        assert "HEADROOM_LITELLM_SPEC:" in workflow
+
+    assert "latest-litellm-monitor:" in future_monitor
+    assert 'default: "litellm>=1.86.2,<2.0"' in future_monitor
+    assert 'HEADROOM_SPEC: "headroom-ai[proxy]==0.31.0"' in future_monitor
+    assert 'python-version: "3.12"' in future_monitor
+    assert "continue-on-error: true" in future_monitor
+    assert '--litellm-spec "$LITELLM_SPEC"' in future_monitor
+    assert "The certified LiteLLM pin is unchanged" in future_monitor
+    assert "INFO: resolved runtime versions" in runtime_script
 
 
 def test_cleanup_ephemeral_envs_removes_only_allowlisted_dirs(tmp_path: Path) -> None:
