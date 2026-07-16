@@ -270,7 +270,10 @@ def build_and_inspect(run_dir: Path) -> dict[str, Any]:
     artifacts = sorted(dist_dir.glob("*")) if dist_dir.exists() else []
     issues: list[dict[str, Any]] = []
     for artifact in artifacts:
-        for member in archive_members(artifact):
+        members = archive_members(artifact)
+        if not any(member.endswith("/MIGRATION-v0.4.md") for member in members):
+            issues.append({"artifact": artifact.name, "kind": "missing_migration_doc"})
+        for member in members:
             lowered = member.lower()
             if any(bad in lowered for bad in (".git/", ".venv/", "__pycache__", ".pytest_cache", "release-candidate-runs")):
                 issues.append({"artifact": artifact.name, "member": member, "kind": "forbidden_member"})
@@ -310,6 +313,7 @@ def wheel_install_gate(run_dir: Path, build_gate: dict[str, Any]) -> dict[str, A
     steps = [
         run([str(python), "-m", "pip", "install", "--upgrade", "pip"], timeout=240),
         run([str(python), "-m", "pip", "install", str(wheel)], timeout=300),
+        run([str(python), "-m", "pip", "check"], timeout=60),
     ]
     checks = []
     for name in ("headroom-worker-lane", "headroom-background-lane", "headroom-command-preflight", "headroom-health-audit", "headroom-proxy-start"):

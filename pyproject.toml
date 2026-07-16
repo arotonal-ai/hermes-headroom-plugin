@@ -48,7 +48,7 @@ where = ["src"]
 hermes_headroom_plugin = ["skills/*/SKILL.md", "data/systemd/*.template", "companions/llm-monitor/*"]
 
 [tool.setuptools.data-files]
-"share/doc/hermes-headroom-plugin" = ["docs/portable-core.md"]
+"share/doc/hermes-headroom-plugin" = ["docs/portable-core.md", "docs/MIGRATION-v0.4.md"]
 
 [tool.pytest.ini_options]
 norecursedirs = ["qa", "release-candidate-runs", "context-economy-loop-gate-runs", "build", "dist", ".git"]
