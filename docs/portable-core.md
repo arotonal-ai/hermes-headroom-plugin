@@ -20,8 +20,10 @@ Hermes common LLM request boundary (explicit opt-in)
 CCR marker
   -> headroom_retrieve
   -> loopback Headroom /v1/retrieve
-  -> exact cached source while the marker is live
+  -> complete exact cached source while the marker is live
 ```
+
+Retrieval is hash-only. The plugin sends exactly `{"hash": "<ccr-hash>"}` and does not expose a provider-side focus parameter. Any future bounded slicing must be a separate deterministic capability and must not weaken the exact-retrieval contract.
 
 The primary model/provider route stays direct. Provider-proxy routing is experimental and must not be enabled by this installer. `context_reduction.llm_request_middleware` is a separate opt-in safety net for eligible legacy/bypassed tool results at Hermes's native post-build/pre-transport middleware boundary; it does not rewrite routing, auth, headers, tools, tool arguments, system/user prompts, signatures, images, or streaming controls.
 
@@ -43,7 +45,7 @@ The primary model/provider route stays direct. Provider-proxy routing is experim
 | First-turn availability hint | off |
 | `llm-monitor` companion | not installed unless explicitly requested |
 
-Environment variables or `context_reduction` configuration may override report retention. Runtime overrides must be explicit installer arguments or environment variables and recorded in deployment evidence.
+Core plugin configuration resolves once into a typed effective contract with this precedence: explicit function override, environment, `context_reduction` YAML, then portable defaults. Legacy YAML aliases are accepted only at that resolver boundary. Environment variables or `context_reduction` configuration may override report retention. Runtime overrides must be explicit installer arguments or environment variables and recorded in deployment evidence.
 
 ## Storage contract
 

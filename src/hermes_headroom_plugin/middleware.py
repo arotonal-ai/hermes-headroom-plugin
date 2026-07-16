@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .config import resolve_effective_config
 from .proxy import compress_messages, hermes_home, load_context_reduction_config, readyz
 from .retention import maybe_prune_reports
 
@@ -147,9 +148,7 @@ def _event_log_path() -> Path:
 
 def _event_log_max_bytes() -> int:
     try:
-        cfg = load_context_reduction_config()
-        value = cfg.get("event_log_max_bytes", cfg.get("events_max_bytes", DEFAULT_EVENT_LOG_MAX_BYTES))
-        max_bytes = int(value)
+        max_bytes = resolve_effective_config(raw_config=load_context_reduction_config()).event_log_max_bytes
     except Exception:
         max_bytes = DEFAULT_EVENT_LOG_MAX_BYTES
     return max(64_000, max_bytes)
@@ -169,19 +168,8 @@ def auto_compression_enabled(config: dict[str, Any] | None = None) -> bool:
     Runtime/status/smoke/retrieve remain available when this is false. This is
     the lightweight on-demand mode for expensive owner-cockpit improvement loops.
     """
-    env_value = os.environ.get("HEADROOM_AUTO_COMPRESSION")
-    if env_value is not None:
-        return not _falsey(env_value)
-    cfg = config if isinstance(config, dict) else load_context_reduction_config()
-    mode = str(cfg.get("mode") or cfg.get("compression_mode") or "").strip().lower().replace("-", "_")
-    if mode in {"manual", "on_demand", "ondemand", "off", "disabled"}:
-        return False
-    if mode in {"auto", "automatic", "on", "enabled"}:
-        return True
-    for key in ("auto_compression", "auto_compress", "auto_terminal"):
-        if key in cfg:
-            return not _falsey(cfg.get(key))
-    return True
+    raw = config if isinstance(config, dict) else None
+    return resolve_effective_config(raw_config=raw).auto_compression
 
 
 def llm_request_compression_enabled(config: dict[str, Any] | None = None) -> bool:
@@ -191,19 +179,8 @@ def llm_request_compression_enabled(config: dict[str, Any] | None = None) -> boo
     It mutates only tool-result text, never routing, credentials, system/user
     prompts, tool schemas, tool arguments, or streaming controls.
     """
-    env_value = os.environ.get("HEADROOM_LLM_REQUEST_COMPRESSION")
-    if env_value is not None:
-        return not _falsey(env_value)
-    cfg = config if isinstance(config, dict) else load_context_reduction_config()
-    value = cfg.get("llm_request_middleware")
-    if isinstance(value, dict):
-        mode = str(value.get("mode") or "").strip().lower().replace("-", "_")
-        if mode in {"off", "disabled", "observe", "audit"}:
-            return False
-        if mode in {"tool_results", "on", "enabled", "auto"}:
-            return not _falsey(value.get("enabled", True))
-        return not _falsey(value.get("enabled")) if "enabled" in value else False
-    return not _falsey(value) if value is not None else False
+    raw = config if isinstance(config, dict) else None
+    return resolve_effective_config(raw_config=raw).llm_request_enabled
 
 
 def _rotate_event_log_if_needed(path: Path) -> None:
@@ -1184,7 +1161,7 @@ def _maybe_compress_terminal_below_min_aggregate(
         f"  source_path: {source_path}\n"
         f"  marker: {marker}\n"
         "contract: compressed body is intermediate only; verify material claims against exact source/authorized retrieval before final decisions.\n"
-        f"Use headroom_retrieve(hash='{marker}', query='<focused query>') for exact slices."
+        f"Use headroom_retrieve(hash='{marker}') for the complete exact retained payload."
     )
     final_payload = _shorten(payload)
     aggregate_chars = int(buffer.get("chars") or 0)
@@ -1569,7 +1546,7 @@ def compress_tool_result_for_context(
             f"[Headroom auto-compressed tool result · tool={tool_name} original_chars={len(result)} "
             f"tokens_before={before} tokens_after={after} saved={saved} marker={marker}]\n"
             f"{exact_header}\n"
-            f"Use headroom_retrieve(hash='{marker}', query='<focused query>') for exact slices."
+            f"Use headroom_retrieve(hash='{marker}') for the complete exact retained payload."
         )
     else:
         payload = (

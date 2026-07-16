@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -5,22 +6,33 @@ from hermes_headroom_plugin import benchmark
 
 
 class AdoptionBenchmarkTest(unittest.TestCase):
-    def test_adopt_loop_when_savings_exceed_overhead_and_quality_passes(self):
+    def _runtime_mocks(self, *, tokens_before, tokens_after, tokens_saved):
+        retained = {}
+
         def fake_compress(messages, model="gpt-5.5", proxy_url=None):
+            del model, proxy_url
+            retained["content"] = json.dumps(messages, ensure_ascii=False)
             return {
                 "ok": True,
                 "messages": [{"role": "tool", "content": "<<ccr:abc123,base64,1KB>>"}],
-                "tokens_before": 8000,
-                "tokens_after": 800,
-                "tokens_saved": 7200,
+                "tokens_before": tokens_before,
+                "tokens_after": tokens_after,
+                "tokens_saved": tokens_saved,
             }
 
+        def fake_retrieve(marker, proxy_url=None):
+            del marker, proxy_url
+            return {"success": True, "result": {"original_content": retained["content"]}}
+
+        return fake_compress, fake_retrieve
+
+    def test_adopt_loop_when_savings_exceed_overhead_and_quality_passes(self):
+        fake_compress, fake_retrieve = self._runtime_mocks(tokens_before=8000, tokens_after=800, tokens_saved=7200)
         with patch("hermes_headroom_plugin.benchmark.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.benchmark.compress_messages", fake_compress
-        ), patch(
-            "hermes_headroom_plugin.benchmark.retrieve",
-            side_effect=lambda marker, query="", proxy_url=None: {"success": True, "result": {"original_content": query}},
-        ), patch("hermes_headroom_plugin.benchmark.resolve_proxy_url", return_value="http://127.0.0.1:28787"):
+        ), patch("hermes_headroom_plugin.benchmark.retrieve", fake_retrieve), patch(
+            "hermes_headroom_plugin.benchmark.resolve_proxy_url", return_value="http://127.0.0.1:28787"
+        ):
             report = benchmark.run_benchmark(benchmark.BenchmarkConfig(samples=1, min_net_saved_chars=1000))
         self.assertEqual(report["decision"], "ADOPT_LOOP")
         self.assertEqual(report["status"], "RUNTIME_FULL")
@@ -28,21 +40,12 @@ class AdoptionBenchmarkTest(unittest.TestCase):
         self.assertGreater(report["metrics"]["net_saved_chars"], 1000)
 
     def test_compression_only_when_loop_overhead_is_too_high(self):
-        def fake_compress(messages, model="gpt-5.5", proxy_url=None):
-            return {
-                "ok": True,
-                "messages": [{"role": "tool", "content": "<<ccr:abc123,base64,1KB>>"}],
-                "tokens_before": 1000,
-                "tokens_after": 900,
-                "tokens_saved": 100,
-            }
-
+        fake_compress, fake_retrieve = self._runtime_mocks(tokens_before=1000, tokens_after=900, tokens_saved=100)
         with patch("hermes_headroom_plugin.benchmark.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.benchmark.compress_messages", fake_compress
-        ), patch(
-            "hermes_headroom_plugin.benchmark.retrieve",
-            side_effect=lambda marker, query="", proxy_url=None: {"success": True, "result": {"original_content": query}},
-        ), patch("hermes_headroom_plugin.benchmark.resolve_proxy_url", return_value="http://127.0.0.1:28787"):
+        ), patch("hermes_headroom_plugin.benchmark.retrieve", fake_retrieve), patch(
+            "hermes_headroom_plugin.benchmark.resolve_proxy_url", return_value="http://127.0.0.1:28787"
+        ):
             report = benchmark.run_benchmark(benchmark.BenchmarkConfig(samples=1, min_net_saved_chars=999999))
         self.assertEqual(report["decision"], "COMPRESSION_ONLY")
         self.assertEqual(report["quality"], "pass")

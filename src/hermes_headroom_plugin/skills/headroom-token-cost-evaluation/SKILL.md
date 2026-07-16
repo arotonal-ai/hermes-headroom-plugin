@@ -177,7 +177,7 @@ When you see a CCR marker such as `<<ccr:abc123>>` or `<<ccr:abc123,base64,4.5KB
 
 1. Extract the hash after `ccr:`.
 2. Call `headroom_retrieve` with that hash.
-3. If available, pass a focused query to retrieve only relevant parts.
+3. Treat the returned payload as the complete exact retained content for that hash.
 4. Verify final claims against retrieved exact content or retained exact source.
 5. Do not compress retrieval output again; marker loops are possible.
 

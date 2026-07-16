@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.4.0 — unreleased
+
+- Make CCR retrieval hash-only across the tool schema, proxy payload, smoke/benchmark paths, bundled skill, docs, and release-candidate replay.
+- Add provider-neutral typed reduction contracts and fake-provider contract coverage.
+- Add one typed effective configuration resolver with explicit override → environment → YAML → default precedence and legacy aliases at the resolver boundary.
+- Preserve loopback-first endpoint validation, exact/protected behavior, direct provider routing, and copy-on-write fail-open behavior.
+
 ## v0.3.21 — 2026-07-15
 
 - Add an opt-in, provider-agnostic `llm_request` safety net at Hermes's native post-build/pre-transport boundary.

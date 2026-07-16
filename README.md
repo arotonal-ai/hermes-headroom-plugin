@@ -10,6 +10,8 @@
 
 Use it when a Hermes instance needs a conservative bridge to Headroom: install the Hermes plugin surface first, then install or point it at a local Headroom runtime for actual compression. The plugin **does not compress by itself**; it calls the configured Headroom proxy for `/v1/compress`, `/v1/retrieve`, stats, and smoke tests. Without that runtime it is limited to install/status/readiness surfaces and fails open to exact outputs.
 
+`headroom_retrieve` is deliberately **hash-only**: it sends exactly the CCR hash to `/v1/retrieve` and returns the complete exact retained payload while that marker remains live. Focused slicing is not part of the Headroom retrieval contract; callers that need a bounded view must apply a separate deterministic operation without presenting it as exact hash retrieval.
+
 ```bash
 hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
 hermes gateway restart   # or /new in an active session

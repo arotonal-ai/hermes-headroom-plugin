@@ -62,7 +62,7 @@ class RealProxyQualitySmokeTest(unittest.TestCase):
         if markers:
             self.assertIn("Headroom auto-compressed tool result", reduced)
             self.assertIn("classification: orchestration_fanin", reduced)
-            retrieved = retrieve(markers[0], query=sentinel)
+            retrieved = retrieve(markers[0])
             self.assertTrue(retrieved.get("success", "error" not in retrieved), retrieved)
             self.assertIn(sentinel, str(retrieved))
         else:

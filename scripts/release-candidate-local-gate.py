@@ -451,7 +451,7 @@ source_has_sentinel = bool(source_path and source_path.exists() and {case['senti
 retrieve = {{}}
 retrieve_has_sentinel = False
 if marker:
-    retrieve = json.loads(handle_headroom_retrieve({{'hash': marker, 'query': {case['sentinel']!r}}}))
+    retrieve = json.loads(handle_headroom_retrieve({{'hash': marker}}))
     retrieve_has_sentinel = {case['sentinel']!r} in json.dumps(retrieve, ensure_ascii=False)
 out = {{
   'name': {case['name']!r},
