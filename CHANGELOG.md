@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.1 — 2026-07-18
+
 - Add an owner/agent actionable `after-install.md`, document the deterministic native Git-installed plugin path, and clarify that active savings begin only after the official PyPI Headroom runtime passes smoke; cloning upstream source is not required.
 - Refresh canonical upstream repository/docs links and record a non-blocking, single-host `headroom-ai==0.32.0` runtime smoke PASS without promoting the certified `0.31.0` multi-OS pin.
 - Replace ambiguous primary `/headroom on` guidance with platform-aware, read-only `/headroom setup`; retain `on` as an explicit legacy alias and never install dependencies or start daemons from the slash command.
