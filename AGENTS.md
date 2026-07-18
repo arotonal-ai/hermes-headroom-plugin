@@ -57,7 +57,9 @@ python scripts\install-production-runtime.py
 py -3 scripts\install-production-runtime.py
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs the certified runtime pair `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`, defaults CCR recovery to memory with a 1,800-second TTL, starts the loopback proxy as `headroom proxy --host 127.0.0.1 --port 28787`, verifies `/readyz`, and runs real compress → retrieve smoke. The companion and visible hooks are opt-in. Manual fallback is allowed only if it performs those same checks. The canonical contract is `docs/portable-core.md`.
+The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs the certified runtime pair `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`, defaults CCR recovery to memory with a 1,800-second TTL, starts the loopback proxy as `headroom proxy --host 127.0.0.1 --port 8787`, verifies `/readyz`, and runs real compress → retrieve smoke. The companion and visible hooks are opt-in. Manual fallback is allowed only if it performs those same checks. The canonical contract is `docs/portable-core.md`.
+
+For a clean-instance canary, assert that `127.0.0.1:8787` is free before installation and that the started proxy belongs to the target run. A healthy proxy owned by another user or Hermes instance is not clean-instance evidence. Concurrent same-host canaries must use distinct free loopback ports and pass the matching `HEADROOM_PROXY_URL` explicitly.
 
 For Linux gateway/default-cockpit deployments, use durable service mode:
 

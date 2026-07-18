@@ -80,10 +80,10 @@ Manual fallback on Unix/macOS/WSL:
 python3 -m venv ~/.cache/hermes-headroom-venv-0.31.0
 ~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install --upgrade pip
 ~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install 'headroom-ai[proxy]==0.31.0' 'litellm==1.91.3'
-HEADROOM_CCR_BACKEND=memory HEADROOM_CCR_TTL_SECONDS=1800 ~/.cache/hermes-headroom-venv-0.31.0/bin/headroom proxy --host 127.0.0.1 --port 28787 --no-telemetry
+HEADROOM_CCR_BACKEND=memory HEADROOM_CCR_TTL_SECONDS=1800 ~/.cache/hermes-headroom-venv-0.31.0/bin/headroom proxy --host 127.0.0.1 --port 8787 --no-telemetry
 ```
 
-Manual Windows fallback: use `py -3 -m venv $env:USERPROFILE\.cache\hermes-headroom-venv-0.31.0`, install `headroom-ai[proxy]==0.31.0` and `litellm==1.91.3` with the venv Python, set `HEADROOM_CCR_BACKEND=memory` and `HEADROOM_CCR_TTL_SECONDS=1800`, then run `Scripts\headroom.exe proxy --host 127.0.0.1 --port 28787 --no-telemetry`.
+Manual Windows fallback: use `py -3 -m venv $env:USERPROFILE\.cache\hermes-headroom-venv-0.31.0`, install `headroom-ai[proxy]==0.31.0` and `litellm==1.91.3` with the venv Python, set `HEADROOM_CCR_BACKEND=memory` and `HEADROOM_CCR_TTL_SECONDS=1800`, then run `Scripts\headroom.exe proxy --host 127.0.0.1 --port 8787 --no-telemetry`.
 
 ### Windows Git Bash / MSYS
 
@@ -146,24 +146,24 @@ The plugin has no independent CCR cache. The Headroom runtime/proxy owns CCR sto
 Default plugin/runtime target:
 
 ```text
-http://127.0.0.1:28787
+http://127.0.0.1:8787
 ```
 
 The `[HR✓]` / `[HR!]` final-answer marker is disabled by default. Enable it with `context_reduction.visible_status_marker: true` or `HEADROOM_VISIBLE_STATUS_MARKER=1`. It reports runtime readiness only, not per-message compression.
 
-This integration intentionally uses `28787` for the Hermes-facing Headroom proxy. Upstream Headroom may have a different CLI default; do not rely on that default. Start production runtime with `headroom proxy --host 127.0.0.1 --port 28787` or use `scripts/install-production-runtime.py`, which passes the port explicitly.
+This integration uses upstream Headroom 0.31's default loopback port, `8787`, and passes it explicitly for reproducibility. Start production runtime with `headroom proxy --host 127.0.0.1 --port 8787` or use `scripts/install-production-runtime.py`. For concurrent same-host instances, allocate a distinct free loopback port and set `HEADROOM_PROXY_URL` to that exact endpoint; a ready proxy owned by another instance is not clean-install evidence.
 
 To point Hermes at another local/controlled endpoint:
 
 ```bash
-export HEADROOM_PROXY_URL="http://127.0.0.1:28787"
+export HEADROOM_PROXY_URL="http://127.0.0.1:8787"
 ```
 
 Or set Hermes config:
 
 ```yaml
 context_reduction:
-  proxy_url: http://127.0.0.1:28787
+  proxy_url: http://127.0.0.1:8787
 ```
 
 Restart/fresh-session before rechecking `/headroom status` and `/headroom on`.

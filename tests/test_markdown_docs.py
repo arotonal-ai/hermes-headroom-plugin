@@ -33,7 +33,7 @@ class MarkdownDocsTest(unittest.TestCase):
             "python scripts/install-production-runtime.py",
             "python3 -m venv ~/.cache/hermes-headroom-venv",
             "py -3 -m venv $env:USERPROFILE\\.cache\\hermes-headroom-venv",
-            "headroom proxy --host 127.0.0.1 --port 28787",
+            "headroom proxy --host 127.0.0.1 --port 8787",
             "/headroom smoke",
         ]
         for needle in required:

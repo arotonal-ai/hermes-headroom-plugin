@@ -74,7 +74,7 @@ second provider and an injection/selection gate are implemented and tested.
 | Headroom runtime | `headroom-ai[proxy]==0.31.0` |
 | LiteLLM transitive runtime | `litellm==1.91.3` (portable wheel constraint) |
 | Runtime venv | `~/.cache/hermes-headroom-venv-0.31.0` |
-| Bind | `127.0.0.1:28787` |
+| Bind | `127.0.0.1:8787` |
 | CCR backend | `memory` |
 | CCR TTL | `1800` seconds |
 | Report retention | `14` days |
@@ -85,6 +85,8 @@ second provider and an injection/selection gate are implemented and tested.
 | `llm-monitor` companion | not installed unless explicitly requested |
 
 Core plugin configuration resolves once into a typed effective contract with this precedence: explicit function override, environment, `context_reduction` YAML, then portable defaults. Legacy `host`/`port`, `auto_compress`, `auto_terminal`, `compression_mode`, and `events_max_bytes` aliases are accepted only at that resolver boundary and are reported by `/headroom status`; `HEADROOM_HOST`/`HEADROOM_PORT` remain deprecated endpoint shims. Environment variables or `context_reduction` configuration may override report retention. Runtime overrides must be explicit installer arguments or environment variables and recorded in deployment evidence. The complete mapping is in the README configuration matrix.
+
+Port `8787` is the canonical portable/default-port contract. A canary that claims to verify this default must first prove the port is unoccupied and then bind the resulting proxy process to that run. Concurrent same-host canaries are a separate contract: they must lease distinct free loopback ports and pass matching explicit endpoint overrides. Reusing a ready proxy owned by another user or instance is not isolation evidence.
 
 ## Attribution invariant
 

@@ -18,7 +18,7 @@ try:
 except Exception:  # pragma: no cover - package still works with env/defaults.
     yaml = None
 
-DEFAULT_PROXY_URL = "http://127.0.0.1:28787"
+DEFAULT_PROXY_URL = "http://127.0.0.1:8787"
 DEFAULT_MIN_TOOL_RESULT_CHARS = 8_000
 DEFAULT_EVENT_LOG_MAX_BYTES = 5_000_000
 DEFAULT_LLM_REQUEST_CACHE_MAX = 2_048
@@ -139,7 +139,7 @@ def resolve_effective_config(
     configured_url = str(configured("proxy_url", default=DEFAULT_PROXY_URL) or DEFAULT_PROXY_URL).strip().rstrip("/")
     parsed = urlparse(configured_url)
     base_host = str(configured("host", default=parsed.hostname or "127.0.0.1") or "127.0.0.1").strip()
-    base_port = _bounded_int(configured("port", default=parsed.port or 28787), default=28787, minimum=1, maximum=65535)
+    base_port = _bounded_int(configured("port", default=parsed.port or 8787), default=8787, minimum=1, maximum=65535)
 
     # Explicit endpoint overrides are top priority. Environment keeps the
     # historical host/port-over-URL behavior for compatibility.

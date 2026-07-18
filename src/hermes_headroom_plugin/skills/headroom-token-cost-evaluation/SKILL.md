@@ -107,6 +107,8 @@ py -3 scripts\install-production-runtime.py
 
 The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs `headroom-ai[proxy]==0.31.0`, defaults CCR recovery to memory with a 1,800-second TTL, starts the loopback proxy, verifies `/readyz`, and runs real compress → retrieve smoke. `llm-monitor` is opt-in. Manual install is acceptable only if the same checks pass. For Linux gateway/default-cockpit durability, use `python scripts/install-production-runtime.py --systemd-user` and require `RUNTIME_FULL_DURABLE` plus `hermes-context-reduction.service` enabled + active before claiming survival across gateway restart/logout. See `docs/portable-core.md` for retention and rollback.
 
+Clean-instance evidence must bind the proxy to the target run: verify the default `127.0.0.1:8787` is free before a canonical default-port canary, or allocate a distinct free loopback port and pass the same `HEADROOM_PROXY_URL` for concurrent same-host runs. Never count another user's ready proxy as a clean runtime PASS.
+
 Then verify in Hermes:
 
 ```text
@@ -133,7 +135,7 @@ The Hermes plugin and upstream Headroom runtime are separate layers. The plugin 
 |---|---|---|
 | Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | registers `headroom_retrieve`, `/headroom`, bundled skill, visible readiness marker, and fail-open middleware; does not perform compression locally. |
 | Upstream Headroom package | `headroom-ai[proxy]` | provides the compressor/retriever service used by the plugin. |
-| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | handles `/readyz`, `/v1/compress`, `/v1/retrieve`, runtime-owned CCR cache/store stats, and real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
+| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 8787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | handles `/readyz`, `/v1/compress`, `/v1/retrieve`, runtime-owned CCR cache/store stats, and real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
 
 Use the production installer or cross-platform smoke helpers before claiming runtime capability:
 

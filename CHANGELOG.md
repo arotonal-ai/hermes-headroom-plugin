@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Align the portable plugin/runtime endpoint with upstream Headroom 0.31's default loopback port `8787`; keep explicit per-instance overrides for concurrent same-host labs instead of reserving the previous integration-specific port `28787`.
 - Modernize GitHub Actions workflows to Node.js 24-compatible majors.
 - Keep the certified LiteLLM pin blocking while adding a separate monthly, non-blocking multi-OS canary for newer allowed LiteLLM releases.
 - Record resolved Headroom/LiteLLM versions in runtime smoke evidence and correct compatibility docs that still described unpinned dependencies as the production default.

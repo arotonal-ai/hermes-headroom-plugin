@@ -129,7 +129,7 @@ Manual fallback:
 python3 -m venv ~/.cache/hermes-headroom-venv-0.31.0
 ~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install --upgrade pip
 ~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install 'headroom-ai[proxy]==0.31.0'
-HEADROOM_CCR_BACKEND=memory HEADROOM_CCR_TTL_SECONDS=1800 ~/.cache/hermes-headroom-venv-0.31.0/bin/headroom proxy --host 127.0.0.1 --port 28787 --no-telemetry
+HEADROOM_CCR_BACKEND=memory HEADROOM_CCR_TTL_SECONDS=1800 ~/.cache/hermes-headroom-venv-0.31.0/bin/headroom proxy --host 127.0.0.1 --port 8787 --no-telemetry
 ```
 
 Then in Hermes:
@@ -318,22 +318,22 @@ headroom-background-lane --lane build -- npm test
 Default plugin proxy URL:
 
 ```text
-http://127.0.0.1:28787
+http://127.0.0.1:8787
 ```
 
-This is the Hermes plugin/runtime convention used by this integration. Do not rely on the upstream `headroom proxy` default port; production commands pass `--port 28787` explicitly so `/headroom status`, `tool_execution`, and `/headroom smoke` all target the same endpoint.
+Port `8787` is the upstream Headroom 0.31 loopback default and the portable default for this integration. Production commands still pass `--port 8787` explicitly so `/headroom status`, `tool_execution`, and `/headroom smoke` share one endpoint. For concurrent Hermes instances on the same host, assign each isolated run a different free loopback port and pass the same endpoint through `HEADROOM_PROXY_URL`; do not treat another user's healthy proxy as clean-instance evidence.
 
 Environment override:
 
 ```bash
-export HEADROOM_PROXY_URL="http://127.0.0.1:28787"
+export HEADROOM_PROXY_URL="http://127.0.0.1:8787"
 ```
 
 Hermes config override:
 
 ```yaml
 context_reduction:
-  proxy_url: http://127.0.0.1:28787
+  proxy_url: http://127.0.0.1:8787
 ```
 
 Effective configuration is resolved once with `explicit override → environment → context_reduction YAML → portable default` precedence.
@@ -378,7 +378,7 @@ flowchart LR
   P --> C["/headroom status, smoke, audit, on"]
   P --> T["headroom_retrieve tool"]
   P --> M["tool_execution middleware for bulky intermediate lane results"]
-  C --> X["Headroom proxy on 127.0.0.1:28787"]
+  C --> X["Headroom proxy on 127.0.0.1:8787"]
   M --> X
   T --> X
   X --> U["upstream headroom-ai"]
