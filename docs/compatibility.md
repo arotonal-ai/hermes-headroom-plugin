@@ -1,10 +1,15 @@
 # Compatibility
 
-This page separates **certified support** from **experimental monitoring**. The portable-core installer and blocking smoke default to the certified pair `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`; runtime certification still requires a real proxy smoke, not just a successful pip install. Future versions remain explicit non-blocking canaries until promoted.
+This page separates the **published certified baseline** from a **release candidate** and from non-blocking future monitoring.
 
-## Certified runtime matrix
+- Published `v0.4.1`: `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`.
+- Unreleased `v0.5.0` candidate: `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3`, managed through `headroom-runtime`.
 
-Certified means the repository's Runtime Smoke workflow installed `headroom-ai[proxy]`, started a loopback Headroom proxy, and verified plugin compress → retrieve sentinel recovery.
+The v0.5 pair must not be called multi-OS certified until its blocking setup → status → doctor → uninstall matrix passes on Ubuntu, macOS, and native Windows. A successful dependency install or foreground proxy smoke alone is insufficient.
+
+## Published v0.4.x baseline
+
+The v0.4 Runtime Smoke workflow installed the runtime, started a loopback proxy, and verified plugin compress → retrieve sentinel recovery.
 
 Evidence baseline:
 
@@ -12,45 +17,63 @@ Evidence baseline:
 - Release: [`v0.4.0`](https://github.com/arotonal-ai/hermes-headroom-plugin/releases/tag/v0.4.0)
 - Commit: `c047be05f2d29f784cd4e91b7711f6b1a0210706`
 
-| OS | Python | Plugin CI | Runtime Smoke | Status |
+| OS | Python | Plugin CI | Foreground runtime smoke | Published status |
 |---|---:|---:|---:|---|
-| Ubuntu | 3.11 | ✅ | ✅ | certified |
-| Ubuntu | 3.12 | — | ✅ | certified |
-| macOS | 3.11 | ✅ | ✅ | certified |
-| macOS | 3.12 | — | ✅ | certified |
-| Windows native | 3.11 | ✅ | ✅ | certified |
-| Windows native | 3.12 | — | ✅ | certified |
+| Ubuntu | 3.11 | ✅ | ✅ | v0.4 certified |
+| Ubuntu | 3.12 | — | ✅ | v0.4 certified |
+| macOS | 3.11 | ✅ | ✅ | v0.4 certified |
+| macOS | 3.12 | — | ✅ | v0.4 certified |
+| Windows native | 3.11 | ✅ | ✅ | v0.4 certified |
+| Windows native | 3.12 | — | ✅ | v0.4 certified |
 | WSL2 | target evidence required | 🟡 expected | 🟡 expected | not certified here |
 | Termux | target evidence required | 🟡 expected | 🟡 expected | not certified here |
 
+## v0.5 runtime-manager candidate
+
+Headroom `0.32.0` is the pinned v0.5 candidate. The direct upstream user-scope apply path was rejected because a real canary wrote persistent `HEADROOM_*` blocks to `.bashrc`, `.zshrc`, and `.profile` despite manual provider mode and no provider targets.
+
+The replacement manager uses the pinned upstream manifest/native-supervisor implementation while requiring:
+
+```json
+{"provider_mode":"manual","targets":[],"mutations":[]}
+```
+
+Local Linux evidence on Python 3.11.15 passed both the native Git launcher and a clean base-wheel entry point:
+
+- setup returned `RUNTIME_FULL_DURABLE`;
+- status and doctor returned exit `0`;
+- compress → retrieve recovered the sentinel;
+- the saved upstream manifest retained `mutations=[]` and matched the complete profile/port/scope/supervisor/environment/proxy-argument identity contract;
+- shell-profile SHA-256 values were unchanged;
+- uninstall removed the unit, listener, artifacts, and managed runtime root;
+- the existing owner runtime remained healthy and unchanged.
+
+Sanitized local evidence: [`docs/evidence/headroom-032-runtime-manager-local-canary-20260718.json`](evidence/headroom-032-runtime-manager-local-canary-20260718.json).
+
+That is strong one-host evidence, not multi-OS certification. The blocking `.github/workflows/runtime-smoke.yml` matrix must still pass the same lifecycle canary on Ubuntu, macOS, and Windows for Python 3.11 and 3.12 before v0.5 release.
+
 ## Experimental future runtimes
 
-Current upstream release at the 2026-07-18 audit is `headroom-ai==0.32.0` ([official release](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.32.0)). A non-blocking Linux/Python 3.11.15 canary with the existing `litellm==1.91.3` constraint passed real proxy readiness and plugin compress → retrieve sentinel recovery. This is one-host evidence only; `0.32.0` remains experimental until the blocking Ubuntu/macOS/Windows Runtime Smoke matrix and release gate pass.
-
-Evidence handle: [`docs/evidence/headroom-032-local-canary-20260718.json`](evidence/headroom-032-local-canary-20260718.json).
-
-Python 3.13/3.14, future `headroom-ai` ranges, and newer LiteLLM releases are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. The LiteLLM lane holds Headroom at `0.31.0`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
+Python 3.13/3.14, future `headroom-ai` ranges, and newer LiteLLM releases are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. The latest-LiteLLM lane holds Headroom at `0.32.0`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
 
 That workflow is intentionally **non-blocking**:
 
 - it may pass or fail without changing certified support;
-- failures should be treated as early drift signals, not regressions in supported 3.11/3.12 paths;
-- the certified `litellm==1.91.3` path remains blocking and unchanged when the latest-dependency lane fails;
-- promotion to certified support requires a normal Runtime Smoke matrix update, green runs, and a docs/changelog update.
+- failures are early drift signals, not regressions in supported 3.11/3.12 paths;
+- the certified/candidate `litellm==1.91.3` path remains blocking and unchanged when a latest-dependency lane fails;
+- promotion requires a normal blocking lifecycle matrix, release gate, and docs/changelog update.
 
 | Runtime | Current posture | Promotion gate |
 |---|---|---|
-| Python 3.13 | experimental monitor | Runtime Smoke PASS on Ubuntu/macOS/Windows and no known upstream native dependency failures |
-| Python 3.14 | experimental monitor | Runtime Smoke PASS on Ubuntu/macOS/Windows and no known upstream native dependency failures |
-| Upstream `headroom-ai[proxy]` latest | experimental monitor | blocking dependency smoke + Runtime Smoke PASS before changing the certified exact version |
-| LiteLLM latest allowed `<2.0` | experimental monthly monitor | repeated Runtime Smoke PASS on Ubuntu/macOS/Windows, advisory review, and blocking release-candidate gate before changing the certified pin |
+| Python 3.13 | experimental monitor | lifecycle PASS on Ubuntu/macOS/Windows and no known upstream native dependency failures |
+| Python 3.14 | experimental monitor | lifecycle PASS on Ubuntu/macOS/Windows and no known upstream native dependency failures |
+| Upstream `headroom-ai[proxy]` latest | experimental monitor | blocking dependency + manager lifecycle PASS before changing the exact pin |
+| LiteLLM latest allowed `<2.0` | experimental monthly monitor | repeated multi-OS PASS, advisory review, and blocking release-candidate gate |
 
-## Policy for runtime versions
+## Runtime-version policy
 
-Use evidence before changing certified pins:
-
-1. Keep plugin install/load independent from the separate proxy runtime; only install/status can pass without it, while active compression requires it.
-2. Default production install to the exact certified pair `headroom-ai[proxy]==0.31.0` and `litellm==1.91.3`.
-3. Use `--spec` / `HEADROOM_AI_SPEC` and `--litellm-spec` / `HEADROOM_LITELLM_SPEC` only as explicit incident, target-host diagnostic, or non-blocking canary overrides until promoted.
-4. Promote or demote support only after **dependency smoke** and **real proxy runtime smoke** pass/fail with evidence.
-5. Document target-host drift honestly, especially on native Windows where global Python aliases can differ from the Hermes Python.
+1. Keep plugin install/load independent from the separate proxy runtime; active compression requires a healthy loopback proxy.
+2. Keep runtime versions exact in release paths. The v0.5 candidate pair is `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3`.
+3. Treat `--headroom-spec` / `HEADROOM_AI_SPEC` and `--litellm-spec` / `HEADROOM_LITELLM_SPEC` overrides as explicit incident, target-host diagnostic, or non-blocking canary controls.
+4. Promote or demote support only from dependency, real lifecycle, readiness, sentinel-recovery, and rollback evidence.
+5. Document target-host drift honestly, especially on native Windows where Python aliases and Task Scheduler policy may differ from CI.

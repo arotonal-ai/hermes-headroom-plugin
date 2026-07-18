@@ -8,7 +8,7 @@ Install and enable the Hermes Headroom plugin without exposing secrets, copying 
 
 ## Platform note
 
-Linux, macOS, and native Windows are covered by this repo's CI/runtime smoke paths. WSL/Termux are expected when Hermes, git, and Python are available but still require target evidence. Native Windows should use native Hermes commands and Python helper scripts; Bash helpers require Git Bash/WSL.
+Linux, macOS, and native Windows are covered by this repo's CI/runtime smoke paths. WSL/Termux are expected when Hermes, git, and Python are available but still require target evidence. Native Windows should use native Hermes commands and the Python launcher; Bash helpers require Git Bash/WSL. Durable lifecycle uses the upstream user Task Scheduler adapter.
 
 ## Commands
 
@@ -24,39 +24,39 @@ hermes gateway restart || true
 
 If operating inside an active Hermes chat instead of gateway shell, start a fresh session with `/new` after install.
 
-Production runtime — required for `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression. Native Hermes install clones the full repo; use its deterministic installed path:
+Production runtime — required for `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression. Native Hermes install clones the full repo; invoke its deterministic launcher:
 
 ```bash
 PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
-python3 "$PLUGIN_DIR/scripts/install-production-runtime.py" --systemd-user  # Linux durable
-# Omit --systemd-user for macOS/process-level RUNTIME_FULL.
+python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" setup
 ```
-
-Linux durable gateway/default-cockpit runtime:
-
-```bash
-python scripts/install-production-runtime.py --systemd-user
-systemctl --user is-enabled hermes-context-reduction.service
-systemctl --user is-active hermes-context-reduction.service
-```
-
-This must return `RUNTIME_FULL_DURABLE` before claiming restart/logout durability.
 
 Windows PowerShell:
 
 ```powershell
-python scripts\install-production-runtime.py
-# or:
-py -3 scripts\install-production-runtime.py
+$PluginDir = if ($env:HERMES_HOME) { "$env:HERMES_HOME\plugins\headroom_retrieve" } else { "$HOME\.hermes\plugins\headroom_retrieve" }
+py -3 "$PluginDir\scripts\headroom-runtime.py" setup
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs `headroom-ai[proxy]==0.31.0` with portable constraint `litellm==1.91.3`, defaults CCR to memory with a 1,800-second TTL, starts the loopback proxy, verifies `/readyz`, and runs real compress → retrieve smoke. The LiteLLM pin prevents macOS/Windows from falling back to a Rust source build after `1.92.0` dropped those wheels. `llm-monitor` is opt-in via `--with-llm-monitor-companion` or `--companion-only`. Manual install is acceptable only if the same checks pass. See [portable-core.md](portable-core.md).
-
-No-restart companion-only validation:
+Wheel environments use the packaged entry point:
 
 ```bash
-python scripts/install-production-runtime.py --companion-only --hermes-home /tmp/hermes-home --json
+headroom-runtime setup
 ```
+
+Before mutation, an agent may run `setup --dry-run --json`. The manager installs official `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3` in an isolated versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct 0.32.0 apply because that path writes persistent shell blocks, then verifies `/readyz` and real compress → retrieve smoke. No provider API key or global routing change is required.
+
+Status, full verification, and rollback:
+
+```bash
+headroom-runtime status --json
+headroom-runtime doctor --json
+headroom-runtime uninstall --json
+```
+
+The native Git launcher accepts the same subcommands. Claim `RUNTIME_FULL_DURABLE` only when `doctor` returns exit `0` with upstream status, readiness, and sentinel recovery PASS. See [runtime-manager.md](runtime-manager.md).
+
+The old `install-production-runtime.py` remains only for v0.4 compatibility and optional `llm-monitor` companion operations.
 
 ## Verify
 
@@ -102,17 +102,17 @@ PARTIAL if:
 
 FULL if:
 
-- `scripts/install-production-runtime.py` returns `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval;
+- `headroom-runtime doctor --json` returns `RUNTIME_FULL_DURABLE`;
 - install succeeds and `/headroom smoke` returns PASS with sentinel retrieval;
 - runtime-dependent result-compression checks preserve exact/blocked tools such as `read_file`, `patch`, and `git diff`.
 
-DURABLE on Linux if:
+DURABLE if:
 
-- `scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`;
-- `hermes-context-reduction.service` is enabled + active;
-- `/headroom smoke` still returns PASS after gateway restart/logout.
+- `headroom-runtime doctor --json` returns `RUNTIME_FULL_DURABLE`;
+- the upstream native user lifecycle is installed for the target platform;
+- `/headroom smoke` still returns PASS after the relevant restart/login lifecycle.
 
-Windows native `FULL` is certified by this repo's Runtime Smoke workflow for Python 3.11/3.12, but still require target-host evidence when diagnosing a specific machine. Python 3.13/3.14 are experimental monitor paths, not certified support. Durable Windows supervision is not bundled; use an operator-approved Task Scheduler/service wrapper if restart durability is required.
+Windows native runtime smoke is certified for Python 3.11/3.12 only after the blocking v0.5 matrix passes. WSL2/Termux and Python 3.13/3.14 remain target-evidence/experimental lanes.
 
 FAIL if:
 
@@ -156,7 +156,8 @@ python scripts/generate-weekly-savings-table.py --input docs/metrics/data/*.json
 
 ## Rollback
 
-1. Disable or remove `headroom_retrieve`, then reload only the affected Hermes session/gateway if needed.
-2. If durable runtime installation was used, stop/disable only the recorded `hermes-context-reduction.service`, restore or remove its recorded user-unit file, and run `systemctl --user daemon-reload`.
-3. Restore the previous plugin commit/snapshot. Treat the versioned runtime venv as a separate artifact; remove or replace it only after confirming no deployment references it.
-4. Re-run plugin load/status and, when runtime capability is retained, compress → retrieve smoke. See `docs/portable-core.md` for storage-backend and SQLite recovery caveats.
+1. Run `headroom-runtime uninstall --json` or the native Git launcher with `uninstall`.
+2. On `UNINSTALL_PARTIAL`, preserve manager files and inspect private logs; do not delete supervisor artifacts blindly.
+3. Disable or remove `headroom_retrieve`, then reload only the affected Hermes session/gateway if needed.
+4. Restore the previous plugin release and its recorded runtime lifecycle when required.
+5. Re-run plugin load/status and, when runtime capability is retained, compress → retrieve smoke.

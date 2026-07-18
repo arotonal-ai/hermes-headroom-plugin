@@ -7,6 +7,8 @@ REPO = Path(__file__).resolve().parents[1]
 README = REPO / "README.md"
 INSTALL = REPO / "INSTALL.md"
 SKILL = REPO / "src" / "hermes_headroom_plugin" / "skills" / "headroom-token-cost-evaluation" / "SKILL.md"
+RUNTIME_MANAGER = REPO / "docs" / "runtime-manager.md"
+AFTER_INSTALL = REPO / "after-install.md"
 
 
 class MarkdownDocsTest(unittest.TestCase):
@@ -24,16 +26,20 @@ class MarkdownDocsTest(unittest.TestCase):
 
     def test_docs_include_owner_instance_runtime_commands(self):
         combined = "\n".join(
-            p.read_text(encoding="utf-8") for p in [README, INSTALL, SKILL]
+            p.read_text(encoding="utf-8")
+            for p in [README, INSTALL, SKILL, RUNTIME_MANAGER, AFTER_INSTALL]
         )
         required = [
             "hermes plugins install arotonal-ai/hermes-headroom-plugin --enable",
             "hermes gateway restart",
             "/headroom status",
-            "python scripts/install-production-runtime.py",
-            "python3 -m venv ~/.cache/hermes-headroom-venv",
-            "py -3 -m venv $env:USERPROFILE\\.cache\\hermes-headroom-venv",
-            "headroom proxy --host 127.0.0.1 --port 8787",
+            "scripts/headroom-runtime.py",
+            "headroom-runtime setup",
+            "headroom-runtime status --json",
+            "headroom-runtime doctor --json",
+            "headroom-runtime uninstall --json",
+            "headroom-ai[proxy]==0.32.0",
+            "manual provider selection",
             "/headroom smoke",
         ]
         for needle in required:

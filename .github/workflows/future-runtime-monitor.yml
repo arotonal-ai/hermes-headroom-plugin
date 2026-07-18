@@ -15,6 +15,9 @@ on:
     # Monthly non-blocking drift monitor for newer Python runtimes and LiteLLM releases.
     - cron: "37 9 1 * *"
 
+permissions:
+  contents: read
+
 jobs:
   future-runtime-monitor:
     name: future-runtime-monitor (${{ matrix.os }}, py${{ matrix.python-version }})
@@ -82,7 +85,7 @@ jobs:
       - name: Experimental latest LiteLLM proxy + plugin runtime smoke (non-blocking)
         shell: bash
         env:
-          HEADROOM_SPEC: "headroom-ai[proxy]==0.31.0"
+          HEADROOM_SPEC: "headroom-ai[proxy]==0.32.0"
           LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm>=1.86.2,<2.0' }}
         run: |
           set +e

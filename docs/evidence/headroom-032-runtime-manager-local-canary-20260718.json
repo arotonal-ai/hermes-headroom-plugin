@@ -1,0 +1,47 @@
+{
+  "schema": "headroom-runtime-manager-local-evidence-v1",
+  "observed_at": "2026-07-18T20:03:00.005379Z",
+  "decision": "LOCAL_LINUX_CANARY_PASS_NOT_MULTI_OS_CERTIFIED",
+  "candidate": {
+    "plugin_version": "0.5.0",
+    "headroom_spec": "headroom-ai[proxy]==0.32.0",
+    "litellm_spec": "litellm==1.91.3",
+    "python": "3.11.15",
+    "platform": "linux"
+  },
+  "checks": {
+    "setup": true,
+    "status": true,
+    "doctor": true,
+    "complete_manifest_identity": true,
+    "environment_exact": true,
+    "proxy_args_exact": true,
+    "compress_retrieve_sentinel": true,
+    "uninstall": true,
+    "shell_unchanged": true
+  },
+  "manifest": {
+    "provider_mode": "manual",
+    "targets": [],
+    "mutations": [],
+    "runtime_kind": "python",
+    "supervisor_kind": "service",
+    "scope": "user",
+    "host": "127.0.0.1",
+    "backend": "anthropic",
+    "mismatches": []
+  },
+  "rollback": {
+    "listener_stopped": true,
+    "artifacts_removed": true,
+    "supervisor_removed": true,
+    "runtime_root_removed": true
+  },
+  "isolation": {
+    "runtime_root": "ephemeral /tmp root",
+    "profile": "ephemeral unique CI profile",
+    "port": "ephemeral loopback port",
+    "owner_runtime_untouched": true
+  },
+  "promotion_gate": "Blocking Ubuntu/macOS/Windows and Python 3.11/3.12 lifecycle matrix must pass before v0.5.0 release."
+}

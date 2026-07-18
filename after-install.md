@@ -1,41 +1,75 @@
 # Finish Headroom setup
 
-The Hermes plugin is installed, but **real savings are not active until the local Headroom runtime passes smoke**. Hermes cloned this full repository to:
+The Hermes plugin is installed, but **real savings are not active until the local Headroom runtime passes compress → retrieve smoke**.
+
+## Native Hermes Git install
+
+Hermes cloned the full repository to:
 
 ```text
 ${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve
 ```
 
-## Linux gateway: durable runtime
+Linux or macOS:
 
 ```bash
 PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
-python3 "$PLUGIN_DIR/scripts/install-production-runtime.py" --systemd-user
+python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" setup
 ```
 
-## macOS, Linux without systemd, or process-level validation
-
-```bash
-PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
-python3 "$PLUGIN_DIR/scripts/install-production-runtime.py"
-```
-
-## Windows PowerShell
+Windows PowerShell:
 
 ```powershell
 $PluginDir = if ($env:HERMES_HOME) { "$env:HERMES_HOME\plugins\headroom_retrieve" } else { "$HOME\.hermes\plugins\headroom_retrieve" }
-py -3 "$PluginDir\scripts\install-production-runtime.py"
+py -3 "$PluginDir\scripts\headroom-runtime.py" setup
 ```
 
-The installer uses the certified `headroom-ai[proxy]` release from PyPI, the package published by the [official Headroom project](https://github.com/headroomlabs-ai/headroom). Cloning upstream Headroom source is **not** required. It creates an isolated versioned venv, binds only to `127.0.0.1:8787` by default, disables telemetry, checks `/readyz`, and runs a real compress → retrieve smoke.
+## Wheel install
 
-Then reload Hermes and verify:
+```bash
+headroom-runtime setup
+```
+
+The base wheel is enough; setup creates a separate versioned runtime venv.
+
+## Inspect first without changing state
+
+Add `--dry-run --json` to either route:
+
+```bash
+headroom-runtime setup --dry-run --json
+```
+
+## Verify
+
+```bash
+headroom-runtime status --json
+headroom-runtime doctor --json
+```
+
+Then reload Hermes and run:
 
 ```text
 /headroom status
 /headroom smoke
 ```
 
-Expected state: `RUNTIME_FULL` or, on Linux durable mode, `RUNTIME_FULL_DURABLE`. With a healthy runtime, safe eligible-intermediate auto-compression is on by default. If you intentionally skip runtime setup, the plugin remains `RUNTIME_PARTIAL`: status/audit work, but no compression savings occur.
+Expected durable state: `RUNTIME_FULL_DURABLE`.
 
-The setup does not change global model/provider routing and does not require provider API keys.
+The v0.5 candidate manager installs the pinned official `headroom-ai[proxy]==0.32.0` package plus `litellm==1.91.3` in an isolated venv, binds only to `127.0.0.1:8787` by default, disables telemetry, uses manual provider selection with no targets, checks upstream lifecycle/readiness, and runs real compress → retrieve smoke.
+
+Setup does **not** change global model/provider routing and does not require provider API keys. If you skip it, the plugin remains `RUNTIME_PARTIAL`: status/audit work, but no compression savings occur.
+
+## Rollback
+
+```bash
+headroom-runtime uninstall --json
+```
+
+For native Git installs, use the same launcher:
+
+```bash
+python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" uninstall --json
+```
+
+The command preserves runtime files and returns `UNINSTALL_PARTIAL` if upstream removal fails or the listener remains ready. See [`docs/runtime-manager.md`](docs/runtime-manager.md) for the full contract and recovery limits.

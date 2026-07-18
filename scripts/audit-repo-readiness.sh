@@ -15,7 +15,9 @@ required=(
   PRIVACY.md
   ACKNOWLEDGEMENTS.md
   after-install.md
+  MANIFEST.in
   docs/AGENT-INSTALL.md
+  docs/runtime-manager.md
   docs/compatibility.md
   docs/evidence/headroom-032-local-canary-20260718.json
   docs/release-candidate.md
@@ -25,6 +27,7 @@ required=(
   __init__.py
   pyproject.toml
   src/hermes_headroom_plugin/__init__.py
+  src/hermes_headroom_plugin/runtime_manager.py
   src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md
   scripts/install-hermes-plugin.sh
   scripts/verify-hermes-install.sh
@@ -34,6 +37,8 @@ required=(
   scripts/test-headroom-dependency-install.sh
   scripts/test-headroom-dependency-install.py
   scripts/test-headroom-runtime-smoke.py
+  scripts/headroom-runtime.py
+  scripts/test-runtime-manager-lifecycle.py
   scripts/release-candidate-local-gate.py
   scripts/context-economy-loop-gate.py
   scripts/generate-weekly-savings-table.py
@@ -63,15 +68,17 @@ for p in py_files:
 print(f"PASS: python syntax ok ({len(py_files)} files)")
 required_text = {
     'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'headroomlabs-ai/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'scripts/test-headroom-runtime-smoke.py', 'scripts/install-production-runtime.py', 'docs/metrics/weekly-savings.md', 'docs/compatibility.md', 'future-runtime-monitor.yml', 'headroom-ai[proxy]', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
-    'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'scripts/test-headroom-dependency-install.sh', 'python scripts/install-production-runtime.py', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'python scripts/install-production-runtime.py', 'headroom proxy --host 127.0.0.1 --port 8787', 'python3 -m venv ~/.cache/hermes-headroom-venv', 'docs/compatibility.md', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
-    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/install-production-runtime.py', 'scripts/install-production-runtime.sh', 'weekly metrics', 'headroom proxy --host 127.0.0.1 --port 8787', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
-    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]', 'scripts/install-production-runtime.py', 'Python 3.13/3.14', 'generate-weekly-savings-table.py', 'tool_execution', 'headroom-worker-lane'],
-    'docs/compatibility.md': ['Certified runtime matrix', 'Future Runtime Monitor', 'Python 3.13', 'Python 3.14', 'headroom-ai[proxy]'],
+    'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'scripts/headroom-runtime.py', 'headroom-runtime setup', 'headroom-runtime status --json', 'headroom-runtime doctor --json', 'headroom-runtime uninstall --json', 'headroom-ai[proxy]==0.32.0', 'provider_mode=manual', 'targets=[]', 'mutations=[]', 'docs/runtime-manager.md', 'docs/compatibility.md', 'HEADROOM_ALLOW_REMOTE_PROXY', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
+    'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/headroom-runtime.py', 'headroom-runtime doctor --json', 'headroom-ai[proxy]==0.32.0', 'provider_mode=manual', 'targets=[]', 'mutations=[]', 'weekly metrics', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
+    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]==0.32.0', 'scripts/headroom-runtime.py', 'headroom-runtime doctor --json', 'provider_mode=manual', 'mutations=[]', 'Python 3.13/3.14', 'generate-weekly-savings-table.py', 'tool_execution', 'headroom-worker-lane'],
+    'docs/compatibility.md': ['Published v0.4.x baseline', 'v0.5 runtime-manager candidate', 'Future Runtime Monitor', 'Python 3.13', 'Python 3.14', 'headroom-ai[proxy]==0.32.0'],
+    'docs/runtime-manager.md': ['headroom-runtime setup', 'headroom-runtime status', 'headroom-runtime doctor', 'headroom-runtime uninstall', 'provider_mode=manual', 'targets=[]', 'mutations=[]', 'pinned private lifecycle APIs', 'Do not call it directly.'],
+    'MANIFEST.in': ['include INSTALL.md', 'recursive-include docs *.md', 'recursive-include scripts *.py *.sh'],
     'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],
     'docs/context-economy-loop.md': ['observe -> classify -> act -> verify -> learn', 'Portable gate', 'exact source authority', 'Do not require external telemetry'],
     'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/install-production-runtime.py', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'generate-weekly-savings-table.py', 'Python 3.13/3.14', 'Do not print or advertise a plugin/skill version', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
     'ACKNOWLEDGEMENTS.md': ['headroomlabs-ai/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
-    'after-install.md': ['real savings are not active', 'PLUGIN_DIR=', 'install-production-runtime.py', '/headroom smoke', 'Cloning upstream Headroom source is **not** required'],
+    'after-install.md': ['real savings are not active', 'PLUGIN_DIR=', 'scripts/headroom-runtime.py', 'headroom-runtime doctor --json', 'headroom-ai[proxy]==0.32.0', '/headroom smoke'],
     'docs/evidence/headroom-032-local-canary-20260718.json': ['0.32.0', 'not_promoted', 'single_host_canary'],
 }
 for rel, needles in required_text.items():

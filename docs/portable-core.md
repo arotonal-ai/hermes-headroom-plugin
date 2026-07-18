@@ -29,7 +29,7 @@ The primary model/provider route stays direct. Provider-proxy routing is experim
 
 ## Runtime module boundaries
 
-The v0.4 middleware implementation follows one-way dependencies and keeps the
+The v0.5 middleware implementation follows one-way dependencies and keeps the
 legacy import path as a compatibility facade:
 
 ```text
@@ -50,7 +50,7 @@ Hermes registration
 | `middleware_tool.py` | Hermes `tool_execution` adapter and fail-open boundary |
 | `middleware_request.py` | opt-in, copy-on-write protocol request adapters and logical-source cache |
 | `contracts.py` | provider-neutral compression, retrieval and health contracts |
-| `provider_headroom.py` | Headroom 0.31 response adapter |
+| `provider_headroom.py` | Headroom response adapter |
 | `proxy.py` | direct loopback HTTP transport only |
 | `middleware.py` | import/call compatibility; not a dependency-injection or monkeypatch boundary |
 
@@ -61,7 +61,7 @@ must patch the module that owns the dependency.
 
 The contracts are provider-neutral, but runtime provider selection is not yet
 provider-neutral: `reduction.py` composes `HeadroomReductionProvider` directly.
-That is an explicit v0.4 limit, not evidence of a second supported reducer.
+That is an explicit v0.5 limit, not evidence of a second supported reducer.
 Do not rename the product or claim provider-neutral runtime selection until a
 second provider and an injection/selection gate are implemented and tested.
 
@@ -69,11 +69,11 @@ second provider and an injection/selection gate are implemented and tested.
 
 | Setting | Default |
 |---|---|
-| Plugin | `hermes-headroom-plugin==0.4.1` |
+| Plugin | `hermes-headroom-plugin==0.5.0` |
 | LLM request middleware | off; explicit `mode: tool_results` opt-in |
-| Headroom runtime | `headroom-ai[proxy]==0.31.0` |
+| Headroom runtime | `headroom-ai[proxy]==0.32.0` |
 | LiteLLM transitive runtime | `litellm==1.91.3` (portable wheel constraint) |
-| Runtime venv | `~/.cache/hermes-headroom-venv-0.31.0` |
+| Runtime venv | `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.0` |
 | Bind | `127.0.0.1:8787` |
 | CCR backend | `memory` |
 | CCR TTL | `1800` seconds |
@@ -108,27 +108,29 @@ Port `8787` is the canonical portable/default-port contract. A canary that claim
 
 ## Install
 
-Linux durable runtime:
+Native Git/source checkout:
 
 ```bash
-python scripts/install-production-runtime.py --systemd-user
+python scripts/headroom-runtime.py setup
 ```
 
-The installer writes a `0600` user unit, reloads systemd, enables and restarts the service, waits for `/readyz`, and runs real compress -> retrieve smoke. Claim `RUNTIME_FULL_DURABLE` only when the service is enabled and active and the smoke sentinel is recovered.
-
-Optional companion:
+Wheel:
 
 ```bash
-python scripts/install-production-runtime.py --companion-only
-# or install it together with the runtime:
-python scripts/install-production-runtime.py --with-llm-monitor-companion
+headroom-runtime setup
 ```
 
-Explicit SQLite tradeoff:
+Read-only plan:
 
 ```bash
-python scripts/install-production-runtime.py --systemd-user --ccr-backend sqlite
+headroom-runtime setup --dry-run --json
 ```
+
+The v0.5 candidate manager installs the pinned official runtime in a versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct 0.32.0 apply because that path writes persistent shell blocks, and claims `RUNTIME_FULL_DURABLE` only after upstream status, readiness, and real compress → retrieve smoke pass. It does not mutate provider routing.
+
+Optional legacy companion operations remain available through `scripts/install-production-runtime.py --companion-only`; that script is not the primary v0.5 runtime authority.
+
+Explicit SQLite remains outside the v0.5 manager default. Operators requiring persistent CCR must use an approved upstream deployment override and record the added disk-retention risk.
 
 ## Verification
 
@@ -137,24 +139,25 @@ PYTHONPATH=src python -m unittest discover -s tests -v
 python -m compileall -q src tests scripts
 bash -n scripts/*.sh
 bash scripts/audit-repo-readiness.sh
-python scripts/test-headroom-runtime-smoke.py --spec 'headroom-ai[proxy]==0.31.0'
+python scripts/test-headroom-runtime-smoke.py --spec 'headroom-ai[proxy]==0.32.0'
 ```
 
-On Linux durable deployments additionally verify:
+Portable lifecycle verification:
 
 ```bash
-systemctl --user is-enabled hermes-context-reduction.service
-systemctl --user is-active hermes-context-reduction.service
-systemctl --user show hermes-context-reduction.service -p ExecStart -p Environment
+headroom-runtime status --json
+headroom-runtime doctor --json
 ```
+
+The native Git launcher accepts the same subcommands. Dry-run, unit tests, or service state alone are not proof of `RUNTIME_FULL_DURABLE`; doctor must recover the smoke sentinel.
 
 ## Rollback
 
-1. Disable or remove `headroom_retrieve` with Hermes, then reload only the affected Hermes session/gateway when required.
-2. If a durable runtime was installed, stop and disable `hermes-context-reduction.service`; restore or remove only its recorded user-unit path, then run `systemctl --user daemon-reload`.
-3. Switch the plugin repo to the previously recorded commit or restore the recorded plugin snapshot.
-4. Keep or delete the versioned runtime venv only after confirming no other deployment references it. Reinstall the prior pinned runtime spec when rollback requires runtime parity.
-5. If SQLite recovery is required, restore the approved database separately or reinstall with `--ccr-backend sqlite`; accept renewed disk-persistence risk explicitly. Memory-backend CCR entries are intentionally not restart-recoverable.
-6. Re-run plugin load/status and, if runtime remains enabled, compress → retrieve smoke. Do not call rollback complete from service state alone.
+1. Run `headroom-runtime uninstall --json` (or the native Git launcher with `uninstall`).
+2. Accept `UNINSTALLED` only after upstream remove succeeds and the listener is no longer ready. On `UNINSTALL_PARTIAL`, preserve manager files and inspect the private logs.
+3. Disable or remove `headroom_retrieve` with Hermes, then reload only the affected Hermes session/gateway when required.
+4. Switch the plugin repo or wheel to the previously recorded release.
+5. Reinstall the prior certified runtime only through its recorded lifecycle path.
+6. Re-run plugin load/status and, if runtime remains enabled, compress → retrieve smoke.
 
-No Hermes model/provider route or global provider configuration should need rollback because the portable core does not mutate them.
+Memory-backend CCR entries intentionally do not survive runtime restart. No Hermes model/provider route or global provider configuration should need rollback because the portable core does not mutate them.

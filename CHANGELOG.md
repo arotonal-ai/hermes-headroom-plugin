@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Package a portable `headroom-runtime setup|status|doctor|uninstall` entry point plus a native-Git launcher so wheel and repository installs share one explicit lifecycle manager.
+- Wrap Headroom 0.32's pinned manifest/supervisor lifecycle plus public `install status|remove`, while avoiding both `deploy` and direct `install apply`; force manual provider selection with no targets, telemetry off, isolated versioned venvs, loopback-only defaults, and compress → retrieve verification.
+- Promote the managed runtime candidate to `headroom-ai[proxy]==0.32.0` with `litellm==1.91.3`; final certification remains gated on the blocking multi-OS/Python runtime matrix.
+- Add dry-run, unmanaged-port and foreign-supervisor/manifest conflict detection, official-PyPI spec validation, transaction-wide locking, complete manifest-identity-guarded uninstall, partial-state recovery, marker-guarded purge, and symmetric uninstall semantics.
+
 ## v0.4.1 — 2026-07-18
 
 - Add an owner/agent actionable `after-install.md`, document the deterministic native Git-installed plugin path, and clarify that active savings begin only after the official PyPI Headroom runtime passes smoke; cloning upstream source is not required.
