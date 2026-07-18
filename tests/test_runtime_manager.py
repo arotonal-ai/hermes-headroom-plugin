@@ -210,7 +210,12 @@ class RuntimeManagerTest(unittest.TestCase):
                 json.dumps({"provider_mode": "manual", "targets": [], "mutations": []}) + "\n",
             )
             def apply_and_write_manifest(**_kwargs):
-                self._write_manifest(root, profile=manager.DEFAULT_PROFILE, port=57884)
+                self._write_manifest(
+                    root,
+                    profile=manager.DEFAULT_PROFILE,
+                    port=57884,
+                    preset=manager._default_preset(),
+                )
                 return applied
 
             with (
