@@ -547,6 +547,53 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(json.loads(output)["decision"], "ERROR")
 
+    def test_manager_marker_makes_runtime_root_private_on_posix(self):
+        if sys.platform.startswith("win"):
+            self.skipTest("POSIX mode bits are not authoritative on Windows")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            mode = root.stat().st_mode & 0o777
+        self.assertEqual(mode, 0o700)
+
+    def test_purge_symlink_swap_after_validation_fails_closed(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "runtime"
+            outside = base / "outside"
+            outside.mkdir()
+            sentinel = outside / "DO_NOT_DELETE"
+            sentinel.write_text("safe", encoding="utf-8")
+            manager._ensure_marker(root)
+            state = self._state(root)
+            manager._write_state(root, state)
+            workspace = Path(state.workspace_dir)
+            workspace.mkdir()
+            (workspace / "owned.txt").write_text("owned", encoding="utf-8")
+            original_rmtree = manager.shutil.rmtree
+            swapped = False
+
+            def swap_then_delete(path, *args, **kwargs):
+                nonlocal swapped
+                if Path(path).name == workspace.name and not swapped:
+                    moved = root / "workspace-before-swap"
+                    workspace.rename(moved)
+                    try:
+                        workspace.symlink_to(outside, target_is_directory=True)
+                    except OSError as exc:
+                        self.skipTest(f"directory symlinks unavailable: {exc}")
+                    swapped = True
+                return original_rmtree(path, *args, **kwargs)
+
+            with patch.object(manager.shutil, "rmtree", side_effect=swap_then_delete):
+                result = manager._purge_managed_root(root, state)
+            sentinel_exists = sentinel.exists()
+            root_exists = root.exists()
+        self.assertFalse(result["ok"], result)
+        self.assertTrue(result.get("fail_closed"), result)
+        self.assertTrue(sentinel_exists)
+        self.assertTrue(root_exists)
+
     def test_setup_blocks_nonempty_unmanaged_runtime_root(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "runtime"

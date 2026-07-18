@@ -37,7 +37,8 @@ The manager:
 - uses the memory CCR backend with a 1,800-second TTL by default;
 - records no secrets in manager state;
 - rejects filesystem, home, Hermes-home, shared-temp, shallow, non-directory, and non-empty unowned runtime roots;
-- requires a private marker and deletes only the validated manager-owned top-level entries; any unexpected path blocks purge;
+- makes the runtime root private (`0700` best-effort), requires a private marker, and deletes only validated manager-owned top-level entries;
+- on the certified Linux/macOS path, anchors recursive deletion to an open runtime-root descriptor and uses Python's symlink-attack-resistant `rmtree`; any unexpected entry, path swap, or deletion error fails closed;
 - reports `RUNTIME_FULL_DURABLE` only after the saved upstream manifest matches the complete manager-owned identity/environment/proxy-argument contract, upstream status passes, readiness succeeds, and compress → retrieve recovers the sentinel.
 
 It does **not** change Hermes model/provider routing, write persistent shell environment blocks, install API keys, enable a paid provider, or run from `register()`.
@@ -130,7 +131,7 @@ Upstream's deployment manifest remains the supervisor authority. The manager sta
 headroom-runtime uninstall --json
 ```
 
-`uninstall` delegates to `headroom install remove`, waits for both the listener and native supervisor to disappear, validates every top-level runtime-root entry, and then deletes only the known manager-owned venv, workspace, state, marker, and logs. If upstream remove fails, the listener or supervisor remains present, or an unexpected path is found, it returns `UNINSTALL_PARTIAL` and preserves the root for recovery.
+`uninstall` delegates to `headroom install remove`, waits for both the listener and native supervisor to disappear, validates every top-level runtime-root entry, and then deletes only the known manager-owned venv, workspace, state, marker, and logs. If upstream remove fails, the listener or supervisor remains present, an unexpected path is found, or a deletion race/error occurs, it returns `UNINSTALL_PARTIAL` and preserves the root for recovery.
 
 Preserve the venv while removing deployment state:
 

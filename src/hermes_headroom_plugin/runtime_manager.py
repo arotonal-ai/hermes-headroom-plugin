@@ -290,6 +290,10 @@ def _write_state(root: Path, state: RuntimeState) -> None:
 
 def _ensure_marker(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
+    try:
+        root.chmod(0o700)
+    except OSError:
+        pass
     marker = root / MARKER_FILE
     if marker.exists():
         if marker.read_text(encoding="utf-8").strip() != str(STATE_SCHEMA):
@@ -367,23 +371,46 @@ def _managed_root_contract(root: Path, state: RuntimeState) -> dict[str, Any]:
     }
 
 
+def _rmtree_managed_directory(root: Path, directory: Path) -> None:
+    if os.name != "nt" and shutil.rmtree.avoids_symlink_attacks:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        root_fd = os.open(root, flags)
+        try:
+            shutil.rmtree(directory.name, dir_fd=root_fd)
+        finally:
+            os.close(root_fd)
+        return
+    shutil.rmtree(directory)
+
+
 def _purge_managed_root(root: Path, state: RuntimeState) -> dict[str, Any]:
     contract = _managed_root_contract(root, state)
     if not contract.get("ok"):
         return contract
-    for directory in (Path(state.venv_dir), Path(state.workspace_dir)):
-        if directory.exists():
-            shutil.rmtree(directory)
-    for name in ("manager.log", "install.log", STATE_FILE, MARKER_FILE):
-        path = root / name
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
     try:
+        for directory in (Path(state.venv_dir), Path(state.workspace_dir)):
+            contract = _managed_root_contract(root, state)
+            if not contract.get("ok"):
+                return contract
+            if directory.exists():
+                _rmtree_managed_directory(root, directory)
+        contract = _managed_root_contract(root, state)
+        if not contract.get("ok"):
+            return contract
+        for name in ("manager.log", "install.log", STATE_FILE, MARKER_FILE):
+            path = root / name
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
         root.rmdir()
-    except OSError as exc:
-        return {**contract, "ok": False, "detail": f"managed entries removed but root remained: {exc}"}
+    except (NotImplementedError, OSError) as exc:
+        return {
+            **contract,
+            "ok": False,
+            "fail_closed": True,
+            "detail": f"managed-root deletion stopped safely: {type(exc).__name__}: {exc}",
+        }
     return {**contract, "ok": True, "runtime_root_removed": True}
 
 
