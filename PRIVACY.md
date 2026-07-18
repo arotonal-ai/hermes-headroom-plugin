@@ -32,4 +32,4 @@ Examples of eligible classes:
 
 ## Local proxy note
 
-`/headroom status` and `/headroom smoke` talk to a configured/local Headroom proxy endpoint such as `http://127.0.0.1:28787` or `HEADROOM_PROXY_URL`. If no proxy is running, the plugin should degrade to a partial runtime state rather than crashing.
+`/headroom status` and `/headroom smoke` talk to a configured/local Headroom proxy endpoint such as `http://127.0.0.1:8787` or `HEADROOM_PROXY_URL`. If no proxy is running, the plugin should degrade to a partial runtime state rather than crashing.

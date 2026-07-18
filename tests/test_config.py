@@ -13,6 +13,7 @@ class EffectiveConfigTest(unittest.TestCase):
         cfg = resolve_effective_config(raw_config={}, env={})
         self.assertTrue(cfg.enabled)
         self.assertEqual(cfg.provider, "headroom")
+        self.assertEqual(DEFAULT_PROXY_URL, "http://127.0.0.1:8787")
         self.assertEqual(cfg.proxy_url, DEFAULT_PROXY_URL)
         self.assertTrue(cfg.auto_compression)
         self.assertFalse(cfg.llm_request_enabled)

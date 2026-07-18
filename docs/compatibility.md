@@ -25,6 +25,10 @@ Evidence baseline:
 
 ## Experimental future runtimes
 
+Current upstream release at the 2026-07-18 audit is `headroom-ai==0.32.0` ([official release](https://github.com/headroomlabs-ai/headroom/releases/tag/v0.32.0)). A non-blocking Linux/Python 3.11.15 canary with the existing `litellm==1.91.3` constraint passed real proxy readiness and plugin compress → retrieve sentinel recovery. This is one-host evidence only; `0.32.0` remains experimental until the blocking Ubuntu/macOS/Windows Runtime Smoke matrix and release gate pass.
+
+Evidence handle: [`docs/evidence/headroom-032-local-canary-20260718.json`](evidence/headroom-032-local-canary-20260718.json).
+
 Python 3.13/3.14, future `headroom-ai` ranges, and newer LiteLLM releases are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. The LiteLLM lane holds Headroom at `0.31.0`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
 
 That workflow is intentionally **non-blocking**:

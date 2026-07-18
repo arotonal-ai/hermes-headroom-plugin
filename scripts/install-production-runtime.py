@@ -9,7 +9,7 @@ smoke verification.
 Default behavior:
 - create/update a persistent versioned venv at ~/.cache/hermes-headroom-venv-0.31.0
 - install pinned `headroom-ai[proxy]==0.31.0` and `litellm==1.91.3` unless their specs are overridden
-- start `headroom proxy --host 127.0.0.1 --port 28787` when not already ready
+- start `headroom proxy --host 127.0.0.1 --port 8787` when not already ready
 - run the plugin smoke against that endpoint
 - leave the bundled llm-monitor companion uninstalled unless explicitly requested
 - exit 0 for a verified full/durable runtime, companion-only install, or an explicitly
@@ -39,7 +39,7 @@ DEFAULT_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
 LITELLM_RUNTIME_VERSION = "1.91.3"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 28787
+DEFAULT_PORT = 8787
 DEFAULT_SERVICE_NAME = "hermes-context-reduction.service"
 DEFAULT_CCR_BACKEND = "memory"
 DEFAULT_CCR_TTL_SECONDS = 1800

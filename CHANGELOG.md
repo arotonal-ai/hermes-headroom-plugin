@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## v0.4.1 — 2026-07-18
+
+- Add an owner/agent actionable `after-install.md`, document the deterministic native Git-installed plugin path, and clarify that active savings begin only after the official PyPI Headroom runtime passes smoke; cloning upstream source is not required.
+- Refresh canonical upstream repository/docs links and record a non-blocking, single-host `headroom-ai==0.32.0` runtime smoke PASS without promoting the certified `0.31.0` multi-OS pin.
+- Replace ambiguous primary `/headroom on` guidance with platform-aware, read-only `/headroom setup`; retain `on` as an explicit legacy alias and never install dependencies or start daemons from the slash command.
+
+- Align the portable plugin/runtime endpoint with upstream Headroom 0.31's default loopback port `8787`; keep explicit per-instance overrides for concurrent same-host labs instead of reserving the previous integration-specific port `28787`.
 - Modernize GitHub Actions workflows to Node.js 24-compatible majors.
 - Keep the certified LiteLLM pin blocking while adding a separate monthly, non-blocking multi-OS canary for newer allowed LiteLLM releases.
 - Record resolved Headroom/LiteLLM versions in runtime smoke evidence and correct compatibility docs that still described unpinned dependencies as the production default.

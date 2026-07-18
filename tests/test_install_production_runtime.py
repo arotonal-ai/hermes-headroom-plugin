@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "install-production-runtime.py"
+AFTER_INSTALL = ROOT / "after-install.md"
 
 
 class InstallProductionRuntimeScriptTest(unittest.TestCase):
@@ -22,7 +23,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
         self.assertIn('DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"', text)
         self.assertIn('DEFAULT_CCR_BACKEND = "memory"', text)
         self.assertIn("DEFAULT_CCR_TTL_SECONDS = 1800", text)
-        self.assertIn('DEFAULT_PORT = 28787', text)
+        self.assertIn('DEFAULT_PORT = 8787', text)
         self.assertIn('RUNTIME_FULL', text)
         self.assertIn('RUNTIME_FULL_DURABLE', text)
         self.assertIn('headroom proxy', text)
@@ -71,7 +72,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             unit = module.write_systemd_user_unit(
                 headroom,
                 "127.0.0.1",
-                28787,
+                8787,
                 "hermes-context-reduction.service",
                 log,
                 ccr_backend="memory",
@@ -120,7 +121,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
                     module.write_systemd_user_unit(
                         headroom,
                         "127.0.0.1",
-                        28787,
+                        8787,
                         service_name,
                         log,
                         ccr_backend="memory",
@@ -174,7 +175,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             }
         }
         with patch.object(module, "http_get_json", return_value=(200, payload, "")):
-            posture = module.runtime_store_posture("http://127.0.0.1:28787")
+            posture = module.runtime_store_posture("http://127.0.0.1:8787")
         self.assertEqual(
             posture,
             {"ok": True, "status": 200, "backend": "memory", "ttl_seconds": 1800, "entry_count": 3},
@@ -316,8 +317,18 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             self.assertIn("scripts/install-production-runtime.py", text, rel)
             self.assertIn("RUNTIME_FULL", text, rel)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        self.assertRegex(readme, re.compile(r"127\.0\.0\.1:28787", re.I))
+        self.assertRegex(readme, re.compile(r"127\.0\.0\.1:8787", re.I))
         self.assertIn("RUNTIME_FULL_DURABLE", readme)
+
+    def test_native_git_install_has_actionable_after_install(self):
+        text = AFTER_INSTALL.read_text(encoding="utf-8")
+        self.assertIn('${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve', text)
+        self.assertIn("scripts/install-production-runtime.py", text)
+        self.assertIn("--systemd-user", text)
+        self.assertIn("RUNTIME_PARTIAL", text)
+        self.assertIn("RUNTIME_FULL", text)
+        self.assertIn("official Headroom project", text)
+        self.assertIn("Cloning upstream Headroom source is **not** required", text)
 
     def test_repo_no_longer_defaults_to_old_headroom_runtime_pin(self):
         offenders = []

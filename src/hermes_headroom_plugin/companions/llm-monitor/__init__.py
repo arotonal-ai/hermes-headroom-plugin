@@ -410,7 +410,7 @@ def _headroom_proxy_summary_line() -> str:
     try:
         if not _read_state().get("headroom_summary", True):
             return ""
-        proxy = os.getenv("HEADROOM_PROXY_URL") or "http://127.0.0.1:28787"
+        proxy = os.getenv("HEADROOM_PROXY_URL") or "http://127.0.0.1:8787"
         proxy = proxy.rstrip("/")
         with urlopen(proxy + "/stats", timeout=0.75) as resp:  # nosec B310 owner-local loopback/read-only
             data = json.loads(resp.read(200_000).decode("utf-8", errors="replace"))

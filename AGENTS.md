@@ -17,6 +17,7 @@ Install and enable the plugin in the target Hermes instance without copying owne
 - The packaged plugin includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, when the loopback Headroom proxy is healthy.
 - The packaged worker/background/preflight CLI wrappers (`headroom-worker-lane`, `headroom-background-lane`, `headroom-command-preflight`) are production behavior for explicit operator commands: they retain exact sidecars/final packets and optionally compress only bulky intermediate traces through the loopback Headroom proxy. They do not change provider/model routing.
 - The package does not change global/default provider routing; exact/edit-critical/sensitive outputs remain exact or blocked.
+- Native `hermes plugins install owner/repo` clones the full repository and can use `after-install.md`; pip/wheel entry-point installs are currently plugin-only unless the operator separately installs and supervises the Headroom runtime. Do not claim distribution-path parity.
 
 ## Primary command
 
@@ -38,26 +39,28 @@ Verify in Hermes:
 
 ```text
 /headroom status
-/headroom on      # read-only compatibility check; does not mutate runtime/provider state
+/headroom setup   # read-only setup guidance; does not install/start runtime
 ```
 
-For `RUNTIME_FULL`, prefer the production runtime installer from a repo/plugin checkout:
+For `RUNTIME_FULL`, use the production runtime installer in the native Git-installed plugin clone:
 
 ```bash
-python scripts/install-production-runtime.py
-# Unix/Git Bash wrapper:
-scripts/install-production-runtime.sh
+PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
+python3 "$PLUGIN_DIR/scripts/install-production-runtime.py" --systemd-user  # Linux durable
+# Checkout wrapper equivalent: "$PLUGIN_DIR/scripts/install-production-runtime.sh" --systemd-user
+# Omit --systemd-user for macOS/process-level RUNTIME_FULL.
 ```
 
 Windows PowerShell:
 
 ```powershell
-python scripts\install-production-runtime.py
-# or:
-py -3 scripts\install-production-runtime.py
+$PluginDir = if ($env:HERMES_HOME) { "$env:HERMES_HOME\plugins\headroom_retrieve" } else { "$HOME\.hermes\plugins\headroom_retrieve" }
+py -3 "$PluginDir\scripts\install-production-runtime.py"
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs the certified runtime pair `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`, defaults CCR recovery to memory with a 1,800-second TTL, starts the loopback proxy as `headroom proxy --host 127.0.0.1 --port 28787`, verifies `/readyz`, and runs real compress → retrieve smoke. The companion and visible hooks are opt-in. Manual fallback is allowed only if it performs those same checks. The canonical contract is `docs/portable-core.md`.
+Hermes shows `after-install.md` automatically after native Git installation. The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs the certified `headroom-ai[proxy]==0.31.0` PyPI distribution published by the official Headroom project plus `litellm==1.91.3`, defaults CCR recovery to memory with a 1,800-second TTL, starts the loopback proxy as `headroom proxy --host 127.0.0.1 --port 8787`, verifies `/readyz`, and runs real compress → retrieve smoke. Upstream source cloning is not required. The companion and visible hooks are opt-in. Manual fallback is allowed only if it performs those same checks. The canonical contract is `docs/portable-core.md`.
+
+For a clean-instance canary, assert that `127.0.0.1:8787` is free before installation and that the started proxy belongs to the target run. A healthy proxy owned by another user or Hermes instance is not clean-instance evidence. Concurrent same-host canaries must use distinct free loopback ports and pass the matching `HEADROOM_PROXY_URL` explicitly.
 
 For Linux gateway/default-cockpit deployments, use durable service mode:
 
@@ -88,7 +91,7 @@ scripts/test-headroom-dependency-install.sh
 
 | State | Meaning | Required evidence |
 |---|---|---|
-| `INSTALL_PASS` | Plugin installed and Hermes can load it | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom on` respond after restart/new session |
+| `INSTALL_PASS` | Plugin installed and Hermes can load it | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom setup` respond after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin works, but Headroom proxy is unavailable | `/headroom status` reports proxy unavailable or `/headroom smoke` fails at `readyz` |
 | `RUNTIME_FULL` | Plugin, upstream `headroom-ai[proxy]`, and proxy work in the current process/session | dependency smoke PASS and `/headroom smoke` or runtime smoke returns PASS with compress → retrieve sentinel; Python 3.11/3.12 are certified in Runtime Smoke |
 | `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `python scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes |
@@ -148,7 +151,7 @@ No evidence should produce placeholders, not estimates.
 
 When reporting or documenting this plugin, preserve the distinction:
 
-- upstream Headroom: https://github.com/chopratejas/headroom
+- upstream Headroom: https://github.com/headroomlabs-ai/headroom
 - upstream docs: https://headroom-docs.vercel.app/docs
 - upstream package: https://pypi.org/project/headroom-ai/
 - this repo: Hermes Agent plugin/integration wrapper

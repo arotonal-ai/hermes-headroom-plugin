@@ -24,12 +24,12 @@ hermes gateway restart || true
 
 If operating inside an active Hermes chat instead of gateway shell, start a fresh session with `/new` after install.
 
-Production runtime for process-level `RUNTIME_FULL` — required for `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression:
+Production runtime — required for `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression. Native Hermes install clones the full repo; use its deterministic installed path:
 
 ```bash
-python scripts/install-production-runtime.py
-# Unix/Git Bash wrapper:
-scripts/install-production-runtime.sh
+PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
+python3 "$PLUGIN_DIR/scripts/install-production-runtime.py" --systemd-user  # Linux durable
+# Omit --systemd-user for macOS/process-level RUNTIME_FULL.
 ```
 
 Linux durable gateway/default-cockpit runtime:
@@ -64,7 +64,7 @@ In Hermes:
 
 ```text
 /headroom status
-/headroom on      # read-only compatibility check; does not mutate runtime/provider state
+/headroom setup   # read-only setup guidance; does not install/start runtime
 ```
 
 If full runtime/proxy validation is requested, verify the upstream Headroom dependency/runtime without touching the real environment:
@@ -91,7 +91,7 @@ If a proxy is running:
 PASS if:
 
 - `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`;
-- `/headroom status` and `/headroom on` respond after restart/new session;
+- `/headroom status` and `/headroom setup` respond after restart/new session;
 - no secrets are requested or printed;
 - global/default provider routing is unchanged;
 - if proxy/runtime is enabled, eligible bulky intermediate tool/lane result compression is available via `tool_execution` middleware; without proxy, middleware returns the exact original result. Use `/headroom cache` only as read-only runtime-owned CCR store visibility; the plugin has no independent CCR cache.

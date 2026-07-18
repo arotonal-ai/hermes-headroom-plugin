@@ -17,7 +17,7 @@ class MarkdownDocsTest(unittest.TestCase):
         assert match is not None
         diagram = match.group(1)
         self.assertIn('H["Hermes Agent"]', diagram)
-        self.assertIn('C["/headroom status, smoke, audit, on"]', diagram)
+        self.assertIn('C["/headroom status, setup, smoke, audit"]', diagram)
         self.assertIn('R["global/default provider routing unchanged"]', diagram)
         self.assertNotIn('[/headroom status|smoke|audit]', diagram)
         self.assertNotIn('-. does not mutate .->', diagram)
@@ -33,7 +33,7 @@ class MarkdownDocsTest(unittest.TestCase):
             "python scripts/install-production-runtime.py",
             "python3 -m venv ~/.cache/hermes-headroom-venv",
             "py -3 -m venv $env:USERPROFILE\\.cache\\hermes-headroom-venv",
-            "headroom proxy --host 127.0.0.1 --port 28787",
+            "headroom proxy --host 127.0.0.1 --port 8787",
             "/headroom smoke",
         ]
         for needle in required:

@@ -74,7 +74,7 @@ from hermes_headroom_plugin.commands import handle_headroom_command
 loaded = pm._plugins.get('headroom_retrieve')
 with patch('hermes_headroom_plugin.commands.readyz', return_value={
     'ok': True,
-    'proxy_url': 'http://127.0.0.1:28787',
+    'proxy_url': 'http://127.0.0.1:8787',
     'status': 200,
     'body': {'ready': True},
 }):

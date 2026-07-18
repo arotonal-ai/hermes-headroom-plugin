@@ -31,7 +31,7 @@ Use this skill when you need to:
 - decide whether a Headroom result is `INSTALL_PASS`, `RUNTIME_PARTIAL`, `RUNTIME_FULL`, `RUNTIME_FULL_DURABLE`, or `FAIL`;
 - use `headroom_retrieve` to resolve an exact CCR marker;
 - validate the upstream `headroom-ai[proxy]` dependency without touching the real Python environment;
-- check `/headroom status`, `/headroom on`, `/headroom smoke`, `/headroom cache`, or `/headroom audit`;
+- check `/headroom status`, `/headroom setup`, `/headroom smoke`, `/headroom cache`, or `/headroom audit`;
 - classify payloads as compressible, exact, or blocked;
 - operate the portable Context Economy Loop contract (`docs/context-economy-loop.md`) without copying private instance state;
 - generate weekly savings tables from JSONL evidence.
@@ -84,7 +84,7 @@ Verify in Hermes:
 
 ```text
 /headroom status
-/headroom on      # read-only compatibility check; does not mutate runtime/provider state
+/headroom setup   # read-only setup guidance; does not install/start runtime
 ```
 
 If this command responds, plugin install succeeded. A missing proxy is `RUNTIME_PARTIAL`, not a failed install, but it is not active context reduction: `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression require a reachable proxy.
@@ -107,6 +107,8 @@ py -3 scripts\install-production-runtime.py
 
 The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs `headroom-ai[proxy]==0.31.0`, defaults CCR recovery to memory with a 1,800-second TTL, starts the loopback proxy, verifies `/readyz`, and runs real compress → retrieve smoke. `llm-monitor` is opt-in. Manual install is acceptable only if the same checks pass. For Linux gateway/default-cockpit durability, use `python scripts/install-production-runtime.py --systemd-user` and require `RUNTIME_FULL_DURABLE` plus `hermes-context-reduction.service` enabled + active before claiming survival across gateway restart/logout. See `docs/portable-core.md` for retention and rollback.
 
+Clean-instance evidence must bind the proxy to the target run: verify the default `127.0.0.1:8787` is free before a canonical default-port canary, or allocate a distinct free loopback port and pass the same `HEADROOM_PROXY_URL` for concurrent same-host runs. Never count another user's ready proxy as a clean runtime PASS.
+
 Then verify in Hermes:
 
 ```text
@@ -117,7 +119,7 @@ Then verify in Hermes:
 
 | State | Meaning | Required evidence |
 |---|---|---|
-| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom on` respond after restart/new session. |
+| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom setup` respond after restart/new session. |
 | `RUNTIME_PARTIAL` | Plugin loads, but no proxy is reachable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; status/audit work, but compression/retrieval/middleware compression are not active. |
 | `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | `scripts/install-production-runtime.py` reports `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval. |
 | `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes. |
@@ -133,7 +135,7 @@ The Hermes plugin and upstream Headroom runtime are separate layers. The plugin 
 |---|---|---|
 | Hermes plugin | `hermes plugins install arotonal-ai/hermes-headroom-plugin --enable` | registers `headroom_retrieve`, `/headroom`, bundled skill, visible readiness marker, and fail-open middleware; does not perform compression locally. |
 | Upstream Headroom package | `headroom-ai[proxy]` | provides the compressor/retriever service used by the plugin. |
-| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 28787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | handles `/readyz`, `/v1/compress`, `/v1/retrieve`, runtime-owned CCR cache/store stats, and real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
+| Runtime proxy | `headroom proxy --host 127.0.0.1 --port 8787`, `scripts/install-production-runtime.py --systemd-user` on Linux, or configured endpoint | handles `/readyz`, `/v1/compress`, `/v1/retrieve`, runtime-owned CCR cache/store stats, and real compress → retrieve smoke; Linux durable mode also verifies enabled+active user service. |
 
 Use the production installer or cross-platform smoke helpers before claiming runtime capability:
 
@@ -233,7 +235,7 @@ A passing clean-home test should prove:
 Packaged now:
 
 - `headroom_retrieve` tool;
-- `/headroom status`, `/headroom on`, `/headroom smoke`, `/headroom audit`;
+- `/headroom status`, `/headroom setup`, `/headroom smoke`, `/headroom audit`;
 - visible `[HR✓]` / `[HR!]` readiness marker for final answers;
 - fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results such as `delegate_task`, terminal/process, browser/debug, `web_extract`, and `session_search`;
 - conservative policy helpers;
@@ -291,7 +293,7 @@ If installed from a local checkout with a symlink or copy, remove the checkout-i
 
 - [ ] Plugin appears in `hermes plugins list --enabled --user --plain`.
 - [ ] Fresh session/restart completed before checking slash commands.
-- [ ] `/headroom status` and `/headroom on` return without crashing.
+- [ ] `/headroom status` and `/headroom setup` return without crashing.
 - [ ] Dependency smoke uses a temporary venv and passes before runtime claims.
 - [ ] `/headroom smoke` passes before claiming `RUNTIME_FULL`.
 - [ ] CCR retrieval is verified against exact content before final claims.

@@ -1,0 +1,16 @@
+{
+  "recorded_utc": "2026-07-18T16:37:38Z",
+  "classification": "non_blocking_single_host_canary",
+  "command": "python3 scripts/test-headroom-runtime-smoke.py --spec 'headroom-ai[proxy]==0.32.0' --litellm-spec 'litellm==1.91.3'",
+  "host_os": "linux",
+  "python": "3.11.15",
+  "headroom_ai": "0.32.0",
+  "litellm": "1.91.3",
+  "exit_code": 0,
+  "proxy_ready": true,
+  "compress_retrieve_sentinel_found": true,
+  "tokens_saved_in_synthetic_smoke": 45361,
+  "cleanup_expected_by_harness": true,
+  "promotion_decision": "not_promoted",
+  "promotion_blocker": "Blocking Ubuntu/macOS/Windows runtime smoke and release gate are required before changing certified pins."
+}
