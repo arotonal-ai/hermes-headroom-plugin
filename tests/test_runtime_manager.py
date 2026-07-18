@@ -203,6 +203,7 @@ class RuntimeManagerTest(unittest.TestCase):
             cli = manager._exe(manager._venv_dir(root), "headroom")
             cli.parent.mkdir(parents=True, exist_ok=True)
             cli.write_text("fake", encoding="utf-8")
+            manager._ensure_marker(root)
             applied = subprocess.CompletedProcess(
                 ["safe-apply"],
                 0,
@@ -239,6 +240,7 @@ class RuntimeManagerTest(unittest.TestCase):
             cli = manager._exe(manager._venv_dir(root), "headroom")
             cli.parent.mkdir(parents=True, exist_ok=True)
             cli.write_text("fake", encoding="utf-8")
+            manager._ensure_marker(root)
             unsafe = subprocess.CompletedProcess(
                 ["safe-apply"],
                 0,
@@ -272,6 +274,7 @@ class RuntimeManagerTest(unittest.TestCase):
             cli = manager._exe(manager._venv_dir(root), "headroom")
             cli.parent.mkdir(parents=True, exist_ok=True)
             cli.write_text("fake", encoding="utf-8")
+            manager._ensure_marker(root)
             completed = subprocess.CompletedProcess(["safe-apply"], 1, "apply failed\n")
             with (
                 patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
@@ -505,6 +508,114 @@ class RuntimeManagerTest(unittest.TestCase):
         uninstall_source = inspect.getsource(manager.uninstall)
         self.assertLess(setup_source.index("_acquire_lock"), setup_source.index("_load_state"))
         self.assertLess(uninstall_source.index("_acquire_lock"), uninstall_source.index("_load_state"))
+
+    def test_state_and_manifest_accept_equivalent_symlink_paths(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            real_parent = base / "real"
+            real_parent.mkdir()
+            alias_parent = base / "alias"
+            try:
+                alias_parent.symlink_to(real_parent, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"directory symlinks unavailable: {exc}")
+            real_root = real_parent / "runtime"
+            alias_root = alias_parent / "runtime"
+            manager._ensure_marker(real_root)
+            state = self._state(real_root)
+            manager._write_state(real_root, state)
+            self._write_manifest(real_root)
+            loaded = manager._load_state(alias_root)
+            contract = manager._manifest_contract(
+                alias_root,
+                profile=state.profile,
+                port=state.port,
+                preset=state.preset,
+            )
+        self.assertIsNotNone(loaded)
+        self.assertTrue(contract["ok"], contract)
+
+    def test_rejects_shared_temp_root(self):
+        code, output = self._run_main(
+            ["setup", "--runtime-root", tempfile.gettempdir(), "--dry-run", "--json"]
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output)["decision"], "ERROR")
+
+    def test_setup_blocks_nonempty_unmanaged_runtime_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            root.mkdir()
+            (root / "unrelated.txt").write_text("keep", encoding="utf-8")
+            with patch.object(manager, "_ensure_runtime") as ensure_runtime:
+                code, output = self._run_main(
+                    ["setup", "--runtime-root", str(root), "--port", "57881", "--json"]
+                )
+            marker_exists = (root / manager.MARKER_FILE).exists()
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output)["decision"], "RUNTIME_ROOT_CONFLICT")
+        self.assertFalse(marker_exists)
+        ensure_runtime.assert_not_called()
+
+    def test_uninstall_purges_inert_partial_state_without_upstream_remove(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            state.status = "RUNTIME_PARTIAL"
+            manager._write_state(root, state)
+            with (
+                patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
+                patch.object(manager, "_supervisor_presence", return_value={"present": False, "evidence": []}),
+                patch.object(manager, "_run") as run,
+            ):
+                code, output = self._run_main(["uninstall", "--runtime-root", str(root), "--json"])
+            root_exists = root.exists()
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output)["decision"], "UNINSTALLED_PARTIAL_STATE")
+        self.assertFalse(root_exists)
+        run.assert_not_called()
+
+    def test_uninstall_blocks_root_with_unexpected_entry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            manager._write_state(root, state)
+            self._write_manifest(root)
+            cli = self._fake_cli(state)
+            (root / "unrelated.txt").write_text("keep", encoding="utf-8")
+            completed = subprocess.CompletedProcess([str(cli)], 0, "Removed deployment\n")
+            with (
+                patch.object(manager, "_run", return_value=completed),
+                patch.object(manager, "_wait_stopped", return_value={"ok": False, "status": None}),
+                patch.object(manager, "_wait_supervisor_absent", return_value={"present": False, "evidence": []}),
+            ):
+                code, output = self._run_main(["uninstall", "--runtime-root", str(root), "--json"])
+            unrelated_exists = (root / "unrelated.txt").exists()
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output)["decision"], "UNINSTALL_PARTIAL")
+        self.assertTrue(unrelated_exists)
+
+    def test_uninstall_preserves_root_if_supervisor_remains_present(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            manager._write_state(root, state)
+            self._write_manifest(root)
+            cli = self._fake_cli(state)
+            completed = subprocess.CompletedProcess([str(cli)], 0, "Removed deployment\n")
+            with (
+                patch.object(manager, "_run", return_value=completed),
+                patch.object(manager, "_wait_stopped", return_value={"ok": False, "status": None}),
+                patch.object(manager, "_wait_supervisor_absent", return_value={"present": True, "evidence": ["native"]}),
+            ):
+                code, output = self._run_main(["uninstall", "--runtime-root", str(root), "--json"])
+            root_exists = root.exists()
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output)["decision"], "UNINSTALL_PARTIAL")
+        self.assertTrue(root_exists)
 
     def test_uninstall_blocks_mutating_manifest_without_upstream_remove(self):
         with tempfile.TemporaryDirectory() as td:

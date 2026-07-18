@@ -66,6 +66,22 @@ def parse_json(proc: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {"parse_error": True, "value": value}
 
 
+def redacted_log_tail(path: Path, limit: int = 12000) -> str | None:
+    if not path.is_file():
+        return None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")[-limit:]
+    except OSError:
+        return None
+    text = re.sub(r"https?://[^/\s:@]+:[^@\s/]+@", "https://[REDACTED]@", text)
+    text = re.sub(
+        r"(?i)(authorization|api[-_]?key|token|password)(\s*[:=]\s*)[^\s,;]+",
+        r"\1\2[REDACTED]",
+        text,
+    )
+    return text
+
+
 def free_port() -> int:
     with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
         sock.bind(("127.0.0.1", 0))
@@ -197,6 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     status_proc: subprocess.CompletedProcess[str] | None = None
     doctor_proc: subprocess.CompletedProcess[str] | None = None
     uninstall_proc: subprocess.CompletedProcess[str] | None = None
+    manager_install_log_tail: str | None = None
     manifest_data: dict[str, Any] = {}
     artifacts: list[str] = []
 
@@ -235,6 +252,8 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:  # noqa: BLE001
         setup_json = {"exception": f"{type(exc).__name__}: {exc}"}
     finally:
+        if setup_proc is not None and setup_proc.returncode != 0:
+            manager_install_log_tail = redacted_log_tail(root / "install.log")
         if root.exists():
             try:
                 uninstall_proc = run(
@@ -264,7 +283,11 @@ def main(argv: list[str] | None = None) -> int:
     uninstall_json = parse_json(uninstall_proc) if uninstall_proc else {}
     status_ok = bool(status_proc and status_proc.returncode == 0 and status_json.get("decision") == "RUNTIME_FULL_DURABLE")
     doctor_ok = bool(doctor_proc and doctor_proc.returncode == 0 and doctor_json.get("decision") == "RUNTIME_FULL_DURABLE")
-    uninstall_ok = bool(uninstall_proc and uninstall_proc.returncode == 0 and uninstall_json.get("decision") == "UNINSTALLED")
+    uninstall_ok = bool(
+        uninstall_proc
+        and uninstall_proc.returncode == 0
+        and uninstall_json.get("decision") in {"UNINSTALLED", "UNINSTALLED_PARTIAL_STATE"}
+    )
     stopped = wait_stopped(proxy_url)
     artifacts_removed = all(not Path(path).exists() for path in artifacts)
     shell_unchanged = before_shell == after_shell
@@ -297,6 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         "setup": setup_json,
         "status": status_json,
         "doctor": doctor_json,
+        "manager_install_log_tail": manager_install_log_tail,
         "manifest": {
             "provider_mode": manifest_data.get("provider_mode"),
             "targets": manifest_data.get("targets"),

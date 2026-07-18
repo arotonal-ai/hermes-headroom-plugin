@@ -36,7 +36,8 @@ The manager:
 - disables telemetry and code-aware optional dependencies;
 - uses the memory CCR backend with a 1,800-second TTL by default;
 - records no secrets in manager state;
-- requires a private marker before recursively purging its runtime root;
+- rejects filesystem, home, Hermes-home, shared-temp, shallow, non-directory, and non-empty unowned runtime roots;
+- requires a private marker and deletes only the validated manager-owned top-level entries; any unexpected path blocks purge;
 - reports `RUNTIME_FULL_DURABLE` only after the saved upstream manifest matches the complete manager-owned identity/environment/proxy-argument contract, upstream status passes, readiness succeeds, and compress → retrieve recovers the sentinel.
 
 It does **not** change Hermes model/provider routing, write persistent shell environment blocks, install API keys, enable a paid provider, or run from `register()`.
@@ -129,7 +130,7 @@ Upstream's deployment manifest remains the supervisor authority. The manager sta
 headroom-runtime uninstall --json
 ```
 
-`uninstall` delegates to `headroom install remove`, waits for the listener to stop, and then removes the marked runtime root. If upstream remove fails or the listener remains ready, it returns `UNINSTALL_PARTIAL` and preserves runtime files for recovery.
+`uninstall` delegates to `headroom install remove`, waits for both the listener and native supervisor to disappear, validates every top-level runtime-root entry, and then deletes only the known manager-owned venv, workspace, state, marker, and logs. If upstream remove fails, the listener or supervisor remains present, or an unexpected path is found, it returns `UNINSTALL_PARTIAL` and preserves the root for recovery.
 
 Preserve the venv while removing deployment state:
 
@@ -137,7 +138,7 @@ Preserve the venv while removing deployment state:
 headroom-runtime uninstall --keep-runtime --json
 ```
 
-If state, the purge marker, or the saved no-target/no-mutation manifest contract is missing or invalid, upstream remove and recursive deletion are blocked. Remove supervisor artifacts manually only after verifying the upstream profile and target paths.
+If state, the purge marker, or the saved complete manager-owned manifest contract is missing or invalid, upstream remove and normal deletion are blocked. One narrow recovery is allowed after setup fails before writing a manifest: a `RUNTIME_PARTIAL` root may be removed without invoking upstream only when both listener and supervisor are absent and its entries match the managed-root deletion contract. Remove supervisor artifacts manually only after verifying the upstream profile and target paths.
 
 ## Known limits
 

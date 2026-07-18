@@ -15,6 +15,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -195,8 +196,16 @@ def _validate_package_spec(spec: str, *, package: str) -> str:
 
 def _resolve_root(value: str | Path) -> Path:
     root = Path(value).expanduser().resolve()
-    if root == Path(root.anchor) or root == Path.home().resolve() or root == _hermes_home().resolve():
-        raise ValueError("runtime root must be a dedicated child directory, not /, HOME, or HERMES_HOME")
+    forbidden = {
+        Path(root.anchor),
+        Path.home().resolve(),
+        _hermes_home().resolve(),
+        Path(tempfile.gettempdir()).resolve(),
+    }
+    if root in forbidden or len(root.parts) < 3:
+        raise ValueError(
+            "runtime root must be a dedicated leaf directory, not a filesystem, home, Hermes, or shared-temp root"
+        )
     return root
 
 
@@ -212,6 +221,17 @@ def _state_path(root: Path) -> Path:
     return root / STATE_FILE
 
 
+def _path_identity_equal(left: str | Path, right: str | Path) -> bool:
+    a = Path(left)
+    b = Path(right)
+    try:
+        return a.samefile(b)
+    except (FileNotFoundError, OSError):
+        return os.path.normcase(os.path.normpath(str(a))) == os.path.normcase(
+            os.path.normpath(str(b))
+        )
+
+
 def _load_state(root: Path) -> RuntimeState | None:
     path = _state_path(root)
     if not path.is_file():
@@ -225,19 +245,26 @@ def _load_state(root: Path) -> RuntimeState | None:
             "schema": STATE_SCHEMA,
             "host": DEFAULT_HOST,
             "runtime_root": str(root),
-            "venv_dir": str(_venv_dir(root)),
-            "workspace_dir": str(_workspace_dir(root)),
+            "venv_dir": str(Path(state.runtime_root) / _venv_dir(root).name),
+            "workspace_dir": str(Path(state.runtime_root) / _workspace_dir(root).name),
             "proxy_url": _proxy_url(state.port),
         }
         actual = {
             "schema": state.schema,
             "host": state.host,
-            "runtime_root": str(Path(state.runtime_root).expanduser().resolve()),
-            "venv_dir": str(Path(state.venv_dir).expanduser().resolve()),
-            "workspace_dir": str(Path(state.workspace_dir).expanduser().resolve()),
+            "runtime_root": state.runtime_root,
+            "venv_dir": state.venv_dir,
+            "workspace_dir": state.workspace_dir,
             "proxy_url": state.proxy_url,
         }
-        if actual != expected:
+        scalar_match = all(
+            actual[key] == expected[key] for key in ("schema", "host", "proxy_url")
+        )
+        path_match = all(
+            _path_identity_equal(actual[key], expected[key])
+            for key in ("runtime_root", "venv_dir", "workspace_dir")
+        )
+        if not (scalar_match and path_match):
             raise ValueError(f"state identity mismatch: expected {expected}, got {actual}")
         if state.preset not in {"persistent-service", "persistent-task"}:
             raise ValueError(f"unsupported state preset: {state.preset}")
@@ -277,6 +304,87 @@ def _safe_to_purge(root: Path) -> bool:
         return marker.is_file() and marker.read_text(encoding="utf-8").strip() == str(STATE_SCHEMA)
     except OSError:
         return False
+
+
+def _root_claim_contract(root: Path) -> dict[str, Any]:
+    result: dict[str, Any] = {"ok": True, "runtime_root": str(root)}
+    if not root.exists():
+        return result
+    if not root.is_dir() or root.is_symlink():
+        return {
+            **result,
+            "ok": False,
+            "detail": "runtime root exists but is not a dedicated real directory",
+        }
+    marker = root / MARKER_FILE
+    state = _state_path(root)
+    if marker.exists() or state.exists():
+        return result
+    try:
+        entries = sorted(item.name for item in root.iterdir())
+    except OSError as exc:
+        return {**result, "ok": False, "detail": f"runtime root cannot be inspected: {exc}"}
+    if entries:
+        return {
+            **result,
+            "ok": False,
+            "detail": "existing non-empty runtime root is not manager-owned",
+            "unexpected_entries": entries[:20],
+        }
+    return result
+
+
+def _managed_root_contract(root: Path, state: RuntimeState) -> dict[str, Any]:
+    expected_dirs = {
+        Path(state.venv_dir).name: Path(state.venv_dir),
+        Path(state.workspace_dir).name: Path(state.workspace_dir),
+    }
+    expected_files = {STATE_FILE, MARKER_FILE, "manager.log", "install.log"}
+    allowed = set(expected_dirs) | expected_files
+    try:
+        entries = {item.name: item for item in root.iterdir()}
+    except OSError as exc:
+        return {"ok": False, "detail": f"runtime root cannot be inspected: {exc}"}
+    unexpected = sorted(set(entries) - allowed)
+    invalid: list[str] = []
+    for name, expected in expected_dirs.items():
+        item = entries.get(name)
+        if item is None:
+            continue
+        if item.is_symlink() or not item.is_dir() or not _path_identity_equal(item, expected):
+            invalid.append(name)
+    for name in expected_files:
+        item = entries.get(name)
+        if item is not None and (item.is_symlink() or not item.is_file()):
+            invalid.append(name)
+    ok = not unexpected and not invalid
+    return {
+        "ok": ok,
+        "unexpected_entries": unexpected[:20],
+        "invalid_entries": sorted(invalid),
+        "allowed_entries": sorted(allowed),
+        "detail": None if ok else "runtime root contains entries outside the manager-owned deletion contract",
+    }
+
+
+def _purge_managed_root(root: Path, state: RuntimeState) -> dict[str, Any]:
+    contract = _managed_root_contract(root, state)
+    if not contract.get("ok"):
+        return contract
+    for directory in (Path(state.venv_dir), Path(state.workspace_dir)):
+        if directory.exists():
+            shutil.rmtree(directory)
+    for name in ("manager.log", "install.log", STATE_FILE, MARKER_FILE):
+        path = root / name
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+    try:
+        root.rmdir()
+    except OSError as exc:
+        return {**contract, "ok": False, "detail": f"managed entries removed but root remained: {exc}"}
+    return {**contract, "ok": True, "runtime_root_removed": True}
 
 
 def _lock_path(root: Path) -> Path:
@@ -546,7 +654,6 @@ def _manifest_contract(
         "HEADROOM_MODE": "token",
         "HEADROOM_BACKEND": "anthropic",
         "HEADROOM_TELEMETRY": "off",
-        "HEADROOM_WORKSPACE_DIR": str(_workspace_dir(root)),
         "HEADROOM_CCR_BACKEND": DEFAULT_CCR_BACKEND,
         "HEADROOM_CCR_TTL_SECONDS": str(DEFAULT_CCR_TTL_SECONDS),
         "HEADROOM_DISABLE_UPDATE_CHECK": "1",
@@ -568,7 +675,18 @@ def _manifest_contract(
         mismatches.append("mutations")
     if data.get("tool_envs") != {}:
         mismatches.append("tool_envs")
-    if data.get("base_env") != expected_env:
+    actual_env = data.get("base_env")
+    environment_exact = False
+    if isinstance(actual_env, dict):
+        actual_non_path_env = {
+            key: value
+            for key, value in actual_env.items()
+            if key != "HEADROOM_WORKSPACE_DIR"
+        }
+        environment_exact = actual_non_path_env == expected_env and _path_identity_equal(
+            actual_env.get("HEADROOM_WORKSPACE_DIR", ""), _workspace_dir(root)
+        )
+    if not environment_exact:
         mismatches.append("base_env")
     if data.get("proxy_args") != expected_proxy_args:
         mismatches.append("proxy_args")
@@ -585,7 +703,7 @@ def _manifest_contract(
             "service_name": data.get("service_name"),
             "targets_empty": data.get("targets") == [],
             "mutations_empty": data.get("mutations") == [],
-            "environment_exact": data.get("base_env") == expected_env,
+            "environment_exact": environment_exact,
             "proxy_args_exact": data.get("proxy_args") == expected_proxy_args,
             "mismatches": mismatches,
         }
@@ -594,6 +712,15 @@ def _manifest_contract(
     if mismatches:
         result["detail"] = "manifest failed complete manager-owned identity contract"
     return result
+
+def _wait_supervisor_absent(profile: str, timeout: int) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout
+    last = _supervisor_presence(profile)
+    while last.get("present") and time.monotonic() < deadline:
+        time.sleep(0.5)
+        last = _supervisor_presence(profile)
+    return last
+
 
 def _wait_ready(proxy_url: str, timeout: int) -> dict[str, Any]:
     deadline = time.monotonic() + timeout
@@ -727,6 +854,18 @@ def setup(args: argparse.Namespace) -> int:
                     "manifest_exists": manifest_exists,
                     "supervisor": supervisor,
                     "next": "use a different --profile or remove/adopt the existing deployment explicitly",
+                },
+                as_json=args.json,
+            )
+            return 2
+        claim = _root_claim_contract(root)
+        if not claim.get("ok"):
+            _emit(
+                {
+                    **plan,
+                    "decision": "RUNTIME_ROOT_CONFLICT",
+                    "detail": claim.get("detail"),
+                    "unexpected_entries": claim.get("unexpected_entries", []),
                 },
                 as_json=args.json,
             )
@@ -1009,10 +1148,48 @@ def uninstall(args: argparse.Namespace) -> int:
             root, profile=state.profile, port=state.port, preset=state.preset
         )
         if not manifest_contract.get("ok"):
+            partial_without_manifest = (
+                state.status == "RUNTIME_PARTIAL"
+                and manifest_contract.get("available") is False
+            )
+            if partial_without_manifest:
+                health = readyz(state.proxy_url)
+                supervisor = _supervisor_presence(state.profile)
+                if not health.get("ok") and not supervisor.get("present"):
+                    purge = {"ok": True}
+                    if not args.keep_runtime:
+                        purge = _purge_managed_root(root, state)
+                    else:
+                        try:
+                            _state_path(root).unlink()
+                        except FileNotFoundError:
+                            pass
+                    if not purge.get("ok"):
+                        _emit(
+                            {
+                                "decision": "UNINSTALL_BLOCKED",
+                                "detail": purge.get("detail"),
+                                "root_contract": purge,
+                                "upstream_mutation_invoked": False,
+                            },
+                            as_json=args.json,
+                        )
+                        return 2
+                    _emit(
+                        {
+                            "decision": "UNINSTALLED_PARTIAL_STATE",
+                            "profile": state.profile,
+                            "proxy_url": state.proxy_url,
+                            "runtime_files": "preserved" if args.keep_runtime else "removed",
+                            "upstream_mutation_invoked": False,
+                        },
+                        as_json=args.json,
+                    )
+                    return 0
             _emit(
                 {
                     "decision": "UNINSTALL_BLOCKED",
-                    "detail": "saved manifest failed the no-target/no-mutation contract; no upstream mutation was invoked",
+                    "detail": "saved manifest failed the complete manager-owned contract; no upstream mutation was invoked",
                     "manifest_contract": manifest_contract,
                     "next": "preserve runtime state and inspect the manifest/supervisor manually",
                 },
@@ -1047,20 +1224,40 @@ def uninstall(args: argparse.Namespace) -> int:
             )
             return 2
         health = _wait_stopped(state.proxy_url, args.stop_timeout)
-        if health.get("ok"):
+        supervisor = _wait_supervisor_absent(state.profile, args.stop_timeout)
+        if health.get("ok") or supervisor.get("present"):
+            reasons = []
+            if health.get("ok"):
+                reasons.append("managed listener is still ready")
+            if supervisor.get("present"):
+                reasons.append("native supervisor is still present")
             _emit(
                 {
                     "decision": "UNINSTALL_PARTIAL",
                     "profile": state.profile,
                     "proxy_url": state.proxy_url,
-                    "detail": "upstream remove returned success but the managed listener is still ready",
+                    "detail": "upstream remove returned success but " + " and ".join(reasons),
+                    "supervisor": supervisor,
                     "next": f"runtime files were preserved at {root}",
                 },
                 as_json=args.json,
             )
             return 2
         if not args.keep_runtime:
-            shutil.rmtree(root)
+            purge = _purge_managed_root(root, state)
+            if not purge.get("ok"):
+                _emit(
+                    {
+                        "decision": "UNINSTALL_PARTIAL",
+                        "profile": state.profile,
+                        "proxy_url": state.proxy_url,
+                        "detail": purge.get("detail"),
+                        "root_contract": purge,
+                        "next": f"unexpected files were preserved at {root}",
+                    },
+                    as_json=args.json,
+                )
+                return 2
         else:
             try:
                 _state_path(root).unlink()
