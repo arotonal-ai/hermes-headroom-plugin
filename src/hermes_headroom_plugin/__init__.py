@@ -33,8 +33,8 @@ def register(ctx) -> None:
     ctx.register_command(
         "headroom",
         handle_headroom_command,
-        description="Headroom status/smoke/audit/runtime/cache/usage helpers: /headroom status|smoke|audit|on|runtime|cache|usage|lanes|tail|decisions|why|opportunities",
-        args_hint="status|smoke|audit|on|runtime|stats|cache|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities",
+        description="Headroom setup/status/smoke/audit/runtime/cache/usage helpers; setup is read-only guidance and never installs silently.",
+        args_hint="status|setup|smoke|audit|runtime|stats|cache|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities (legacy: on)",
     )
     ctx.register_hook("transform_terminal_output", on_transform_terminal_output)
     ctx.register_hook("transform_llm_output", on_transform_llm_output)

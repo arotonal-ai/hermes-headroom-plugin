@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ from .hooks import headroom_status_marker, visible_status_marker_enabled
 from .config import hermes_home, resolve_effective_config
 from .proxy import readyz, retrieve_stats, smoke
 
-USAGE = "Usage: /headroom status|smoke|audit|on|runtime|stats|cache|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities"
+USAGE = "Usage: /headroom status|setup|smoke|audit|runtime|stats|cache|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities (legacy: on)"
 REPEATED_TERMINAL_BELOW_MIN_CANDIDATE_CHARS = 28_000
 
 
@@ -508,29 +509,49 @@ def _render_opportunities() -> str:
         lines.append(f"top_below_min_turn: turn_id={turn} count={data['count']} chars={data['chars']} max={data['max']}")
     return "\n".join(lines)
 
-def _render_on() -> str:
-    """Compatibility response for owner-local `/headroom on` muscle memory.
+def _installed_runtime_script() -> Path | None:
+    """Return the native Git/source runtime installer when this checkout includes it."""
+    candidate = Path(__file__).resolve().parents[2] / "scripts" / "install-production-runtime.py"
+    return candidate if candidate.is_file() else None
 
-    The packaged plugin does not toggle itself from a slash command. Plugin
-    enablement is handled by `hermes plugins install ... --enable`; runtime
-    startup is handled by the production runtime installer or service manager.
-    This command is intentionally read-only and reports whether Headroom is
-    already usable through the current proxy.
-    """
+
+def _render_setup() -> str:
+    """Read-only setup guidance; never installs dependencies or starts a daemon."""
     health = readyz()
     if health.get("ok"):
         return (
-            "Headroom on · already active · "
+            "Headroom setup · runtime already active · "
             f"proxy={health['proxy_url']} · status={health['status']} · "
             f"visible_marker={'on:' + headroom_status_marker(health) if visible_status_marker_enabled() else 'off:disabled'} · "
-            "use /headroom smoke for compress→retrieve verification"
+            "auto compression uses current config; run /headroom smoke for compress→retrieve verification"
+        )
+    script = _installed_runtime_script()
+    if script is not None:
+        if sys.platform == "win32":
+            command = f'py -3 "{script}"'
+            guidance = f"run `{command}` for Windows process-level setup"
+        elif sys.platform == "darwin":
+            command = f'python3 "{script}"'
+            guidance = f"run `{command}` for macOS process-level setup"
+        else:
+            command = f'python3 "{script}" --systemd-user'
+            guidance = f"run `{command}` for Linux durable setup; omit --systemd-user for process-level setup"
+    else:
+        guidance = (
+            "this pip/wheel install does not package the runtime installer; use the native Git/source install path "
+            "or explicitly install and supervise the official headroom-ai[proxy] runtime"
         )
     return (
-        "Headroom on · no slash-side toggle in the packaged plugin · "
-        f"proxy={health['proxy_url']} not ready · status={health['status']} · "
+        "Headroom setup · runtime not ready · no state changed · "
+        f"proxy={health['proxy_url']} · status={health['status']} · "
         f"visible_marker={'on:' + headroom_status_marker(health) if visible_status_marker_enabled() else 'off:disabled'} · "
-        "run the production runtime installer or restart the external Headroom service, then /headroom smoke"
+        f"{guidance}; then /headroom smoke"
     )
+
+
+def _render_on() -> str:
+    """Compatibility alias retained for owner-local `/headroom on` muscle memory."""
+    return "Headroom on · legacy read-only alias; no slash-side toggle or mutation · " + _render_setup()
 
 
 def handle_headroom_command(raw_args: str = "") -> str:
@@ -557,6 +578,8 @@ def handle_headroom_command(raw_args: str = "") -> str:
         return _render_decisions(parts)
     if action in {"opportunities", "opp"}:
         return _render_opportunities()
+    if action == "setup":
+        return _render_setup()
     if action in {"on", "enable"}:
         return _render_on()
     if action in {"off", "disable"}:

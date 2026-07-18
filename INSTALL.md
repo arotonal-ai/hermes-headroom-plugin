@@ -22,6 +22,8 @@ If `hermes` is missing, install/fix Hermes Agent first: <https://hermes-agent.no
 | `headroom-ai[proxy]` | full compression/retrieval runtime | required for `RUNTIME_FULL`; not required only for plugin load/status |
 | API keys | not needed | do not paste secrets into install commands or issues |
 
+This guide's certified `RUNTIME_FULL` path assumes native Git installation (`hermes plugins install owner/repo`) or a source checkout. A base pip/wheel entry-point install loads the plugin but does not include the repo-root runtime installer; the `[proxy]` extra installs dependencies into the current Python environment but still does not create/supervise/verify a runtime service. See the distribution matrix in [README.md](README.md).
+
 ## 1. Install the Hermes plugin
 
 Run on the owner/target Hermes instance:
@@ -38,30 +40,29 @@ Verify inside Hermes:
 
 ```text
 /headroom status
-/headroom on      # read-only compatibility check; does not mutate runtime/provider state
+/headroom setup   # read-only setup guidance; does not install/start runtime
 ```
 
 Expected: the commands exist and return proxy/status guidance. The optional marker is off by default; when explicitly enabled it reports `visible_marker=on:[HR✓]` only if proxy readiness is healthy. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
 
 ## 2. Install Headroom runtime for real compression
 
-The plugin can be installed and can report `/headroom status` without the upstream runtime. That degraded state is `RUNTIME_PARTIAL`. It does **not** provide real compression, CCR retrieval, `/headroom smoke`, or middleware/wrapper compression. For process-level production `RUNTIME_FULL`, run the bundled installer from a repo/plugin checkout:
+The plugin can be installed and can report `/headroom status` without the upstream runtime. That degraded state is `RUNTIME_PARTIAL`. It does **not** provide real compression, CCR retrieval, `/headroom smoke`, or middleware/wrapper compression. Native `hermes plugins install` clones this full repository and automatically displays `after-install.md`; use the installed path rather than assuming the current directory:
 
 ```bash
-python scripts/install-production-runtime.py
-# Unix/Git Bash wrapper:
-scripts/install-production-runtime.sh
+PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
+python3 "$PLUGIN_DIR/scripts/install-production-runtime.py" --systemd-user  # Linux durable
+# Omit --systemd-user for macOS/process-level RUNTIME_FULL.
 ```
 
 Windows PowerShell:
 
 ```powershell
-python scripts\install-production-runtime.py
-# or:
-py -3 scripts\install-production-runtime.py
+$PluginDir = if ($env:HERMES_HOME) { "$env:HERMES_HOME\plugins\headroom_retrieve" } else { "$HOME\.hermes\plugins\headroom_retrieve" }
+py -3 "$PluginDir\scripts\install-production-runtime.py"
 ```
 
-What the installer does: creates/updates `~/.cache/hermes-headroom-venv-0.31.0`; installs `headroom-ai[proxy]==0.31.0` plus portable constraint `litellm==1.91.3`; defaults CCR recovery to memory with a 1,800-second TTL; starts the loopback proxy; verifies `/readyz`; runs real plugin compress → retrieve smoke; and prints `RUNTIME_FULL` only when all checks pass. LiteLLM is pinned because `1.92.0` lacks macOS/Windows wheels and would require an undeclared Rust toolchain. The bundled `llm-monitor` companion is opt-in via `--with-llm-monitor-companion` or `--companion-only`. See [docs/portable-core.md](docs/portable-core.md).
+What the installer does: creates/updates `~/.cache/hermes-headroom-venv-0.31.0`; installs the certified `headroom-ai[proxy]==0.31.0` distribution from PyPI, published by the [official Headroom project](https://github.com/headroomlabs-ai/headroom), plus portable constraint `litellm==1.91.3`; defaults CCR recovery to memory with a 1,800-second TTL; starts the loopback proxy; verifies `/readyz`; runs real plugin compress → retrieve smoke; and prints `RUNTIME_FULL` only when all checks pass. Cloning upstream source is not required. LiteLLM is pinned because `1.92.0` lacks macOS/Windows wheels and would require an undeclared Rust toolchain. The bundled `llm-monitor` companion is opt-in via `--with-llm-monitor-companion` or `--companion-only`. See [docs/portable-core.md](docs/portable-core.md).
 
 No-restart companion-only validation: `python scripts/install-production-runtime.py --companion-only --hermes-home /tmp/hermes-home --json`. This copies only the bundled `llm-monitor` companion and does not install/start Headroom runtime or restart Hermes.
 
@@ -99,7 +100,7 @@ Expected: smoke PASS with sentinel retrieval. With a healthy proxy, the plugin c
 
 | State | Meaning | Evidence |
 |---|---|---|
-| `INSTALL_PASS` | Plugin installed and Hermes can load it | `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`; `/headroom status` and `/headroom on` respond after restart/new session |
+| `INSTALL_PASS` | Plugin installed and Hermes can load it | `hermes plugins list --enabled --user --plain` includes `headroom_retrieve`; `/headroom status` and `/headroom setup` respond after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin commands load, proxy unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; no compression/retrieval/middleware compression is active |
 | `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | dependency smoke passes and `/headroom smoke` returns PASS with sentinel retrieval; `/headroom cache` can read runtime-owned CCR store stats |
 | `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `python scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes |
@@ -166,7 +167,7 @@ context_reduction:
   proxy_url: http://127.0.0.1:8787
 ```
 
-Restart/fresh-session before rechecking `/headroom status` and `/headroom on`.
+Restart/fresh-session before rechecking `/headroom status` and `/headroom setup`.
 
 **Remote proxy guardrail:** loopback (`127.0.0.1` / `localhost`) is allowed by default. Non-loopback `HEADROOM_PROXY_URL` is blocked unless you explicitly set `HEADROOM_ALLOW_REMOTE_PROXY=1` or `context_reduction.allow_remote_proxy: true`; use that only for controlled, trusted endpoints.
 
@@ -237,9 +238,7 @@ python -m pip --version
 python scripts/test-headroom-dependency-install.py --keep
 ```
 
-Then compare against upstream Headroom docs:
-
-- <https://github.com/chopratejas/headroom>
+- <https://github.com/headroomlabs-ai/headroom>
 - <https://headroom-docs.vercel.app/docs>
 - <https://pypi.org/project/headroom-ai/>
 

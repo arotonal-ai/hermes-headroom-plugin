@@ -31,7 +31,7 @@ Use this skill when you need to:
 - decide whether a Headroom result is `INSTALL_PASS`, `RUNTIME_PARTIAL`, `RUNTIME_FULL`, `RUNTIME_FULL_DURABLE`, or `FAIL`;
 - use `headroom_retrieve` to resolve an exact CCR marker;
 - validate the upstream `headroom-ai[proxy]` dependency without touching the real Python environment;
-- check `/headroom status`, `/headroom on`, `/headroom smoke`, `/headroom cache`, or `/headroom audit`;
+- check `/headroom status`, `/headroom setup`, `/headroom smoke`, `/headroom cache`, or `/headroom audit`;
 - classify payloads as compressible, exact, or blocked;
 - operate the portable Context Economy Loop contract (`docs/context-economy-loop.md`) without copying private instance state;
 - generate weekly savings tables from JSONL evidence.
@@ -84,7 +84,7 @@ Verify in Hermes:
 
 ```text
 /headroom status
-/headroom on      # read-only compatibility check; does not mutate runtime/provider state
+/headroom setup   # read-only setup guidance; does not install/start runtime
 ```
 
 If this command responds, plugin install succeeded. A missing proxy is `RUNTIME_PARTIAL`, not a failed install, but it is not active context reduction: `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression require a reachable proxy.
@@ -119,7 +119,7 @@ Then verify in Hermes:
 
 | State | Meaning | Required evidence |
 |---|---|---|
-| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom on` respond after restart/new session. |
+| `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` appears in `hermes plugins list --enabled --user --plain`; `/headroom status` and `/headroom setup` respond after restart/new session. |
 | `RUNTIME_PARTIAL` | Plugin loads, but no proxy is reachable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; status/audit work, but compression/retrieval/middleware compression are not active. |
 | `RUNTIME_FULL` | Plugin, dependency, and proxy work in the current process/session | `scripts/install-production-runtime.py` reports `RUNTIME_FULL`, or dependency smoke plus `/headroom smoke` returns PASS with sentinel retrieval. |
 | `RUNTIME_FULL_DURABLE` | Linux user-service runtime survives gateway restart/logout | `scripts/install-production-runtime.py --systemd-user` returns `RUNTIME_FULL_DURABLE`, `hermes-context-reduction.service` is enabled + active, and `/headroom smoke` passes. |
@@ -235,7 +235,7 @@ A passing clean-home test should prove:
 Packaged now:
 
 - `headroom_retrieve` tool;
-- `/headroom status`, `/headroom on`, `/headroom smoke`, `/headroom audit`;
+- `/headroom status`, `/headroom setup`, `/headroom smoke`, `/headroom audit`;
 - visible `[HR✓]` / `[HR!]` readiness marker for final answers;
 - fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results such as `delegate_task`, terminal/process, browser/debug, `web_extract`, and `session_search`;
 - conservative policy helpers;
@@ -293,7 +293,7 @@ If installed from a local checkout with a symlink or copy, remove the checkout-i
 
 - [ ] Plugin appears in `hermes plugins list --enabled --user --plain`.
 - [ ] Fresh session/restart completed before checking slash commands.
-- [ ] `/headroom status` and `/headroom on` return without crashing.
+- [ ] `/headroom status` and `/headroom setup` return without crashing.
 - [ ] Dependency smoke uses a temporary venv and passes before runtime claims.
 - [ ] `/headroom smoke` passes before claiming `RUNTIME_FULL`.
 - [ ] CCR retrieval is verified against exact content before final claims.

@@ -4,8 +4,9 @@ Hermes Headroom Plugin exists because of the upstream Headroom project and its p
 
 ## Upstream Headroom
 
-- Original/open-source project: [chopratejas/headroom](https://github.com/chopratejas/headroom)
-- Documentation site: [headroomlabs-ai.github.io/headroom](https://headroomlabs-ai.github.io/headroom/)
+- Current official project: [headroomlabs-ai/headroom](https://github.com/headroomlabs-ai/headroom) (original namespace: `chopratejas/headroom`)
+- Current documentation: [headroom-docs.vercel.app/docs](https://headroom-docs.vercel.app/docs)
+- Alternate/legacy documentation: [headroomlabs-ai.github.io/headroom](https://headroomlabs-ai.github.io/headroom/)
 - Python package: [`headroom-ai` on PyPI](https://pypi.org/project/headroom-ai/)
 
 Thanks to the Headroom maintainers and contributors for publishing the underlying ideas and package surface that make this Hermes integration possible.
@@ -16,7 +17,7 @@ This repository is a Hermes Agent integration layer. It adds:
 
 - native Hermes plugin installation via `hermes plugins install`;
 - `headroom_retrieve` tool registration;
-- `/headroom status`, `/headroom on`, `/headroom smoke`, and `/headroom audit` commands;
+- `/headroom status`, `/headroom setup`, `/headroom smoke`, and `/headroom audit` commands; `/headroom on` remains a read-only legacy alias;
 - conservative exact/compress/blocked policy defaults;
 - agent/human installation docs and clean-home test harnesses.
 
