@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## v0.5.1 — Unreleased
+
+- Correct the packaged `proxy` extra to require `headroom-ai[proxy]==0.32.1`, matching the managed runtime, workflows, documentation, and validated multi-OS release candidate.
+- Add a regression test and readiness-audit assertion that require exact package-metadata parity with the certified Headroom and LiteLLM runtime pins.
+
+## v0.5.0 — 2026-07-20 (withdrawn)
+
+> Withdrawn before any GitHub asset download was recorded: the packaged `proxy` extra still required Headroom 0.32.0 while the validated managed runtime used 0.32.1. The v0.5.1 hotfix corrects the metadata without rewriting the v0.5.0 tag or artifacts.
 
 - Package a portable `headroom-runtime setup|status|doctor|uninstall` entry point plus a native-Git launcher so wheel and repository installs share one explicit lifecycle manager.
 - Wrap Headroom 0.32's pinned manifest/supervisor lifecycle plus public `install status|remove`, while avoiding both `deploy` and direct `install apply`; force manual provider selection with no targets, telemetry off, isolated versioned venvs, loopback-only defaults, and compress → retrieve verification.

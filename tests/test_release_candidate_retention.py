@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import tomllib
 from pathlib import Path
 
 
@@ -24,6 +25,16 @@ def test_release_candidate_default_runtime_is_pinned() -> None:
     assert MODULE.LITELLM_RUNTIME_VERSION == "1.91.3"
     assert MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
     assert RUNTIME_SMOKE_MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
+
+
+def test_package_proxy_extra_matches_certified_runtime() -> None:
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+
+    assert project["version"] == "0.5.1"
+    assert project["optional-dependencies"]["proxy"] == [
+        MODULE.DEFAULT_HEADROOM_SPEC,
+        MODULE.DEFAULT_LITELLM_SPEC,
+    ]
 
 
 def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> None:
