@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import tempfile
+import tomllib
+import zipfile
 from pathlib import Path
 
 
@@ -24,6 +27,43 @@ def test_release_candidate_default_runtime_is_pinned() -> None:
     assert MODULE.LITELLM_RUNTIME_VERSION == "1.91.3"
     assert MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
     assert RUNTIME_SMOKE_MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
+
+
+def test_package_proxy_extra_matches_certified_runtime() -> None:
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+
+    assert project["version"] == "0.5.1"
+    assert project["optional-dependencies"]["proxy"] == [
+        MODULE.DEFAULT_HEADROOM_SPEC,
+        MODULE.DEFAULT_LITELLM_SPEC,
+    ]
+
+    config = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    portable_core = (REPO / "docs" / "portable-core.md").read_text(encoding="utf-8")
+    packaged_docs = config["tool"]["setuptools"]["data-files"]["share/doc/hermes-headroom-plugin"]
+    assert "docs/portable-core.md" in packaged_docs
+    assert f"hermes-headroom-plugin=={project['version']}" in portable_core
+
+
+def test_archive_inspection_rejects_stale_packaged_portable_core() -> None:
+    member = "package.data/data/share/doc/hermes-headroom-plugin/portable-core.md"
+    expected_row = f"| Plugin | `{MODULE.EXPECTED_PLUGIN_SPEC}` |"
+    invalid_documents = {
+        "mixed": f"{expected_row}\n| Plugin | `hermes-headroom-plugin==0.5.0` |",
+        "local-suffix": "| Plugin | `hermes-headroom-plugin==0.5.1+0.5.0` |",
+    }
+    with tempfile.TemporaryDirectory() as temp_dir:
+        for name, document in invalid_documents.items():
+            stale_wheel = Path(temp_dir) / f"{name}.whl"
+            with zipfile.ZipFile(stale_wheel, "w") as archive:
+                archive.writestr(member, document)
+            stale_issues = MODULE.portable_core_version_issues(stale_wheel)
+            assert [issue["kind"] for issue in stale_issues] == ["portable_core_plugin_version_mismatch"]
+
+        corrected_wheel = Path(temp_dir) / "corrected.whl"
+        with zipfile.ZipFile(corrected_wheel, "w") as archive:
+            archive.writestr(member, expected_row)
+        assert MODULE.portable_core_version_issues(corrected_wheel) == []
 
 
 def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> None:

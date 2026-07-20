@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import tomllib
 import urllib.request
 import venv
 import zipfile
@@ -27,6 +28,8 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
+PROJECT_VERSION = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+EXPECTED_PLUGIN_SPEC = f"hermes-headroom-plugin=={PROJECT_VERSION}"
 HEADROOM_RUNTIME_VERSION = "0.32.1"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
 LITELLM_RUNTIME_VERSION = "1.91.3"
@@ -262,6 +265,29 @@ def read_archive_texts(path: Path, limit_bytes: int = 80_000) -> list[tuple[str,
     return out
 
 
+def portable_core_version_issues(artifact: Path, archive_texts: list[tuple[str, str]] | None = None) -> list[dict[str, Any]]:
+    texts = read_archive_texts(artifact) if archive_texts is None else archive_texts
+    portable_core_docs = [(member, text) for member, text in texts if member.endswith("portable-core.md")]
+    if not portable_core_docs:
+        return [{"artifact": artifact.name, "kind": "missing_portable_core_doc"}]
+
+    expected_row = f"| Plugin | `{EXPECTED_PLUGIN_SPEC}` |"
+    issues: list[dict[str, Any]] = []
+    for member, text in portable_core_docs:
+        found_rows = [line.strip() for line in text.splitlines() if "hermes-headroom-plugin==" in line]
+        if found_rows != [expected_row]:
+            issues.append(
+                {
+                    "artifact": artifact.name,
+                    "member": member,
+                    "kind": "portable_core_plugin_version_mismatch",
+                    "expected": expected_row,
+                    "found": found_rows,
+                }
+            )
+    return issues
+
+
 def build_and_inspect(run_dir: Path) -> dict[str, Any]:
     venv_dir = run_dir / "build-venv"
     python = create_venv(venv_dir)
@@ -288,7 +314,9 @@ def build_and_inspect(run_dir: Path) -> dict[str, Any]:
             lowered = member.lower()
             if any(bad in lowered for bad in (".git/", ".venv/", "__pycache__", ".pytest_cache", "release-candidate-runs")):
                 issues.append({"artifact": artifact.name, "member": member, "kind": "forbidden_member"})
-        for member, text in read_archive_texts(artifact):
+        archive_texts = read_archive_texts(artifact)
+        issues.extend(portable_core_version_issues(artifact, archive_texts))
+        for member, text in archive_texts:
             for pattern in OWNER_LOCAL_PATTERNS:
                 if pattern.search(text):
                     issues.append({"artifact": artifact.name, "member": member, "kind": "owner_local_path", "pattern": pattern.pattern})
