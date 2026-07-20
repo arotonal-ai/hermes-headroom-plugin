@@ -1,12 +1,12 @@
 # Compatibility
 
-This page separates the **published certified baseline** from a **release candidate** and from non-blocking future monitoring.
+This page separates **published certified releases** from withdrawn releases and non-blocking future monitoring.
 
 - Published `v0.4.1`: `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`.
 - Withdrawn `v0.5.0`: packaged `proxy` metadata still required Headroom 0.32.0; its GitHub release remains draft and its tag/artifacts are not rewritten.
-- Unreleased `v0.5.1` candidate: `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, managed through `headroom-runtime`.
+- Published `v0.5.1`: `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, managed through `headroom-runtime`.
 
-The v0.5 pair passed its blocking setup → status → doctor → uninstall matrix on GitHub-hosted Ubuntu, macOS, and native Windows for Python 3.11 and 3.12. That candidate evidence does not publish v0.5 by itself: the final release-candidate gate, exact-pin documentation, and release controls must still pass.
+The v0.5.1 pair passed its blocking setup → status → doctor → uninstall matrix on GitHub-hosted Ubuntu, macOS, and native Windows for Python 3.11 and 3.12, plus the final release-candidate, exact-pin documentation, and release-control gates. This evidence supports the published lifecycle; it does not claim production token savings.
 
 ## Published v0.4.x baseline
 
@@ -29,9 +29,9 @@ Evidence baseline:
 | WSL2 | target evidence required | 🟡 expected | 🟡 expected | not certified here |
 | Termux | target evidence required | 🟡 expected | 🟡 expected | not certified here |
 
-## v0.5 runtime-manager candidate
+## Published v0.5.1 runtime manager
 
-Headroom `0.32.1` is the pinned v0.5 candidate. The direct upstream user-scope apply path was rejected because a real 0.32.0 canary wrote persistent `HEADROOM_*` blocks to `.bashrc`, `.zshrc`, and `.profile` despite manual provider mode and no provider targets. `headroom/cli/install.py` is byte-identical between that reviewed 0.32.0 source and the verified 0.32.1 PyPI sdist; the other wrapped lifecycle functions are AST-equivalent.
+Headroom `0.32.1` is the pinned v0.5.1 runtime. The direct upstream user-scope apply path was rejected because a real 0.32.0 canary wrote persistent `HEADROOM_*` blocks to `.bashrc`, `.zshrc`, and `.profile` despite manual provider mode and no provider targets. `headroom/cli/install.py` is byte-identical between that reviewed 0.32.0 source and the verified 0.32.1 PyPI sdist; the other wrapped lifecycle functions are AST-equivalent.
 
 The replacement manager uses the pinned upstream manifest/native-supervisor implementation while requiring:
 
@@ -49,7 +49,7 @@ Local Linux evidence on Python 3.11.15 passed the 0.32.1 lifecycle through the n
 - uninstall removed the unit, listener, artifacts, and managed runtime root;
 - the existing owner runtime remained healthy and unchanged.
 
-Sanitized candidate evidence: [`docs/evidence/headroom-0321-runtime-manager-canary-20260720.json`](evidence/headroom-0321-runtime-manager-canary-20260720.json).
+Sanitized release evidence: [`docs/evidence/headroom-0321-runtime-manager-canary-20260720.json`](evidence/headroom-0321-runtime-manager-canary-20260720.json).
 
 The blocking `.github/workflows/runtime-smoke.yml` matrix passed the same lifecycle canary in all six Ubuntu/macOS/Windows Python 3.11/3.12 jobs: [run 29716326909](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/runs/29716326909).
 
@@ -63,7 +63,7 @@ That workflow is intentionally **non-blocking**:
 
 - it may pass or fail without changing certified support;
 - failures are early drift signals, not regressions in supported 3.11/3.12 paths;
-- the certified/candidate `litellm==1.91.3` path remains blocking and unchanged when a latest-dependency lane fails;
+- the certified `litellm==1.91.3` path remains blocking and unchanged when a latest-dependency lane fails;
 - promotion requires a normal blocking lifecycle matrix, release gate, and docs/changelog update.
 
 | Runtime | Current posture | Promotion gate |
@@ -76,7 +76,7 @@ That workflow is intentionally **non-blocking**:
 ## Runtime-version policy
 
 1. Keep plugin install/load independent from the separate proxy runtime; active compression requires a healthy loopback proxy.
-2. Keep runtime versions exact in release paths. The v0.5 candidate pair is `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`.
+2. Keep runtime versions exact in release paths. The v0.5.1 release pair is `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`.
 3. Treat `--headroom-spec` / `HEADROOM_AI_SPEC` and `--litellm-spec` / `HEADROOM_LITELLM_SPEC` overrides as explicit incident, target-host diagnostic, or non-blocking canary controls.
 4. Promote or demote support only from dependency, real lifecycle, readiness, sentinel-recovery, and rollback evidence.
 5. Document target-host drift honestly, especially on native Windows where Python aliases and Task Scheduler policy may differ from CI.

@@ -73,7 +73,7 @@ required_text = {
     'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/headroom-runtime.py', 'headroom-runtime doctor --json', 'headroom-ai[proxy]==0.32.1', 'provider_mode=manual', 'targets=[]', 'mutations=[]', 'weekly metrics', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
     'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]==0.32.1', 'scripts/headroom-runtime.py', 'headroom-runtime doctor --json', 'provider_mode=manual', 'mutations=[]', 'Python 3.13/3.14', 'generate-weekly-savings-table.py', 'tool_execution', 'headroom-worker-lane'],
     'docs/portable-core.md': ['hermes-headroom-plugin==0.5.1', 'headroom-ai[proxy]==0.32.1', 'litellm==1.91.3'],
-    'docs/compatibility.md': ['Published v0.4.x baseline', 'v0.5 runtime-manager candidate', 'Future Runtime Monitor', 'Python 3.13', 'Python 3.14', 'headroom-ai[proxy]==0.32.1'],
+    'docs/compatibility.md': ['Published v0.4.x baseline', 'Published v0.5.1 runtime manager', 'Future Runtime Monitor', 'Python 3.13', 'Python 3.14', 'headroom-ai[proxy]==0.32.1'],
     'docs/runtime-manager.md': ['headroom-runtime setup', 'headroom-runtime status', 'headroom-runtime doctor', 'headroom-runtime uninstall', 'provider_mode=manual', 'targets=[]', 'mutations=[]', 'pinned private lifecycle APIs', 'Do not call it directly.'],
     'MANIFEST.in': ['include INSTALL.md', 'recursive-include docs *.md', 'recursive-include scripts *.py *.sh'],
     'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],

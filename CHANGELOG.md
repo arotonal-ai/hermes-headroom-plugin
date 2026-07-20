@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.5.1 — Unreleased
+## v0.5.1 — 2026-07-20
 
 - Correct the packaged `proxy` extra to require `headroom-ai[proxy]==0.32.1`, matching the managed runtime, workflows, documentation, and validated multi-OS release candidate.
 - Add a regression test and readiness-audit assertion that require exact package-metadata parity with the certified Headroom and LiteLLM runtime pins.
