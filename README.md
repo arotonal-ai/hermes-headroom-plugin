@@ -49,7 +49,7 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 |---|---:|---|
 | `headroom_retrieve` Hermes tool | ✅ included | retrieves exact content behind CCR markers |
 | `/headroom status` | ✅ plugin-only | reports configured proxy URL and readiness; does not compress |
-| `/headroom setup` | ✅ plugin-only | read-only compatibility/readiness check; does not start or mutate runtime |
+| `/headroom setup` | ✅ plugin-only | read-only guidance to the native Git launcher or wheel `headroom-runtime` entry point |
 | `/headroom smoke` | ✅ requires runtime | real compress → retrieve sentinel check through the configured Headroom proxy |
 | `/headroom audit` | ✅ plugin-only + runtime-aware | local policy/runtime posture summary |
 | `/headroom cache` | ✅ runtime read-only | reports runtime-owned CCR store/cache entries, TTL, backend, usage, and retrieval counts; the plugin has no independent CCR cache |
@@ -87,83 +87,72 @@ Expected first verification:
 
 If this responds, the plugin has loaded. A missing proxy is `RUNTIME_PARTIAL`: useful for status/audit/readiness, but **not** a production context-reduction state because no real compression or retrieval can occur.
 
-### Production: install the Headroom proxy runtime
+### Production: install and manage the official Headroom runtime
 
-`hermes plugins install ... --enable` clones the full repository into the target Hermes plugins directory and enables the Hermes surface. It does **not** execute dependency installation or start a service. For any real compression/retrieval path — `/headroom smoke`, `headroom_retrieve`, `tool_execution` compression, and wrapper compression — a reachable Headroom proxy is required. Hermes automatically displays [`after-install.md`](after-install.md); the same one-command path is:
+`hermes plugins install ... --enable` installs the Hermes surface. It does **not** run network installs or start daemons from `register()`. Real compression/retrieval requires one explicit setup command.
+
+Native Hermes Git install:
 
 ```bash
 PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
-python3 "$PLUGIN_DIR/scripts/install-production-runtime.py" --systemd-user  # Linux durable
-# Omit --systemd-user for macOS/process-level RUNTIME_FULL.
+python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" setup
 ```
 
-The installer creates/updates `~/.cache/hermes-headroom-venv-0.31.0`, installs the certified `headroom-ai[proxy]==0.31.0` package published by the [official Headroom project](https://github.com/headroomlabs-ai/headroom) plus the portable `litellm==1.91.3` constraint, uses in-memory CCR with a 1,800-second TTL by default, starts the loopback proxy if needed, waits for `/readyz`, and runs real plugin compress → retrieve smoke. Cloning upstream Headroom source is not required. LiteLLM is pinned because `1.92.0` does not provide macOS/Windows wheels and would introduce an undeclared Rust build requirement. The bundled `llm-monitor` companion is not installed unless `--with-llm-monitor-companion` or `--companion-only` is requested. See the canonical [portable tool-core contract](docs/portable-core.md) for storage, retention, opt-ins, verification, and rollback.
-
-No-restart companion-only validation:
+Wheel install:
 
 ```bash
-python scripts/install-production-runtime.py --companion-only --hermes-home /tmp/hermes-home --json
+headroom-runtime setup
 ```
 
-For a Linux Hermes gateway/default-cockpit deployment, use durable service mode instead of a detached helper process:
-
-```bash
-python scripts/install-production-runtime.py --systemd-user
-systemctl --user is-enabled hermes-context-reduction.service
-systemctl --user is-active hermes-context-reduction.service
-```
-
-That path reports `RUNTIME_FULL_DURABLE` only when the user service is enabled + active and the compress → retrieve smoke passes. Without `--systemd-user`, `RUNTIME_FULL` is process-level evidence, not proof that the proxy will survive a gateway restart/logout.
-
-Windows PowerShell uses the same Python helper:
+Windows native Git install:
 
 ```powershell
-python scripts\install-production-runtime.py
-# or, if python is not resolved correctly:
-py -3 scripts\install-production-runtime.py
+$PluginDir = if ($env:HERMES_HOME) { "$env:HERMES_HOME\plugins\headroom_retrieve" } else { "$HOME\.hermes\plugins\headroom_retrieve" }
+py -3 "$PluginDir\scripts\headroom-runtime.py" setup
 ```
 
-Manual fallback:
+Inspect the exact plan first without writes or downloads:
 
 ```bash
-python3 -m venv ~/.cache/hermes-headroom-venv-0.31.0
-~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install --upgrade pip
-~/.cache/hermes-headroom-venv-0.31.0/bin/python -m pip install 'headroom-ai[proxy]==0.31.0'
-HEADROOM_CCR_BACKEND=memory HEADROOM_CCR_TTL_SECONDS=1800 ~/.cache/hermes-headroom-venv-0.31.0/bin/headroom proxy --host 127.0.0.1 --port 8787 --no-telemetry
+headroom-runtime setup --dry-run --json
 ```
 
-Then in Hermes:
+The v0.5 manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs the official `headroom-ai[proxy]==0.32.1` package plus `litellm==1.91.3`, and reuses upstream manifests and native supervisors. It requires `provider_mode=manual`, `targets=[]`, and `mutations=[]`; unlike direct `headroom install apply` in 0.32.1, it does not write persistent shell/provider configuration. It disables telemetry, binds to `127.0.0.1:8787` by default, uses memory CCR with a 1,800-second TTL, checks upstream status/readiness, and runs real plugin compress → retrieve smoke. It never changes Hermes model/provider routing.
 
-```text
-/headroom smoke
+Verify or roll back:
+
+```bash
+headroom-runtime status --json
+headroom-runtime doctor --json
+headroom-runtime uninstall --json
 ```
 
-## Runtime boundary: plugin alone vs Headroom runtime
+The native Git launcher accepts the same subcommands. A successful doctor reports `RUNTIME_FULL_DURABLE`; if setup or remove is incomplete, manager state and private logs are preserved for rollback. Full contract: [docs/runtime-manager.md](docs/runtime-manager.md).
 
-The plugin is the Hermes integration layer; the Headroom runtime is the compression/retrieval engine. Treat them as separate layers:
+The older `scripts/install-production-runtime.py` remains a compatibility path for v0.4 deployments and the optional `llm-monitor` companion. New installs should use the runtime manager.
+
+### Runtime boundary: plugin alone vs Headroom runtime
+
+The plugin is the Hermes integration layer; the official Headroom runtime is the compression/retrieval engine.
 
 | Layer | Works without proxy? | What it covers |
 |---|---:|---|
-| Hermes plugin registration | ✅ | `headroom_retrieve` tool exists, `/headroom` command exists, bundled skill is discoverable, fail-open middleware is registered. |
-| Status/audit/readiness | ✅ partial | `/headroom status`, `/headroom setup`, and audit can report configuration/readiness; they do not compress. |
-| `headroom_retrieve` exact CCR recovery | ❌ | Calls the proxy `/v1/retrieve`; without runtime it returns a clear proxy-not-ready/config error. |
-| `/headroom smoke` | ❌ | Calls proxy `/readyz`, `/v1/compress`, then `/v1/retrieve`; PASS requires runtime. |
-| `/headroom cache` / `/headroom runtime` | ❌ for store data | Read-only views of runtime health and retrieve/store stats; without runtime they can only report unavailable. |
-| `tool_execution` result compression | ❌ | Middleware first checks proxy readiness, then calls `/v1/compress`; if unavailable or unsafe, it returns the exact original result. |
-| Worker/background/preflight wrapper compression | ❌ | Wrappers retain exact sidecars regardless, but compression requires the proxy. |
+| Hermes plugin registration | ✅ | tool, command, bundled skill, and fail-open middleware registration |
+| Status/audit/setup guidance | ✅ partial | reports configuration/readiness and the explicit manager command; does not compress |
+| `headroom_retrieve` exact CCR recovery | ❌ | calls `/v1/retrieve` on the managed proxy |
+| `/headroom smoke` | ❌ | calls `/readyz`, `/v1/compress`, then `/v1/retrieve` |
+| Eligible tool/lane compression | ❌ | fail-open compression requires a healthy loopback proxy |
 
-So the runtime is “optional” only for install/status/audit/degraded operation. It is **required** for the product claim “Headroom context reduction is active.”
+The runtime is optional only for plugin install/status/audit/degraded operation. It is required for the claim “Headroom context reduction is active.”
 
-### Distribution paths are not yet equivalent
+### Distribution paths are equivalent at the manager boundary
 
-| Install path | Plugin loads | Runtime dependency installed | Runtime started/supervised | Full-runtime setup UX |
-|---|---:|---:|---:|---|
-| `hermes plugins install owner/repo --enable` | ✅ | ❌ | ❌ | ✅ full repo clone + automatic `after-install.md` + bundled installer |
-| Source clone | ✅ when linked/installed | ❌ | ❌ | ✅ bundled installer, but operator must run it |
-| Base pip/wheel package | ✅ via entry point | ❌ | ❌ | ❌ wheel excludes the repo-root runtime installer |
-| pip/wheel with `[proxy]` extra | ✅ via entry point | ✅ in the Hermes Python environment | ❌ | ⚠️ dependency exists, but no isolated venv/service/smoke setup |
-
-The certified v0.4 full-runtime path is therefore the native Git install or a source checkout. The pip entry-point path is currently plugin-only unless the operator assembles and supervises the runtime separately. A future release should package one stable `headroom-runtime setup|status|uninstall` command for both distribution paths; it should remain explicit rather than running network installs or daemons inside `register()`.
+| Install path | Plugin loads | Isolated runtime setup | Lifecycle/status/doctor/uninstall |
+|---|---:|---:|---:|
+| Native Hermes Git install | ✅ | ✅ `scripts/headroom-runtime.py setup` | ✅ same launcher |
+| Source checkout | ✅ when linked/installed | ✅ same launcher | ✅ same launcher |
+| Base pip/wheel package | ✅ via entry point | ✅ `headroom-runtime setup` | ✅ packaged entry point |
+| pip/wheel with `[proxy]` extra | ✅ via entry point | ✅ manager still uses its isolated venv | ✅ packaged entry point |
 
 ### Adoption benchmark for a new Hermes instance
 
@@ -247,7 +236,7 @@ This report is read-only: no config mutation, no cache purge, no provider/model 
 | `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` enabled and `/headroom status` responds after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin commands load, but proxy is unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; status/audit are usable, but compression/retrieval/middleware compression are not active |
 | `RUNTIME_FULL` | Plugin, dependency, and local proxy all work in the current process/session | dependency smoke passes and `/headroom smoke` or runtime-smoke sentinel retrieval passes; eligible intermediate compression can run |
-| `RUNTIME_FULL_DURABLE` | Linux user-service deployment survives gateway restart/logout | `python scripts/install-production-runtime.py --systemd-user` passes, `hermes-context-reduction.service` is `enabled` + `active`, and `/headroom smoke` passes |
+| `RUNTIME_FULL_DURABLE` | Native user lifecycle is installed and healthy | `headroom-runtime doctor --json` reports upstream status + readyz + compress → retrieve PASS |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local state |
 
 ## Certified runtime matrix
@@ -292,7 +281,7 @@ scripts/test-clean-hermes-install.sh --local
 python scripts/test-headroom-dependency-install.py
 python scripts/test-headroom-runtime-smoke.py
 python scripts/context-economy-loop-gate.py
-python scripts/install-production-runtime.py --no-start
+python scripts/headroom-runtime.py setup --dry-run --json
 ```
 
 Before owner review as a portable release candidate, run the local RC gate:

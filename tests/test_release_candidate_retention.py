@@ -19,8 +19,8 @@ RUNTIME_SMOKE_SPEC.loader.exec_module(RUNTIME_SMOKE_MODULE)
 
 
 def test_release_candidate_default_runtime_is_pinned() -> None:
-    assert MODULE.HEADROOM_RUNTIME_VERSION == "0.31.0"
-    assert MODULE.DEFAULT_HEADROOM_SPEC == "headroom-ai[proxy]==0.31.0"
+    assert MODULE.HEADROOM_RUNTIME_VERSION == "0.32.1"
+    assert MODULE.DEFAULT_HEADROOM_SPEC == "headroom-ai[proxy]==0.32.1"
     assert MODULE.LITELLM_RUNTIME_VERSION == "1.91.3"
     assert MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
     assert RUNTIME_SMOKE_MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
@@ -33,19 +33,37 @@ def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> N
     runtime_script = RUNTIME_SMOKE_SCRIPT.read_text(encoding="utf-8")
 
     for workflow in (runtime_smoke, release_candidate):
-        assert 'default: "headroom-ai[proxy]==0.31.0"' in workflow
+        assert 'default: "headroom-ai[proxy]==0.32.1"' in workflow
         assert 'default: "litellm==1.91.3"' in workflow
         assert "HEADROOM_AI_SPEC:" in workflow
         assert "HEADROOM_LITELLM_SPEC:" in workflow
 
     assert "latest-litellm-monitor:" in future_monitor
     assert 'default: "litellm>=1.86.2,<2.0"' in future_monitor
-    assert 'HEADROOM_SPEC: "headroom-ai[proxy]==0.31.0"' in future_monitor
+    assert 'HEADROOM_SPEC: "headroom-ai[proxy]==0.32.1"' in future_monitor
     assert 'python-version: "3.12"' in future_monitor
     assert "continue-on-error: true" in future_monitor
     assert '--litellm-spec "$LITELLM_SPEC"' in future_monitor
     assert "The certified LiteLLM pin is unchanged" in future_monitor
     assert "INFO: resolved runtime versions" in runtime_script
+    assert "test-runtime-manager-lifecycle.py" in runtime_smoke
+    assert "--manager-command headroom-runtime" in runtime_smoke
+    assert "test-headroom-runtime-smoke.py" not in runtime_smoke
+    assert "test-headroom-runtime-smoke.py" in future_monitor
+
+
+def test_release_gate_certifies_wheel_runtime_manager_lifecycle() -> None:
+    gate_script = SCRIPT.read_text(encoding="utf-8")
+    lifecycle_script = (REPO / "scripts" / "test-runtime-manager-lifecycle.py").read_text(encoding="utf-8")
+
+    assert 'exe("headroom-runtime")' in gate_script
+    assert 'gates["wheel_runtime_manager_lifecycle"]' in gate_script
+    assert '"mutations": manifest_data.get("mutations")' in lifecycle_script
+    assert 'manifest_data.get("mutations") == []' in lifecycle_script
+    assert "shell_unchanged" in lifecycle_script
+    assert "artifacts_removed" in lifecycle_script
+    assert "supervisor_removed" in lifecycle_script
+    assert '"uninstall"' in lifecycle_script
 
 
 def test_cleanup_ephemeral_envs_removes_only_allowlisted_dirs(tmp_path: Path) -> None:

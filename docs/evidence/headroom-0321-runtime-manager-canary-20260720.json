@@ -1,0 +1,62 @@
+{
+  "schema": "headroom-runtime-manager-candidate-evidence-v1",
+  "candidate": {
+    "headroom_spec": "headroom-ai[proxy]==0.32.1",
+    "litellm_spec": "litellm==1.91.3"
+  },
+  "upstream_source": {
+    "artifact": "headroom_ai-0.32.1.tar.gz",
+    "index": "https://pypi.org/project/headroom-ai/0.32.1/",
+    "sha256": "329dda3328f0fb45ec7128353f7fc9108f08e9676c9dc1873b4841c5c00c94bd",
+    "install_module_byte_identical_to_0_32_0": true,
+    "install_module_sha256": "ae59cdbc74de060b0d79eda1cf4725318615800487c72a51de6a79a18378843f",
+    "lifecycle_api_ast_equivalent_to_0_32_0": true,
+    "compared_functions": [
+      "_build_deployment_manifest",
+      "_remove_deployment",
+      "_start_deployment",
+      "install_supervisor",
+      "render_runner_scripts",
+      "save_manifest"
+    ]
+  },
+  "local_linux_lifecycle": {
+    "platform": "linux",
+    "python": "3.11.15",
+    "runtime_version": "0.32.1",
+    "pass": true,
+    "checks": {
+      "setup": true,
+      "status": true,
+      "doctor": true,
+      "manifest": true,
+      "uninstall": true
+    },
+    "shell_unchanged": true,
+    "rollback": {
+      "artifacts_removed": true,
+      "listener_stopped": true,
+      "root_removed": true,
+      "supervisor_removed": true
+    }
+  },
+  "blocking_matrix": {
+    "run": "https://github.com/arotonal-ai/hermes-headroom-plugin/actions/runs/29716326909",
+    "head_sha": "f4a69aab4663fe0d91194e962a68894478d462b6",
+    "conclusion": "success",
+    "jobs": {
+      "ubuntu_python_3_11": "success",
+      "ubuntu_python_3_12": "success",
+      "macos_python_3_11": "success",
+      "macos_python_3_12": "success",
+      "windows_python_3_11": "success",
+      "windows_python_3_12": "success"
+    }
+  },
+  "known_target_host_risk": {
+    "issue": "https://github.com/headroomlabs-ai/headroom/issues/2267",
+    "summary": "Some Windows Defender signatures quarantine ast-grep-cli sg.exe during installation.",
+    "observed_in_blocking_matrix": false,
+    "policy": "Do not add Defender exclusions; a target-host detection remains a fail-closed deployment blocker."
+  }
+}

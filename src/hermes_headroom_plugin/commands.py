@@ -510,8 +510,8 @@ def _render_opportunities() -> str:
     return "\n".join(lines)
 
 def _installed_runtime_script() -> Path | None:
-    """Return the native Git/source runtime installer when this checkout includes it."""
-    candidate = Path(__file__).resolve().parents[2] / "scripts" / "install-production-runtime.py"
+    """Return the native Git/source runtime-manager launcher when present."""
+    candidate = Path(__file__).resolve().parents[2] / "scripts" / "headroom-runtime.py"
     return candidate if candidate.is_file() else None
 
 
@@ -528,18 +528,13 @@ def _render_setup() -> str:
     script = _installed_runtime_script()
     if script is not None:
         if sys.platform == "win32":
-            command = f'py -3 "{script}"'
-            guidance = f"run `{command}` for Windows process-level setup"
-        elif sys.platform == "darwin":
-            command = f'python3 "{script}"'
-            guidance = f"run `{command}` for macOS process-level setup"
+            command = f'py -3 "{script}" setup'
         else:
-            command = f'python3 "{script}" --systemd-user'
-            guidance = f"run `{command}` for Linux durable setup; omit --systemd-user for process-level setup"
+            command = f'python3 "{script}" setup'
+        guidance = f"run `{command}` for explicit portable durable setup"
     else:
         guidance = (
-            "this pip/wheel install does not package the runtime installer; use the native Git/source install path "
-            "or explicitly install and supervise the official headroom-ai[proxy] runtime"
+            "run `headroom-runtime setup` from the wheel environment for explicit portable durable setup"
         )
     return (
         "Headroom setup · runtime not ready · no state changed · "

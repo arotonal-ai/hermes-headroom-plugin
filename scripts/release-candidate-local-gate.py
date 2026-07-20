@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
-HEADROOM_RUNTIME_VERSION = "0.31.0"
+HEADROOM_RUNTIME_VERSION = "0.32.1"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
 LITELLM_RUNTIME_VERSION = "1.91.3"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"
@@ -274,8 +274,16 @@ def build_and_inspect(run_dir: Path) -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
     for artifact in artifacts:
         members = archive_members(artifact)
-        if not any(member.endswith("/MIGRATION-v0.4.md") for member in members):
-            issues.append({"artifact": artifact.name, "kind": "missing_migration_doc"})
+        required_members = {
+            "missing_migration_doc": "/docs/MIGRATION-v0.4.md",
+            "missing_install_doc": "/INSTALL.md",
+            "missing_git_runtime_launcher": "/scripts/headroom-runtime.py",
+            "missing_lifecycle_canary": "/scripts/test-runtime-manager-lifecycle.py",
+        }
+        if artifact.suffixes[-2:] == [".tar", ".gz"]:
+            for kind, suffix in required_members.items():
+                if not any(member.endswith(suffix) for member in members):
+                    issues.append({"artifact": artifact.name, "kind": kind})
         for member in members:
             lowered = member.lower()
             if any(bad in lowered for bad in (".git/", ".venv/", "__pycache__", ".pytest_cache", "release-candidate-runs")):
@@ -319,12 +327,13 @@ def wheel_install_gate(run_dir: Path, build_gate: dict[str, Any]) -> dict[str, A
         run([str(python), "-m", "pip", "check"], timeout=60),
     ]
     checks = []
-    for name in ("headroom-worker-lane", "headroom-background-lane", "headroom-command-preflight", "headroom-health-audit", "headroom-proxy-start"):
+    for name in ("headroom-worker-lane", "headroom-background-lane", "headroom-command-preflight", "headroom-health-audit", "headroom-proxy-start", "headroom-runtime"):
         checks.append(run([str(bin_dir(venv_dir) / exe(name)), "--help"], timeout=60))
     import_check = run([str(python), "-c", "import hermes_headroom_plugin, importlib.metadata as m; print(m.version('hermes-headroom-plugin'))"], timeout=60)
     return {
         "pass": all(s["returncode"] == 0 for s in steps) and all(c["returncode"] == 0 for c in checks) and import_check["returncode"] == 0,
         "wheel": str(wheel),
+        "venv": str(venv_dir),
         "steps": [{"cmd": s["cmd"], "returncode": s["returncode"], "duration_s": s["duration_s"], "stdout_tail": s["stdout"][-1500:]} for s in steps],
         "checks": [{"cmd": c["cmd"], "returncode": c["returncode"], "duration_s": c["duration_s"], "stdout_head": c["stdout"][:800]} for c in checks],
         "import_check": {"returncode": import_check["returncode"], "stdout": import_check["stdout"].strip()},
@@ -596,6 +605,36 @@ def main(argv: list[str] | None = None) -> int:
     wheel_result = wheel_install_gate(run_dir, build_result)
     write_json(run_dir / "wheel-install-entrypoints.json", wheel_result)
     gates["wheel_install_entrypoints"] = {"pass": wheel_result.get("pass"), "evidence": str(run_dir / "wheel-install-entrypoints.json")}
+
+    manager_exe = bin_dir(Path(wheel_result.get("venv", ""))) / exe("headroom-runtime")
+    lifecycle_report = run_dir / "runtime-manager-lifecycle.json"
+    lifecycle_log = run_dir / "logs" / "runtime-manager-lifecycle.log"
+    lifecycle = run(
+        [
+            sys.executable,
+            "scripts/test-runtime-manager-lifecycle.py",
+            "--manager-command",
+            str(manager_exe),
+            "--runtime-root",
+            str(run_dir / "managed-runtime"),
+            "--headroom-spec",
+            args.headroom_spec,
+            "--litellm-spec",
+            args.litellm_spec,
+            "--install-timeout",
+            str(args.install_timeout),
+            "--report",
+            str(lifecycle_report),
+            "--log",
+            str(lifecycle_log),
+        ],
+        timeout=args.install_timeout + 360,
+    )
+    write_json(run_dir / "commands" / "runtime-manager-lifecycle-command.json", lifecycle)
+    gates["wheel_runtime_manager_lifecycle"] = {
+        "pass": lifecycle["returncode"] == 0,
+        "evidence": str(lifecycle_report),
+    }
 
     if shutil.which("hermes"):
         clean = run(["bash", "scripts/test-clean-hermes-install.sh", "--local"], timeout=300)

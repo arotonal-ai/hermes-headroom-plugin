@@ -311,24 +311,32 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
         self.assertIn("hermes-context-reduction.service", text)
         self.assertIn("systemd --user", text)
 
-    def test_docs_reference_production_installer(self):
+    def test_docs_reference_portable_runtime_manager(self):
         for rel in ["README.md", "INSTALL.md", "AGENTS.md", "docs/AGENT-INSTALL.md"]:
             text = (ROOT / rel).read_text(encoding="utf-8")
-            self.assertIn("scripts/install-production-runtime.py", text, rel)
-            self.assertIn("RUNTIME_FULL", text, rel)
+            self.assertIn("scripts/headroom-runtime.py", text, rel)
+            self.assertIn("headroom-runtime", text, rel)
+            self.assertIn("RUNTIME_FULL_DURABLE", text, rel)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertRegex(readme, re.compile(r"127\.0\.0\.1:8787", re.I))
-        self.assertIn("RUNTIME_FULL_DURABLE", readme)
+        self.assertIn("headroom-ai[proxy]==0.32.1", readme)
 
     def test_native_git_install_has_actionable_after_install(self):
         text = AFTER_INSTALL.read_text(encoding="utf-8")
         self.assertIn('${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve', text)
-        self.assertIn("scripts/install-production-runtime.py", text)
-        self.assertIn("--systemd-user", text)
+        self.assertIn("scripts/headroom-runtime.py", text)
+        self.assertIn("headroom-runtime setup", text)
+        self.assertIn("headroom-runtime uninstall", text)
         self.assertIn("RUNTIME_PARTIAL", text)
-        self.assertIn("RUNTIME_FULL", text)
-        self.assertIn("official Headroom project", text)
-        self.assertIn("Cloning upstream Headroom source is **not** required", text)
+        self.assertIn("RUNTIME_FULL_DURABLE", text)
+        self.assertIn("headroom-ai[proxy]==0.32.1", text)
+        self.assertIn("does **not** change global model/provider routing", text)
+
+    def test_sdist_manifest_includes_runtime_launchers_and_install_docs(self):
+        text = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
+        self.assertIn("include INSTALL.md", text)
+        self.assertIn("recursive-include scripts *.py *.sh", text)
+        self.assertIn("recursive-include docs *.md *.json", text)
 
     def test_repo_no_longer_defaults_to_old_headroom_runtime_pin(self):
         offenders = []

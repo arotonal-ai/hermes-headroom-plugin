@@ -1,0 +1,5 @@
+include INSTALL.md
+include after-install.md
+include plugin.yaml
+recursive-include docs *.md *.json
+recursive-include scripts *.py *.sh

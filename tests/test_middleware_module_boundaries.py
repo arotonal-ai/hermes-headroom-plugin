@@ -127,7 +127,10 @@ class MiddlewareModuleBoundaryTest(unittest.TestCase):
         self.assertNotIn("provider_headroom", self._local_imports("observability"))
 
     def test_core_runtime_settings_do_not_bypass_effective_config(self):
-        allowed = {"config.py", "wrappers.py"}
+        # runtime_manager.py is the explicit install/lifecycle boundary. Its
+        # HEADROOM_* values are setup specs/root overrides, not plugin request
+        # routing or middleware effective configuration.
+        allowed = {"config.py", "wrappers.py", "runtime_manager.py"}
         offenders = []
         for path in PACKAGE_ROOT.glob("*.py"):
             if path.name in allowed:

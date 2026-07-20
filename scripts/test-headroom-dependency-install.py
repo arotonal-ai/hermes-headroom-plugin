@@ -16,7 +16,7 @@ import tempfile
 import venv
 from pathlib import Path
 
-DEFAULT_SPEC = "headroom-ai[proxy]==0.31.0"
+DEFAULT_SPEC = "headroom-ai[proxy]==0.32.1"
 DEFAULT_LITELLM_SPEC = "litellm==1.91.3"
 
 

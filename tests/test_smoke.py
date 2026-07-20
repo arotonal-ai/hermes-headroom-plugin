@@ -148,8 +148,8 @@ class SmokeTest(unittest.TestCase):
         self.assertIn('visible_marker=off:disabled', text)
         self.assertIn('legacy read-only alias', text)
 
-    def test_command_setup_reports_native_git_installer_without_mutating(self):
-        script = Path('/tmp/headroom-plugin/scripts/install-production-runtime.py')
+    def test_command_setup_reports_native_git_runtime_manager_without_mutating(self):
+        script = Path('/tmp/headroom-plugin/scripts/headroom-runtime.py')
         with (
             patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": False, "proxy_url": "http://127.0.0.1:8787", "status": None, "body": "connection refused"}),
             patch('hermes_headroom_plugin.commands._installed_runtime_script', return_value=script),
@@ -157,37 +157,34 @@ class SmokeTest(unittest.TestCase):
             text = handle_headroom_command('setup')
         self.assertIn('no state changed', text)
         self.assertIn(str(script), text)
+        self.assertIn(' setup', text)
         self.assertIn('/headroom smoke', text)
-        if sys.platform == 'win32':
-            self.assertIn('py -3', text)
-            self.assertNotIn('--systemd-user', text)
-        elif sys.platform == 'darwin':
-            self.assertIn('python3', text)
-            self.assertNotIn('--systemd-user', text)
-        else:
-            self.assertIn('--systemd-user', text)
+        self.assertNotIn('--systemd-user', text)
+        self.assertIn('py -3' if sys.platform == 'win32' else 'python3', text)
 
-    def test_command_setup_uses_platform_appropriate_process_command(self):
-        cases = (("win32", "py -3", "--systemd-user"), ("darwin", "python3", "--systemd-user"))
-        for platform, expected, forbidden in cases:
+    def test_command_setup_uses_platform_appropriate_runtime_manager_command(self):
+        cases = (("win32", "py -3"), ("darwin", "python3"), ("linux", "python3"))
+        for platform, expected in cases:
             with self.subTest(platform=platform):
                 with (
                     patch('hermes_headroom_plugin.commands.sys.platform', platform),
                     patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": False, "proxy_url": "http://127.0.0.1:8787", "status": None, "body": "connection refused"}),
-                    patch('hermes_headroom_plugin.commands._installed_runtime_script', return_value=Path('/tmp/headroom-plugin/scripts/install-production-runtime.py')),
+                    patch('hermes_headroom_plugin.commands._installed_runtime_script', return_value=Path('/tmp/headroom-plugin/scripts/headroom-runtime.py')),
                 ):
                     text = handle_headroom_command('setup')
                 self.assertIn(expected, text)
-                self.assertNotIn(forbidden, text)
+                self.assertIn(' setup', text)
+                self.assertNotIn('--systemd-user', text)
 
-    def test_command_setup_reports_pip_wheel_boundary(self):
+    def test_command_setup_reports_wheel_runtime_manager_entrypoint(self):
         with (
             patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": False, "proxy_url": "http://127.0.0.1:8787", "status": None, "body": "connection refused"}),
             patch('hermes_headroom_plugin.commands._installed_runtime_script', return_value=None),
         ):
             text = handle_headroom_command('setup')
-        self.assertIn('pip/wheel install does not package the runtime installer', text)
-        self.assertIn('official headroom-ai[proxy]', text)
+        self.assertIn('headroom-runtime setup', text)
+        self.assertIn('wheel environment', text)
+        self.assertNotIn('not present', text)
 
     def test_unknown_command_usage_mentions_setup_and_on_compatibility(self):
         text = handle_headroom_command('some')
