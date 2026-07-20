@@ -3,7 +3,8 @@
 This page separates the **published certified baseline** from a **release candidate** and from non-blocking future monitoring.
 
 - Published `v0.4.1`: `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`.
-- Unreleased `v0.5.0` candidate: `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, managed through `headroom-runtime`.
+- Withdrawn `v0.5.0`: packaged `proxy` metadata still required Headroom 0.32.0; its GitHub release remains draft and its tag/artifacts are not rewritten.
+- Unreleased `v0.5.1` candidate: `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, managed through `headroom-runtime`.
 
 The v0.5 pair passed its blocking setup → status → doctor → uninstall matrix on GitHub-hosted Ubuntu, macOS, and native Windows for Python 3.11 and 3.12. That candidate evidence does not publish v0.5 by itself: the final release-candidate gate, exact-pin documentation, and release controls must still pass.
 
