@@ -271,17 +271,18 @@ def portable_core_version_issues(artifact: Path, archive_texts: list[tuple[str, 
     if not portable_core_docs:
         return [{"artifact": artifact.name, "kind": "missing_portable_core_doc"}]
 
+    expected_row = f"| Plugin | `{EXPECTED_PLUGIN_SPEC}` |"
     issues: list[dict[str, Any]] = []
     for member, text in portable_core_docs:
-        found_specs = sorted(set(re.findall(r"hermes-headroom-plugin==[0-9]+\.[0-9]+\.[0-9]+", text)))
-        if found_specs != [EXPECTED_PLUGIN_SPEC]:
+        found_rows = [line.strip() for line in text.splitlines() if "hermes-headroom-plugin==" in line]
+        if found_rows != [expected_row]:
             issues.append(
                 {
                     "artifact": artifact.name,
                     "member": member,
                     "kind": "portable_core_plugin_version_mismatch",
-                    "expected": EXPECTED_PLUGIN_SPEC,
-                    "found": found_specs,
+                    "expected": expected_row,
+                    "found": found_rows,
                 }
             )
     return issues
