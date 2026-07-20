@@ -51,7 +51,7 @@ python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" setup
 
 Windows uses `py -3 "$PluginDir\scripts\headroom-runtime.py" setup`; wheel environments use `headroom-runtime setup`. Add `--dry-run --json` for a no-write plan.
 
-The manager installs official `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3` in an isolated venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It deliberately skips direct 0.32.0 apply because that path writes persistent shell blocks. Use `status`, `doctor`, and `uninstall` on the same entry point. The canonical contract is `docs/runtime-manager.md`.
+The manager installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3` in an isolated venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It deliberately skips direct 0.32.1 apply because that path writes persistent shell blocks. Use `status`, `doctor`, and `uninstall` on the same entry point. The canonical contract is `docs/runtime-manager.md`.
 
 For a clean-instance canary, assert that `127.0.0.1:8787` is free before installation and that the started proxy belongs to the target run. A healthy proxy owned by another user or Hermes instance is not clean-instance evidence. Concurrent same-host canaries must use distinct free loopback ports and pass the matching `HEADROOM_PROXY_URL` explicitly.
 

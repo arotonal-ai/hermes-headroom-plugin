@@ -23,7 +23,7 @@ from typing import Any, Sequence
 
 from .proxy import readyz, smoke
 
-RUNTIME_VERSION = "0.32.0"
+RUNTIME_VERSION = "0.32.1"
 LITELLM_VERSION = "1.91.3"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={RUNTIME_VERSION}"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_VERSION}"

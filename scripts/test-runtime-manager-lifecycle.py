@@ -187,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Exercise setup/status/doctor/uninstall with a real native supervisor.")
     parser.add_argument("--manager-command", default="headroom-runtime")
     parser.add_argument("--runtime-root", default="")
-    parser.add_argument("--headroom-spec", default=os.environ.get("HEADROOM_AI_SPEC", "headroom-ai[proxy]==0.32.0"))
+    parser.add_argument("--headroom-spec", default=os.environ.get("HEADROOM_AI_SPEC", "headroom-ai[proxy]==0.32.1"))
     parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", "litellm==1.91.3"))
     parser.add_argument("--install-timeout", type=int, default=600)
     parser.add_argument("--ready-timeout", type=int, default=120)

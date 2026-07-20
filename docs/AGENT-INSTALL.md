@@ -44,7 +44,7 @@ Wheel environments use the packaged entry point:
 headroom-runtime setup
 ```
 
-Before mutation, an agent may run `setup --dry-run --json`. The manager installs official `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3` in an isolated versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct 0.32.0 apply because that path writes persistent shell blocks, then verifies `/readyz` and real compress → retrieve smoke. No provider API key or global routing change is required.
+Before mutation, an agent may run `setup --dry-run --json`. The manager installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3` in an isolated versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct 0.32.1 apply because that path writes persistent shell blocks, then verifies `/readyz` and real compress → retrieve smoke. No provider API key or global routing change is required.
 
 Status, full verification, and rollback:
 

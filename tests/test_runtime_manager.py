@@ -123,7 +123,7 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertIs(payload["provider_mutations"], False)
         self.assertNotIn("command", payload)
         self.assertIn("install_supervisor", payload["upstream_api"])
-        self.assertEqual(payload["headroom_spec"], "headroom-ai[proxy]==0.32.0")
+        self.assertEqual(payload["headroom_spec"], "headroom-ai[proxy]==0.32.1")
         self.assertEqual(payload["litellm_spec"], "litellm==1.91.3")
 
     def test_default_preset_is_user_service_except_windows_task(self):
@@ -223,7 +223,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.0", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
                 ),
                 patch.object(manager, "_safe_apply", side_effect=apply_and_write_manifest) as safe_apply,
                 patch.object(manager, "_wait_ready", return_value={"ok": True, "status": 200}),
@@ -262,7 +262,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.0", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
                 ),
                 patch.object(manager, "_safe_apply", return_value=unsafe),
             ):
@@ -286,7 +286,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.0", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
                 ),
                 patch.object(manager, "_safe_apply", return_value=completed),
             ):
@@ -426,7 +426,7 @@ class RuntimeManagerTest(unittest.TestCase):
 
     def test_package_spec_operator_is_strict(self):
         with self.assertRaises(ValueError):
-            manager._validate_package_spec("headroom-ai[proxy]=>0.32.0", package="headroom-ai")
+            manager._validate_package_spec("headroom-ai[proxy]=>0.32.1", package="headroom-ai")
         with self.assertRaises(ValueError):
             manager._validate_package_spec("litellm!!1.91.3", package="litellm")
 
@@ -466,7 +466,7 @@ class RuntimeManagerTest(unittest.TestCase):
             pip.write_text("fake", encoding="utf-8")
             completed = [
                 subprocess.CompletedProcess([str(pip)], 0, "installed\n"),
-                subprocess.CompletedProcess([str(python_exe)], 0, "0.32.0\n1.91.3\n"),
+                subprocess.CompletedProcess([str(python_exe)], 0, "0.32.1\n1.91.3\n"),
             ]
             with patch.object(manager, "_run", side_effect=completed) as run:
                 manager._ensure_runtime(

@@ -67,7 +67,7 @@ Wheel install:
 headroom-runtime setup
 ```
 
-Use `setup --dry-run --json` for a no-write plan. The manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.0`, installs official `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3`, and uses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It does not invoke the 0.32.0 direct apply path that writes persistent shell blocks. It verifies upstream status, `/readyz`, and real plugin compress → retrieve smoke before reporting `RUNTIME_FULL_DURABLE`.
+Use `setup --dry-run --json` for a no-write plan. The manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, and uses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It does not invoke the 0.32.1 direct apply path that writes persistent shell blocks. It verifies upstream status, `/readyz`, and real plugin compress → retrieve smoke before reporting `RUNTIME_FULL_DURABLE`.
 
 Verify and roll back with the same launcher/entry point:
 
@@ -120,7 +120,7 @@ Validate plugin install in a temporary Hermes home:
 scripts/test-clean-hermes-install.sh --local
 ```
 
-Compatibility: the v0.5 candidate defaults to the release-candidate pair `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3`; promotion remains blocked until the lifecycle matrix passes. Use `--spec` / `HEADROOM_AI_SPEC` or `--litellm-spec` / `HEADROOM_LITELLM_SPEC` only for an explicit rollback, target-host diagnostic, or non-blocking canary until dependency and real runtime smoke evidence supports promotion. See [docs/compatibility.md](docs/compatibility.md) for certified vs experimental runtime support; Python 3.13/3.14 and newer dependency ranges are monitored separately and are not certified by default.
+Compatibility: the v0.5 candidate defaults to the release-candidate pair `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`; its blocking lifecycle matrix passes, while public release remains gated on final CI readback and owner approval. Use `--spec` / `HEADROOM_AI_SPEC` or `--litellm-spec` / `HEADROOM_LITELLM_SPEC` only for an explicit rollback, target-host diagnostic, or non-blocking canary until dependency and real runtime smoke evidence supports promotion. See [docs/compatibility.md](docs/compatibility.md) for certified vs experimental runtime support; Python 3.13/3.14 and newer dependency ranges are monitored separately and are not certified by default.
 
 ## 5. Scoped on-demand mode and cache
 Portable plugin operation should favor compression and savings by default. For this repo's own heavy iterative improvement loops, disable middleware auto-compression without stopping the runtime: set `HEADROOM_AUTO_COMPRESSION=0` for the development process, or `context_reduction.auto_compression: false` in Hermes config plus fresh session/gateway restart. Status/smoke/cache/retrieve still work; eligible tool outputs return exact unless an explicit wrapper/runtime path compresses them. Re-enable automatic compression for normal portable operation.

@@ -117,7 +117,7 @@ Inspect the exact plan first without writes or downloads:
 headroom-runtime setup --dry-run --json
 ```
 
-The v0.5 manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.0`, installs the official `headroom-ai[proxy]==0.32.0` package plus `litellm==1.91.3`, and reuses upstream manifests and native supervisors. It requires `provider_mode=manual`, `targets=[]`, and `mutations=[]`; unlike direct `headroom install apply` in 0.32.0, it does not write persistent shell/provider configuration. It disables telemetry, binds to `127.0.0.1:8787` by default, uses memory CCR with a 1,800-second TTL, checks upstream status/readiness, and runs real plugin compress → retrieve smoke. It never changes Hermes model/provider routing.
+The v0.5 manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs the official `headroom-ai[proxy]==0.32.1` package plus `litellm==1.91.3`, and reuses upstream manifests and native supervisors. It requires `provider_mode=manual`, `targets=[]`, and `mutations=[]`; unlike direct `headroom install apply` in 0.32.1, it does not write persistent shell/provider configuration. It disables telemetry, binds to `127.0.0.1:8787` by default, uses memory CCR with a 1,800-second TTL, checks upstream status/readiness, and runs real plugin compress → retrieve smoke. It never changes Hermes model/provider routing.
 
 Verify or roll back:
 

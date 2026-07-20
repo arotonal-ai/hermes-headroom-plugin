@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
-HEADROOM_RUNTIME_VERSION = "0.32.0"
+HEADROOM_RUNTIME_VERSION = "0.32.1"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
 LITELLM_RUNTIME_VERSION = "1.91.3"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"

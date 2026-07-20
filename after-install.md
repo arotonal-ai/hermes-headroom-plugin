@@ -56,7 +56,7 @@ Then reload Hermes and run:
 
 Expected durable state: `RUNTIME_FULL_DURABLE`.
 
-The v0.5 candidate manager installs the pinned official `headroom-ai[proxy]==0.32.0` package plus `litellm==1.91.3` in an isolated venv, binds only to `127.0.0.1:8787` by default, disables telemetry, uses manual provider selection with no targets, checks upstream lifecycle/readiness, and runs real compress → retrieve smoke.
+The v0.5 candidate manager installs the pinned official `headroom-ai[proxy]==0.32.1` package plus `litellm==1.91.3` in an isolated venv, binds only to `127.0.0.1:8787` by default, disables telemetry, uses manual provider selection with no targets, checks upstream lifecycle/readiness, and runs real compress → retrieve smoke.
 
 Setup does **not** change global model/provider routing and does not require provider API keys. If you skip it, the plugin remains `RUNTIME_PARTIAL`: status/audit work, but no compression savings occur.
 

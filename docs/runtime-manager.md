@@ -6,13 +6,13 @@ It installs the **official** `headroom-ai` distribution into an isolated venv, r
 
 ## Decision: wrap upstream lifecycle, not `headroom deploy` or direct `install apply`
 
-The v0.5 design was checked against upstream Headroom `v0.32.0` at commit `438138832db97c4712d3c08197797f6bb64e68d9`.
+The v0.5 design was rechecked against the official PyPI `headroom-ai==0.32.1` sdist (`sha256:329dda3328f0fb45ec7128353f7fc9108f08e9676c9dc1873b4841c5c00c94bd`). `headroom/cli/install.py` is byte-identical (`sha256:ae59cdbc74de060b0d79eda1cf4725318615800487c72a51de6a79a18378843f`) to the previously reviewed upstream `v0.32.0` source at commit `438138832db97c4712d3c08197797f6bb64e68d9`; the other wrapped lifecycle functions are AST-equivalent.
 
 | Upstream surface | Finding | Plugin decision |
 |---|---|---|
 | `headroom deploy` | Turnkey UX, but defaults to `providers=auto`; it may discover and mutate Codex, Claude, OpenClaw, or other provider configuration. Its Docker default also referenced a stale image namespace in 0.32.0. | Do not call it. |
 | `headroom install apply` | `--providers manual` with no target yields an empty provider target set, but a real 0.32.0 user-scope canary still wrote persistent `HEADROOM_*` blocks to `.bashrc`, `.zshrc`, and `.profile`. | Do not call it directly. |
-| Pinned 0.32.0 lifecycle APIs | `_build_deployment_manifest`, `install_supervisor`, `save_manifest`, and `_start_deployment` preserve upstream manifests and native supervisors without calling mutation activation. | Wrap narrowly; require `provider_mode=manual`, `targets=[]`, and `mutations=[]`, and fail closed if the pinned contract changes. |
+| Pinned 0.32.1 lifecycle APIs | `_build_deployment_manifest`, `install_supervisor`, `save_manifest`, and `_start_deployment` preserve upstream manifests and native supervisors without calling mutation activation. | Wrap narrowly; require `provider_mode=manual`, `targets=[]`, and `mutations=[]`, and fail closed if the pinned contract changes. |
 | `headroom install status/remove` | Owns manifest and supervisor lifecycle across systemd, launchd, Windows Service/Task Scheduler, and crontab adapters. | Delegate status and rollback; do not create a second supervisor implementation. |
 | Headroom proxy | Owns `/readyz`, `/v1/compress`, `/v1/retrieve`, and CCR storage. | Verify through the plugin's real smoke. |
 
@@ -31,7 +31,7 @@ The manager:
 - requires `uninstall` before changing an existing managed profile, port, preset, or package spec;
 - strips inherited `HEADROOM_*` variables before adding the manager-controlled runtime environment;
 - refuses a ready port when no matching manager state exists;
-- accepts only package-name/version specs (no URL, path, marker, or credentials) and installs `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3` from official PyPI with pip isolated mode;
+- accepts only package-name/version specs (no URL, path, marker, or credentials) and installs `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3` from official PyPI with pip isolated mode;
 - builds an upstream manifest with `provider_mode=manual`, **no provider targets**, and **no provider/shell mutations**;
 - disables telemetry and code-aware optional dependencies;
 - uses the memory CCR backend with a 1,800-second TTL by default;
@@ -120,7 +120,7 @@ Key files:
 | `manager-state.json` | non-secret manager state and exact specs |
 | `install.log` | private pip/safe upstream lifecycle evidence |
 | `manager.log` | private status/remove evidence |
-| `venv-0.32.0/` | isolated official runtime |
+| `venv-0.32.1/` | isolated official runtime |
 | `workspace/` | upstream deployment manifest/workspace |
 
 Upstream's deployment manifest remains the supervisor authority. The manager state only records how the plugin-owned runtime was created and located.
@@ -148,4 +148,5 @@ If state, the purge marker, or the saved complete manager-owned manifest contrac
 - Memory CCR markers intentionally do not survive runtime restart.
 - WSL2 and Termux require target-host evidence; they are not implied by Linux CI.
 - Provider-proxy routing remains outside this manager and outside the portable-core claim.
-- Headroom 0.32.0 does not expose a public no-mutations apply flag. The manager therefore uses a narrow set of pinned private lifecycle APIs; version drift must fail closed in tests/canaries rather than silently falling back to direct `install apply`.
+- Headroom 0.32.1 does not expose a public no-mutations apply flag. The manager therefore uses a narrow set of pinned private lifecycle APIs; version drift must fail closed in tests/canaries rather than silently falling back to direct `install apply`.
+- Some Windows Defender signatures quarantine the base `ast-grep-cli` dependency on affected target hosts. The manager does not create exclusions or bypass detections; such an installation remains partial and rolls back fail-closed.

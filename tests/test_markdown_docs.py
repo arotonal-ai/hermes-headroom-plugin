@@ -38,7 +38,7 @@ class MarkdownDocsTest(unittest.TestCase):
             "headroom-runtime status --json",
             "headroom-runtime doctor --json",
             "headroom-runtime uninstall --json",
-            "headroom-ai[proxy]==0.32.0",
+            "headroom-ai[proxy]==0.32.1",
             "manual provider selection",
             "/headroom smoke",
         ]

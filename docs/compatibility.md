@@ -3,9 +3,9 @@
 This page separates the **published certified baseline** from a **release candidate** and from non-blocking future monitoring.
 
 - Published `v0.4.1`: `headroom-ai[proxy]==0.31.0` plus `litellm==1.91.3`.
-- Unreleased `v0.5.0` candidate: `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3`, managed through `headroom-runtime`.
+- Unreleased `v0.5.0` candidate: `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, managed through `headroom-runtime`.
 
-The v0.5 pair must not be called multi-OS certified until its blocking setup → status → doctor → uninstall matrix passes on Ubuntu, macOS, and native Windows. A successful dependency install or foreground proxy smoke alone is insufficient.
+The v0.5 pair passed its blocking setup → status → doctor → uninstall matrix on GitHub-hosted Ubuntu, macOS, and native Windows for Python 3.11 and 3.12. That candidate evidence does not publish v0.5 by itself: the final release-candidate gate, exact-pin documentation, and release controls must still pass.
 
 ## Published v0.4.x baseline
 
@@ -30,7 +30,7 @@ Evidence baseline:
 
 ## v0.5 runtime-manager candidate
 
-Headroom `0.32.0` is the pinned v0.5 candidate. The direct upstream user-scope apply path was rejected because a real canary wrote persistent `HEADROOM_*` blocks to `.bashrc`, `.zshrc`, and `.profile` despite manual provider mode and no provider targets.
+Headroom `0.32.1` is the pinned v0.5 candidate. The direct upstream user-scope apply path was rejected because a real 0.32.0 canary wrote persistent `HEADROOM_*` blocks to `.bashrc`, `.zshrc`, and `.profile` despite manual provider mode and no provider targets. `headroom/cli/install.py` is byte-identical between that reviewed 0.32.0 source and the verified 0.32.1 PyPI sdist; the other wrapped lifecycle functions are AST-equivalent.
 
 The replacement manager uses the pinned upstream manifest/native-supervisor implementation while requiring:
 
@@ -38,7 +38,7 @@ The replacement manager uses the pinned upstream manifest/native-supervisor impl
 {"provider_mode":"manual","targets":[],"mutations":[]}
 ```
 
-Local Linux evidence on Python 3.11.15 passed both the native Git launcher and a clean base-wheel entry point:
+Local Linux evidence on Python 3.11.15 passed the 0.32.1 lifecycle through the native Git launcher:
 
 - setup returned `RUNTIME_FULL_DURABLE`;
 - status and doctor returned exit `0`;
@@ -48,13 +48,15 @@ Local Linux evidence on Python 3.11.15 passed both the native Git launcher and a
 - uninstall removed the unit, listener, artifacts, and managed runtime root;
 - the existing owner runtime remained healthy and unchanged.
 
-Sanitized local evidence: [`docs/evidence/headroom-032-runtime-manager-local-canary-20260718.json`](evidence/headroom-032-runtime-manager-local-canary-20260718.json).
+Sanitized candidate evidence: [`docs/evidence/headroom-0321-runtime-manager-canary-20260720.json`](evidence/headroom-0321-runtime-manager-canary-20260720.json).
 
-That is strong one-host evidence, not multi-OS certification. The blocking `.github/workflows/runtime-smoke.yml` matrix must still pass the same lifecycle canary on Ubuntu, macOS, and Windows for Python 3.11 and 3.12 before v0.5 release.
+The blocking `.github/workflows/runtime-smoke.yml` matrix passed the same lifecycle canary in all six Ubuntu/macOS/Windows Python 3.11/3.12 jobs: [run 29716326909](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/runs/29716326909).
+
+Some native Windows hosts report Microsoft Defender quarantining the base dependency `ast-grep-cli` (`sg.exe`), tracked upstream in [headroom#2267](https://github.com/headroomlabs-ai/headroom/issues/2267). The blocking matrix did not reproduce it. This project does not add or recommend Defender exclusions; a target-host detection remains a fail-closed deployment blocker.
 
 ## Experimental future runtimes
 
-Python 3.13/3.14, future `headroom-ai` ranges, and newer LiteLLM releases are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. The latest-LiteLLM lane holds Headroom at `0.32.0`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
+Python 3.13/3.14, future `headroom-ai` ranges, and newer LiteLLM releases are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. The latest-LiteLLM lane holds Headroom at `0.32.1`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
 
 That workflow is intentionally **non-blocking**:
 
@@ -73,7 +75,7 @@ That workflow is intentionally **non-blocking**:
 ## Runtime-version policy
 
 1. Keep plugin install/load independent from the separate proxy runtime; active compression requires a healthy loopback proxy.
-2. Keep runtime versions exact in release paths. The v0.5 candidate pair is `headroom-ai[proxy]==0.32.0` plus `litellm==1.91.3`.
+2. Keep runtime versions exact in release paths. The v0.5 candidate pair is `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`.
 3. Treat `--headroom-spec` / `HEADROOM_AI_SPEC` and `--litellm-spec` / `HEADROOM_LITELLM_SPEC` overrides as explicit incident, target-host diagnostic, or non-blocking canary controls.
 4. Promote or demote support only from dependency, real lifecycle, readiness, sentinel-recovery, and rollback evidence.
 5. Document target-host drift honestly, especially on native Windows where Python aliases and Task Scheduler policy may differ from CI.

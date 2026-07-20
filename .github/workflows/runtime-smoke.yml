@@ -6,7 +6,7 @@ on:
       headroom_spec:
         description: "certified headroom-ai package spec to test"
         required: false
-        default: "headroom-ai[proxy]==0.32.0"
+        default: "headroom-ai[proxy]==0.32.1"
       litellm_spec:
         description: "certified LiteLLM constraint"
         required: false
@@ -36,7 +36,7 @@ jobs:
         run: python -m pip install .
       - name: Setup, status, doctor, manifest and uninstall canary
         env:
-          HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.32.0' }}
+          HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.32.1' }}
           HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.91.3' }}
         run: >-
           python scripts/test-runtime-manager-lifecycle.py
