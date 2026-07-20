@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import tempfile
 import tomllib
+import zipfile
 from pathlib import Path
 
 
@@ -35,6 +37,30 @@ def test_package_proxy_extra_matches_certified_runtime() -> None:
         MODULE.DEFAULT_HEADROOM_SPEC,
         MODULE.DEFAULT_LITELLM_SPEC,
     ]
+
+    config = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
+    portable_core = (REPO / "docs" / "portable-core.md").read_text(encoding="utf-8")
+    packaged_docs = config["tool"]["setuptools"]["data-files"]["share/doc/hermes-headroom-plugin"]
+    assert "docs/portable-core.md" in packaged_docs
+    assert f"hermes-headroom-plugin=={project['version']}" in portable_core
+
+
+def test_archive_inspection_rejects_stale_packaged_portable_core() -> None:
+    member = "package.data/data/share/doc/hermes-headroom-plugin/portable-core.md"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        stale_wheel = Path(temp_dir) / "stale.whl"
+        with zipfile.ZipFile(stale_wheel, "w") as archive:
+            archive.writestr(
+                member,
+                f"Plugin: {MODULE.EXPECTED_PLUGIN_SPEC}; stale: hermes-headroom-plugin==0.5.0",
+            )
+        stale_issues = MODULE.portable_core_version_issues(stale_wheel)
+        assert [issue["kind"] for issue in stale_issues] == ["portable_core_plugin_version_mismatch"]
+
+        corrected_wheel = Path(temp_dir) / "corrected.whl"
+        with zipfile.ZipFile(corrected_wheel, "w") as archive:
+            archive.writestr(member, f"Plugin: {MODULE.EXPECTED_PLUGIN_SPEC}")
+        assert MODULE.portable_core_version_issues(corrected_wheel) == []
 
 
 def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> None:
