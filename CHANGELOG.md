@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.5.2 — 2026-07-21
+
+- Honor `context_reduction.allow_remote_proxy: true` when a non-loopback proxy URL is resolved from YAML and then revalidated by `readyz`, `smoke`, `retrieve`, `retrieve_stats`, or `compress_messages`.
+- Keep remote proxies blocked by default and preserve the existing `HEADROOM_ALLOW_REMOTE_PROXY=1` opt-in path.
+- Add no-network regressions covering the YAML and environment paths across the affected helpers ([#20](https://github.com/arotonal-ai/hermes-headroom-plugin/issues/20)).
+
 ## v0.5.1 — 2026-07-20
 
 - Correct the packaged `proxy` extra to require `headroom-ai[proxy]==0.32.1`, matching the managed runtime, workflows, documentation, and validated multi-OS release candidate.
