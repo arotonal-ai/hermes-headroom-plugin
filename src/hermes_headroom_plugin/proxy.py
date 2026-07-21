@@ -45,7 +45,8 @@ def is_loopback_proxy_url(url: str) -> bool:
 
 
 def remote_proxy_allowed(config: dict[str, Any] | None = None) -> bool:
-    return resolve_effective_config(raw_config=config or {}).allow_remote_proxy
+    """Resolve the opt-in from canonical config when no explicit mapping is supplied."""
+    return resolve_effective_config(raw_config=config).allow_remote_proxy
 
 
 def validate_proxy_url(proxy_url: str, config: dict[str, Any] | None = None) -> str:

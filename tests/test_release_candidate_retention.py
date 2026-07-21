@@ -32,7 +32,7 @@ def test_release_candidate_default_runtime_is_pinned() -> None:
 def test_package_proxy_extra_matches_certified_runtime() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
-    assert project["version"] == "0.5.1"
+    assert project["version"] == "0.5.2"
     assert project["optional-dependencies"]["proxy"] == [
         MODULE.DEFAULT_HEADROOM_SPEC,
         MODULE.DEFAULT_LITELLM_SPEC,
@@ -49,8 +49,8 @@ def test_archive_inspection_rejects_stale_packaged_portable_core() -> None:
     member = "package.data/data/share/doc/hermes-headroom-plugin/portable-core.md"
     expected_row = f"| Plugin | `{MODULE.EXPECTED_PLUGIN_SPEC}` |"
     invalid_documents = {
-        "mixed": f"{expected_row}\n| Plugin | `hermes-headroom-plugin==0.5.0` |",
-        "local-suffix": "| Plugin | `hermes-headroom-plugin==0.5.1+0.5.0` |",
+        "mixed": f"{expected_row}\n| Plugin | `hermes-headroom-plugin==0.5.1` |",
+        "local-suffix": "| Plugin | `hermes-headroom-plugin==0.5.2+0.5.1` |",
     }
     with tempfile.TemporaryDirectory() as temp_dir:
         for name, document in invalid_documents.items():

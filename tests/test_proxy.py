@@ -1,14 +1,19 @@
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from hermes_headroom_plugin.proxy import (
     ProxyConfigurationError,
+    compress_messages,
     is_loopback_proxy_url,
     readyz,
     resolve_proxy_url,
     retrieve,
+    retrieve_stats,
     smoke,
+    validate_proxy_url,
 )
 
 
@@ -66,6 +71,55 @@ class ProxyResolutionTest(unittest.TestCase):
         finally:
             self._restore_env(old)
         self.assertEqual(resolve_proxy_url({"proxy_url": "http://192.168.1.5:28787", "allow_remote_proxy": True}), "http://192.168.1.5:28787")
+
+    def test_preresolved_remote_proxy_honors_yaml_allow_across_helpers(self):
+        remote_url = "http://192.168.1.5:28787"
+        keys = ["HEADROOM_HOST", "HEADROOM_PORT", "HEADROOM_PROXY_URL", "HEADROOM_ALLOW_REMOTE_PROXY"]
+        old = self._preserve_env(keys)
+
+        def fake_http(url, payload=None, timeout=15):
+            if url.endswith("/readyz"):
+                return 200, {"ready": True}, ""
+            if url.endswith("/v1/retrieve/stats"):
+                return 200, {"stored": 1}, ""
+            if url.endswith("/v1/retrieve"):
+                return 200, {"result": {"original_content": "retained"}}, ""
+            if url.endswith("/v1/compress"):
+                return 200, {"messages": [], "tokens_before": 10, "tokens_after": 5}, ""
+            self.fail(f"unexpected HTTP URL: {url}")
+
+        try:
+            for key in keys:
+                os.environ.pop(key, None)
+            with tempfile.TemporaryDirectory() as tmp:
+                Path(tmp, "config.yaml").write_text(
+                    "context_reduction:\n"
+                    f"  proxy_url: {remote_url}\n"
+                    "  allow_remote_proxy: true\n",
+                    encoding="utf-8",
+                )
+                with patch("hermes_headroom_plugin.config.hermes_home", return_value=Path(tmp)):
+                    self.assertEqual(resolve_proxy_url(), remote_url)
+                    self.assertEqual(validate_proxy_url(remote_url), remote_url)
+                    with patch("hermes_headroom_plugin.proxy.http_json", side_effect=fake_http):
+                        self.assertTrue(readyz(remote_url)["ok"])
+                        self.assertTrue(retrieve("abc123", proxy_url=remote_url)["success"])
+                        self.assertTrue(retrieve_stats(remote_url)["success"])
+                        self.assertTrue(compress_messages([], proxy_url=remote_url)["ok"])
+                        self.assertTrue(smoke(remote_url, require_marker=False)["ok"])
+        finally:
+            self._restore_env(old)
+
+    def test_preresolved_remote_proxy_honors_environment_allow(self):
+        remote_url = "http://192.168.1.5:28787"
+        old = self._preserve_env(["HEADROOM_PROXY_URL", "HEADROOM_ALLOW_REMOTE_PROXY"])
+        try:
+            os.environ["HEADROOM_PROXY_URL"] = remote_url
+            os.environ["HEADROOM_ALLOW_REMOTE_PROXY"] = "1"
+            with patch("hermes_headroom_plugin.proxy.http_json", return_value=(200, {"ready": True}, "")):
+                self.assertTrue(readyz(remote_url)["ok"])
+        finally:
+            self._restore_env(old)
 
     def test_retrieve_posts_hash_only_and_returns_complete_payload(self):
         retained = {"result": {"original_content": "complete exact retained payload"}}
