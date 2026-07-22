@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import hermes_headroom_plugin
 
@@ -10,6 +11,7 @@ class FakeCtx:
         self.hooks = []
         self.middleware = []
         self.skills = []
+        self.context_engines = []
 
     def register_tool(self, **kwargs):
         self.tools.append(kwargs)
@@ -25,6 +27,9 @@ class FakeCtx:
 
     def register_skill(self, *args, **kwargs):
         self.skills.append((args, kwargs))
+
+    def register_context_engine(self, engine):
+        self.context_engines.append(engine)
 
 
 class MinimalCtx:
@@ -50,7 +55,12 @@ class MinimalCtx:
 class RegisterTest(unittest.TestCase):
     def test_register_core_surface(self):
         ctx = FakeCtx()
-        hermes_headroom_plugin.register(ctx)
+        with patch.object(
+            hermes_headroom_plugin,
+            "load_host_compression_config",
+            return_value={"threshold": 0.18, "protect_last_n": 8, "target_ratio": 0.15},
+        ):
+            hermes_headroom_plugin.register(ctx)
         self.assertEqual(ctx.tools[0]["name"], "headroom_retrieve")
         self.assertEqual(ctx.tools[0]["toolset"], "headroom")
         self.assertNotIn("check_fn", ctx.tools[0])
@@ -77,6 +87,11 @@ class RegisterTest(unittest.TestCase):
         self.assertIn(("llm_request", ctx.middleware[0][1]), ctx.middleware)
         self.assertIn(("tool_execution", ctx.middleware[1][1]), ctx.middleware)
         self.assertTrue(ctx.skills)
+        self.assertEqual(len(ctx.context_engines), 1)
+        engine = ctx.context_engines[0]
+        self.assertEqual(engine.threshold_percent, 0.18)
+        self.assertEqual(engine.protect_last_n, 8)
+        self.assertEqual(engine.summary_target_ratio, 0.15)
 
     def test_register_without_middleware_support(self):
         ctx = MinimalCtx()

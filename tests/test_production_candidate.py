@@ -1,9 +1,11 @@
 import copy
 import json
+import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 from agent.context_engine import ContextEngine
-from hermes_headroom_plugin.config import EffectiveConfig, resolve_effective_config
+from hermes_headroom_plugin.config import EffectiveConfig, load_host_compression_config, resolve_effective_config
 from hermes_headroom_plugin.context_engine import HeadroomCompositeEngine
 from hermes_headroom_plugin.lifecycle import transform_history
 from hermes_headroom_plugin.middleware_request import on_llm_request
@@ -38,6 +40,14 @@ def test_lifecycle_config_is_typed_bounded_and_defaults_inert():
         "warm_tool_results": 999999, "aggregate_budget_chars": 1}})
     assert cfg.lifecycle_enabled is True and cfg.lifecycle_hot_tool_results == 0
     assert cfg.lifecycle_warm_tool_results == 10000 and cfg.lifecycle_aggregate_budget_chars == 2000
+
+
+def test_host_compression_policy_is_loaded_separately(tmp_path):
+    (tmp_path / "config.yaml").write_text(
+        "compression:\n  threshold: 0.18\n  protect_last_n: 8\ncontext_reduction:\n  lifecycle:\n    enabled: true\n",
+        encoding="utf-8",
+    )
+    assert load_host_compression_config(tmp_path) == {"threshold": 0.18, "protect_last_n": 8}
 
 
 def test_waterfall_accounts_maps_responses_calls_and_is_content_free():
@@ -179,6 +189,57 @@ def test_engine_deepcopy_rebinds_default_compressor_to_clone():
     clone = copy.deepcopy(engine)
     assert clone._uses_default_compressor is True
     assert getattr(clone._lifecycle_compressor, "__self__", None) is clone
+
+
+def test_engine_preserves_effective_codex_fallback_policy():
+    engine = HeadroomCompositeEngine(
+        effective_config=enabled(),
+        host_compression_config={
+            "threshold": 0.18,
+            "protect_first_n": 3,
+            "protect_last_n": 8,
+            "target_ratio": 0.15,
+            "abort_on_summary_failure": False,
+            "codex_gpt55_autoraise": True,
+        },
+    )
+    engine.update_model("gpt-5.6-sol", 272000, provider="openai-codex")
+    assert engine.threshold_percent == 0.85 and engine.threshold_tokens == 231200
+    assert engine.protect_first_n == 3 and engine.protect_last_n == 8
+    assert engine.summary_target_ratio == 0.15 and engine.abort_on_summary_failure is False
+
+
+def test_engine_builds_fallback_with_preserved_policy(monkeypatch):
+    seen = {}
+
+    class FakeCompressor:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+        def update_model(self, *args, **kwargs):
+            seen["updated"] = (args, kwargs)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "agent.context_compressor",
+        SimpleNamespace(ContextCompressor=FakeCompressor),
+    )
+    engine = HeadroomCompositeEngine(
+        effective_config=enabled(),
+        host_compression_config={
+            "threshold": 0.18,
+            "protect_first_n": 3,
+            "protect_last_n": 8,
+            "target_ratio": 0.15,
+            "abort_on_summary_failure": False,
+            "codex_gpt55_autoraise": True,
+        },
+    )
+    engine.update_model("gpt-5.6-sol", 272000, provider="openai-codex")
+    assert seen["threshold_percent"] == 0.85
+    assert seen["protect_first_n"] == 3 and seen["protect_last_n"] == 8
+    assert seen["summary_target_ratio"] == 0.15 and seen["abort_on_summary_failure"] is False
+    assert seen["config_context_length"] == 272000 and "updated" in seen
 
 
 def test_engine_accepts_only_material_valid_lifecycle_and_adapts_surface():

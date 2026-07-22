@@ -49,6 +49,19 @@ def load_context_reduction_config(home: Path | None = None) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def load_host_compression_config(home: Path | None = None) -> dict[str, Any]:
+    """Read Hermes's built-in compression policy for composite fallback parity."""
+    path = (home or hermes_home()) / "config.yaml"
+    if yaml is None or not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    value = data.get("compression") if isinstance(data, dict) else {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _boolish(value: Any, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
