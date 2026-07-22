@@ -788,10 +788,11 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertIsNone(first_request)
         self.assertIsNone(second_request)
         self.assertEqual(compress.call_count, 1)
-        self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["surface"], "tool_execution")
-        self.assertEqual(events[0]["reason"], "compression_not_useful")
-        self.assertFalse(events[0]["new_savings_event"])
+        reduction_events = [e for e in events if e.get("schema") != "headroom.waterfall.v1"]
+        self.assertEqual(len(reduction_events), 1)
+        self.assertEqual(reduction_events[0]["surface"], "tool_execution")
+        self.assertEqual(reduction_events[0]["reason"], "compression_not_useful")
+        self.assertFalse(reduction_events[0]["new_savings_event"])
 
     def test_negative_outcome_cache_expires_and_is_runtime_bounded(self):
         keys = [

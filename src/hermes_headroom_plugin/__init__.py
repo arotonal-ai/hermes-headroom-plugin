@@ -8,6 +8,8 @@ from .hooks import on_pre_llm_call, on_transform_llm_output, on_transform_termin
 from .middleware import on_llm_request, on_tool_execution
 from .schemas import HEADROOM_RETRIEVE_SCHEMA
 from .tools import handle_headroom_retrieve
+from .context_engine import HeadroomCompositeEngine
+from .config import resolve_effective_config
 
 
 def register(ctx) -> None:
@@ -45,6 +47,12 @@ def register(ctx) -> None:
     if callable(register_middleware):
         register_middleware("llm_request", on_llm_request)
         register_middleware("tool_execution", on_tool_execution)
+
+    register_context_engine = getattr(ctx, "register_context_engine", None)
+    if callable(register_context_engine):
+        # Registration exposes a selectable engine; Hermes does not activate it
+        # unless context.engine is explicitly set to headroom-composite.
+        register_context_engine(HeadroomCompositeEngine(effective_config=resolve_effective_config()))
 
     skill_path = Path(__file__).parent / "skills" / "headroom-token-cost-evaluation" / "SKILL.md"
     if skill_path.exists() and hasattr(ctx, "register_skill"):

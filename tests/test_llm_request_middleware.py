@@ -261,7 +261,7 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
         self.assertEqual(events[-1]["reason"], "request_cache_reuse")
         self.assertFalse(events[-1]["new_savings_event"])
         self.assertEqual(events[-1]["logical_source_id"], self.calls[0]["logical_source_id"])
-        self.assertEqual(len(events), 1)
+        self.assertEqual(len([e for e in events if e.get("schema") != "headroom.waterfall.v1"]), 1)
         self.assertEqual(sum(bool(event.get("new_savings_event")) for event in events), 0)
 
     def test_request_cache_bound_is_runtime_resolved(self):
@@ -429,7 +429,7 @@ class CrossSurfaceAttributionTest(unittest.TestCase):
         self.assertEqual(len(new_savings), 1)
         self.assertEqual(new_savings[0]["surface"], "tool_execution")
         self.assertEqual(new_savings[0]["marker"], "crosslane123456")
-        self.assertEqual(len(events), 1)
+        self.assertEqual(len([e for e in events if e.get("schema") != "headroom.waterfall.v1"]), 1)
 
 
 
