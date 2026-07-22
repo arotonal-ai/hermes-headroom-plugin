@@ -191,6 +191,17 @@ def test_engine_deepcopy_rebinds_default_compressor_to_clone():
     assert getattr(clone._lifecycle_compressor, "__self__", None) is clone
 
 
+def test_engine_deepcopy_preserves_effective_model_threshold():
+    engine = HeadroomCompositeEngine(
+        effective_config=enabled(),
+        host_compression_config={"threshold": 0.18, "codex_gpt55_autoraise": True},
+    )
+    engine.update_model("gpt-5.6-sol", 272000, provider="openai-codex")
+    clone = copy.deepcopy(engine)
+    assert engine.threshold_percent == clone.threshold_percent == 0.85
+    assert engine.threshold_tokens == clone.threshold_tokens == 231200
+
+
 def test_engine_preserves_effective_codex_fallback_policy():
     engine = HeadroomCompositeEngine(
         effective_config=enabled(),

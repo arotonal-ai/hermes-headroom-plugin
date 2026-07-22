@@ -95,6 +95,11 @@ class HeadroomCompositeEngine(ContextEngine):
             summary_target_ratio=self.summary_target_ratio, abort_on_summary_failure=self.abort_on_summary_failure,
             host_compression_config=self._host_compression_config, builtin=deepcopy(self._builtin, memo),
             lifecycle_transform=self._lifecycle_transform, lifecycle_compressor=compressor, effective_config=cfg)
+        # Preserve the currently effective model/route threshold. Agent init
+        # normally calls update_model() after copying the registered singleton,
+        # but deepcopy itself must remain policy-equivalent for child/custom hosts.
+        clone.threshold_percent = self.threshold_percent
+        clone.threshold_tokens = self.threshold_tokens
         clone.update_from_response({"prompt_tokens": self.last_prompt_tokens, "completion_tokens": self.last_completion_tokens, "total_tokens": self.last_total_tokens})
         clone.compression_count = self.compression_count; clone._session_id = self._session_id; clone._no_op = dict(self._no_op)
         return clone
