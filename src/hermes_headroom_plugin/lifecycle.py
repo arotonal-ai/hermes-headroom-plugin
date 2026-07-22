@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
@@ -28,14 +29,29 @@ def retrieve_local_source(digest: str) -> str | None:
     return None
 
 
-def _tool_names(messages: list[dict[str, Any]]) -> dict[str, str]:
-    out: dict[str, str] = {}
+def _tool_metadata(messages: list[dict[str, Any]]) -> dict[str, tuple[str, dict[str, Any]]]:
+    out: dict[str, tuple[str, dict[str, Any]]] = {}
     for message in messages:
         for call in message.get("tool_calls") or []:
             if isinstance(call, dict):
-                fn = call.get("function") if isinstance(call.get("function"), dict) else {}
+                fn_value = call.get("function")
+                fn: dict[str, Any] = dict(fn_value) if isinstance(fn_value, dict) else {}
                 if call.get("id"):
-                    out[str(call["id"])] = str(fn.get("name") or call.get("name") or "unknown_tool")
+                    raw_args = fn.get("arguments", call.get("arguments", {}))
+                    if isinstance(raw_args, dict):
+                        args = dict(raw_args)
+                    elif isinstance(raw_args, str):
+                        try:
+                            parsed = json.loads(raw_args)
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            parsed = {}
+                        args = dict(parsed) if isinstance(parsed, dict) else {}
+                    else:
+                        args = {}
+                    out[str(call["id"])] = (
+                        str(fn.get("name") or call.get("name") or "unknown_tool"),
+                        args,
+                    )
     return out
 
 
@@ -44,11 +60,19 @@ def _marker(text: str) -> str | None:
     return values[0] if values else None
 
 
-def _call(compressor: Callable[..., str | None] | None, tool: str, text: str, digest: str, *, aggregate: bool) -> str | None:
+def _call(
+    compressor: Callable[..., str | None] | None,
+    tool: str,
+    text: str,
+    digest: str,
+    *,
+    aggregate: bool,
+    tool_args: dict[str, Any],
+) -> str | None:
     if compressor is None:
         return None
     try:
-        return compressor(tool, text, digest, aggregate=aggregate)
+        return compressor(tool, text, digest, aggregate=aggregate, tool_args=tool_args)
     except TypeError:
         try:
             return compressor(tool, text, digest)
@@ -118,7 +142,7 @@ def transform_history(messages: list[dict[str, Any]], *, protect_first_n: int = 
     del retain
     original = deepcopy(messages)
     result = deepcopy(messages)
-    names = _tool_names(result)
+    metadata = _tool_metadata(result)
     # Match the host contract: system messages are always exact, then the
     # first N non-system messages and final N messages are exact as well.
     non_system = [i for i, message in enumerate(result) if message.get("role") != "system"]
@@ -134,8 +158,11 @@ def transform_history(messages: list[dict[str, Any]], *, protect_first_n: int = 
             continue
         if index in protected_indices:
             continue
-        tool = names.get(str(message.get("tool_call_id") or ""), str(message.get("name") or "unknown_tool"))
-        candidates.append({"index": index, "message": message, "tool": tool, "text": message["content"]})
+        tool, tool_args = metadata.get(
+            str(message.get("tool_call_id") or ""),
+            (str(message.get("name") or "unknown_tool"), {}),
+        )
+        candidates.append({"index": index, "message": message, "tool": tool, "tool_args": tool_args, "text": message["content"]})
     total = len(candidates)
     for ordinal, item in enumerate(candidates):
         newest_rank = total - 1 - ordinal
@@ -144,13 +171,13 @@ def transform_history(messages: list[dict[str, Any]], *, protect_first_n: int = 
     changed = blocked = backlog = compressor_calls = 0
     eligible_small: list[dict[str, Any]] = []
     for item in candidates:
-        text, tool, age = item["text"], item["tool"], item["age"]
-        if _contains_protected_control(tool, {}, text):
+        text, tool, tool_args, age = item["text"], item["tool"], item["tool_args"], item["age"]
+        if _contains_protected_control(tool, tool_args, text):
             blocked += 1
             continue
         if age == "hot" or tool in _MUTATIONS or tool == "headroom_retrieve":
             continue
-        reason = _exact_or_blocked_reason(tool, {}, text)
+        reason = _exact_or_blocked_reason(tool, tool_args, text)
         if reason and tool not in {"read_file", "search_files", "session_search"}:
             continue
         existing = _marker(text)
@@ -167,7 +194,7 @@ def transform_history(messages: list[dict[str, Any]], *, protect_first_n: int = 
                 eligible_small.append(item)
             continue
         digest = source_hash(tool, text)
-        replacement = _call(compressor, tool, text, digest, aggregate=False)
+        replacement = _call(compressor, tool, text, digest, aggregate=False, tool_args=tool_args)
         compressor_calls += int(compressor is not None)
         marker = _marker(replacement or "")
         if not replacement or not marker or len(replacement) >= len(text):
@@ -179,16 +206,24 @@ def transform_history(messages: list[dict[str, Any]], *, protect_first_n: int = 
         )
         changed += 1
 
-    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for item in eligible_small:
-        groups[(item["tool"], item["age"])].append(item)
-    for (tool, age), group in sorted(groups.items()):
+        args_key = json.dumps(item["tool_args"], ensure_ascii=False, sort_keys=True, default=str)
+        groups[(item["tool"], item["age"], args_key)].append(item)
+    for (tool, age, _args_key), group in sorted(groups.items()):
         cumulative = sum(len(x["text"]) for x in group)
         if len(group) < 2 or cumulative <= aggregate_budget_chars:
             continue
         joined = "\n\n".join(f"source_sha256={source_hash(tool, x['text'])}\n{x['text']}" for x in group)
         group_digest = source_hash(tool + ":" + age, joined)
-        replacement = _call(compressor, tool, joined, group_digest, aggregate=True)
+        replacement = _call(
+            compressor,
+            tool,
+            joined,
+            group_digest,
+            aggregate=True,
+            tool_args=group[0]["tool_args"],
+        )
         compressor_calls += int(compressor is not None)
         marker = _marker(replacement or "")
         if not replacement or not marker or len(replacement) >= len(joined):

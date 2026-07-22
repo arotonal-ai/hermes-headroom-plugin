@@ -54,8 +54,16 @@ class HeadroomCompositeEngine(ContextEngine):
     @property
     def name(self) -> str: return "headroom-composite"
 
-    def _default_compressor(self, tool: str, text: str, digest: str, *, aggregate: bool = False) -> str | None:
-        return compress_tool_result_for_context(tool_name=tool, args={}, result=text,
+    def _default_compressor(
+        self,
+        tool: str,
+        text: str,
+        digest: str,
+        *,
+        aggregate: bool = False,
+        tool_args: dict[str, Any] | None = None,
+    ) -> str | None:
+        return compress_tool_result_for_context(tool_name=tool, args=tool_args or {}, result=text,
             session_id=self._session_id, event_surface="context_engine", logical_source_id=digest,
             allow_below_min_aggregate=False)
 

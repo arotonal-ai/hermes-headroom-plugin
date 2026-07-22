@@ -11,10 +11,11 @@ from hermes_headroom_plugin.request_shaper import RESIDENT_TOOLS, shape_request
 from hermes_headroom_plugin.waterfall import classify_request, render_waterfall
 
 
-def history(outputs, name="search_files"):
+def history(outputs, name="search_files", arguments=None):
     rows = [{"role": "system", "content": "synthetic authority"}]
     for i, text in enumerate(outputs):
-        rows += [{"role": "assistant", "tool_calls": [{"id": f"c{i}", "type": "function", "function": {"name": name, "arguments": "{}"}}]},
+        call_args = arguments[i] if isinstance(arguments, list) else arguments
+        rows += [{"role": "assistant", "tool_calls": [{"id": f"c{i}", "type": "function", "function": {"name": name, "arguments": json.dumps(call_args or {})}}]},
                  {"role": "tool", "tool_call_id": f"c{i}", "content": text}]
     rows.append({"role": "user", "content": "current"})
     return rows
@@ -75,6 +76,24 @@ def test_warm_real_marker_anchors_pairing_and_stability():
         assert anchor in a[2]["content"]
 
 
+def test_lifecycle_propagates_paired_tool_arguments_to_compressor():
+    text = "path: synthetic/a.py\nstatus: ok\n" + "ordinary body\n" * 900
+    messages = history(
+        [text],
+        name="read_file",
+        arguments={"path": "/tmp/synthetic-a.py", "offset": 11, "limit": 900},
+    )
+    seen = []
+
+    def compressor(tool, body, digest, **kwargs):
+        seen.append((tool, body, digest, kwargs))
+        return "summary hash=pairedargs123456"
+
+    out, info = transform_history(messages, hot_tool_results=0, compressor=compressor)
+    assert info["changed"] == 1 and out != messages
+    assert seen[0][3]["tool_args"] == {"path": "/tmp/synthetic-a.py", "offset": 11, "limit": 900}
+
+
 def test_protected_head_tail_stay_exact_and_uncompressed_cold_gets_real_handle():
     first = "first protected\n" + "a" * 9000
     middle = "path: synthetic/cold.log\nstatus: failed\n" + "b" * 9000
@@ -112,6 +131,22 @@ def test_below_min_group_calls_once_transforms_and_preserves_pairing():
     assert len(calls) == 1 and calls[0][1]["aggregate"] is True and info["changed"] == 2
     assert [out[2]["tool_call_id"], out[4]["tool_call_id"]] == ["c0", "c1"]
     assert all("headroom_retrieve(hash='aggregate12345678')" in out[i]["content"] for i in (2, 4))
+
+
+def test_below_min_group_does_not_merge_different_argument_windows():
+    messages = history(
+        ["small output\n" * 350, "small output\n" * 350],
+        name="read_file",
+        arguments=[{"path": "/tmp/a", "offset": 1}, {"path": "/tmp/a", "offset": 351}],
+    )
+    calls = []
+    out, info = transform_history(
+        messages,
+        hot_tool_results=0,
+        aggregate_budget_chars=8000,
+        compressor=lambda *args, **kwargs: calls.append((args, kwargs)) or "summary hash=shouldnotrun123",
+    )
+    assert out == messages and info["changed"] == 0 and calls == []
 
 
 def test_sub_budget_and_failed_marker_groups_stay_exact():
