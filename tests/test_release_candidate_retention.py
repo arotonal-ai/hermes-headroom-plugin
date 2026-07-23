@@ -110,6 +110,13 @@ def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> N
     assert "test-headroom-runtime-smoke.py" in future_monitor
 
 
+def test_release_candidate_workflow_fetches_tag_history_for_rollback() -> None:
+    release_candidate = (REPO / ".github" / "workflows" / "release-candidate.yml").read_text(encoding="utf-8")
+
+    assert "actions/checkout@v7" in release_candidate
+    assert "fetch-depth: 0" in release_candidate
+
+
 def test_release_gate_certifies_wheel_runtime_manager_lifecycle() -> None:
     gate_script = SCRIPT.read_text(encoding="utf-8")
     lifecycle_script = (REPO / "scripts" / "test-runtime-manager-lifecycle.py").read_text(encoding="utf-8")
