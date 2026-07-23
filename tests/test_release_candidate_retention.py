@@ -45,6 +45,24 @@ def test_package_proxy_extra_matches_certified_runtime() -> None:
     assert f"hermes-headroom-plugin=={project['version']}" in portable_core
 
 
+def test_production_candidate_documents_real_config_keys_without_test_aliases() -> None:
+    text = (REPO / "docs" / "production-candidate.md").read_text(encoding="utf-8")
+    for key in (
+        "materiality_chars:",
+        "hot_tool_results:",
+        "warm_tool_results:",
+        "aggregate_budget_chars:",
+        "compatibility_test_mode:",
+        "disclosure_owner:",
+    ):
+        assert key in text
+    assert "cold_after_turns:" not in text
+    assert "min_reducible_tokens:" not in text
+    assert "max_reductions_per_pass:" not in text
+    assert "\n    compatibility_test:" not in text
+    assert "\n    owner:" not in text
+
+
 def test_archive_inspection_rejects_stale_packaged_portable_core() -> None:
     member = "package.data/data/share/doc/hermes-headroom-plugin/portable-core.md"
     expected_row = f"| Plugin | `{MODULE.EXPECTED_PLUGIN_SPEC}` |"

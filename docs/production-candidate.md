@@ -19,11 +19,13 @@ Enable the lifecycle lane only in an isolated profile/session:
 context:
   engine: headroom-composite
 context_reduction:
+  min_tool_result_chars: 8000
   lifecycle:
     enabled: true
-    cold_after_turns: 8
-    min_reducible_tokens: 12000
-    max_reductions_per_pass: 3
+    materiality_chars: 24000
+    hot_tool_results: 4
+    warm_tool_results: 8
+    aggregate_budget_chars: 16000
 ```
 
 Rollback is one configuration change: restore the previous `context.engine` value (normally `session`) or set `context_reduction.lifecycle.enabled: false`, then start a fresh session. The plugin/runtime and tool-result middleware do not need to be removed.
@@ -36,11 +38,11 @@ Provider-native schema deferral is not a stable v0.6 feature. Hermes native Tool
 context_reduction:
   request_shaping:
     enabled: true
-    compatibility_test: true
-    owner: provider
+    compatibility_test_mode: true
+    disclosure_owner: provider
 ```
 
-Both flags are required. `enabled: true` without `compatibility_test: true` is inert and no longer shadows the independent `llm_request` safety net. Do not use the fixture in a production profile or report it as token savings.
+All three values are required. `enabled: true` without `compatibility_test_mode: true` is inert and no longer shadows the independent `llm_request` safety net. Do not use the fixture in a production profile or report it as token savings.
 
 Promotion criteria: provider/Hermes contract proof, a real isolated request canary, no duplication with native Tool Search, exact rollback and measured positive value after safety/fidelity costs.
 

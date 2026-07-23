@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-RESIDENT_TOOLS = frozenset({"terminal", "read_file", "search_files", "patch", "write_file", "todo", "headroom_retrieve", "innocent"})
+RESIDENT_TOOLS = frozenset({"terminal", "read_file", "search_files", "patch", "write_file", "todo", "headroom_retrieve"})
 SUPPORTED_MODES = frozenset({"responses", "codex_responses", "openai_responses"})
 
 def shape_request(request: dict[str, Any], api_mode: str, *, owner: str, native_tool_search: bool = False,

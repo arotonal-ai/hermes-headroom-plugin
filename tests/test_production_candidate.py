@@ -41,6 +41,21 @@ def test_lifecycle_config_is_typed_bounded_and_defaults_inert():
     assert cfg.lifecycle_warm_tool_results == 10000 and cfg.lifecycle_aggregate_budget_chars == 2000
 
 
+def test_p4_compatibility_fixture_uses_public_config_keys_and_stays_default_off():
+    default = resolve_effective_config(raw_config={})
+    assert default.request_shaping_enabled is False
+    assert default.request_shaping_compatibility_test is False
+    assert default.request_shaping_owner == "none"
+    cfg = resolve_effective_config(raw_config={"request_shaping": {
+        "enabled": True,
+        "compatibility_test_mode": True,
+        "disclosure_owner": "provider",
+    }})
+    assert cfg.request_shaping_enabled is True
+    assert cfg.request_shaping_compatibility_test is True
+    assert cfg.request_shaping_owner == "provider"
+
+
 def test_host_compression_policy_is_loaded_separately(tmp_path):
     (tmp_path / "config.yaml").write_text(
         "compression:\n  threshold: 0.18\n  protect_last_n: 8\ncontext_reduction:\n  lifecycle:\n    enabled: true\n",
