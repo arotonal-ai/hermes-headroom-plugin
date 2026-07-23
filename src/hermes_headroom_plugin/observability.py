@@ -79,6 +79,26 @@ def _rotate_event_log_if_needed(path: Path) -> None:
         return
 
 
+def append_metadata_event(event: dict[str, Any]) -> None:
+    """Append a caller-sanitized metadata-only event through the bounded log."""
+    try:
+        event = dict(event)
+        event.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+        event.setdefault("action", "shadow_classified")
+        event.setdefault("surface", "llm_request")
+        path = _event_log_path()
+        with _EVENT_WRITE_LOCK:
+            _rotate_event_log_if_needed(path)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+        try:
+            path.chmod(0o600)
+        except Exception:
+            pass
+    except Exception:
+        return
+
+
 def _safe_event_text(value: Any, *, limit: int = 240) -> str:
     text = _redact_text(str(value or ""))
     text = re.sub(r"\s+", " ", text).strip()

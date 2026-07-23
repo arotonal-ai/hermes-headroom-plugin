@@ -12,6 +12,9 @@ from .config import DEFAULT_LLM_REQUEST_CACHE_MAX, llm_request_compression_enabl
 from .observability import _emit_headroom_event
 from .policy import _already_compressed, _extract_markers
 from .reduction import compress_tool_result_for_context
+from .request_shaper import shape_request
+from .waterfall import classify_request
+from .observability import append_metadata_event
 
 # Legacy import surface only. The active bound is resolved per cache mutation so
 # a long-lived Hermes process observes explicit config/environment changes.
@@ -416,7 +419,30 @@ def on_llm_request(request: dict[str, Any] | None = None, api_mode: str = "", **
     Provider/model routing is never changed. The adapter is opt-in, copy-on-write,
     protocol-aware, and fail-open. Unsupported shapes return no middleware result.
     """
-    if not isinstance(request, dict) or not llm_request_compression_enabled():
+    if not isinstance(request, dict):
+        return None
+    cfg = resolve_effective_config()
+    normalized_for_report = {"responses": "codex_responses", "openai_responses": "codex_responses"}.get(str(api_mode).lower(), str(api_mode).lower())
+    # Classification is content-free and always runs at the common boundary;
+    # shadow-only mode deliberately returns None.
+    try:
+        append_metadata_event(classify_request(request, normalized_for_report, context))
+    except Exception:
+        pass
+    # Provider-native schema shaping is a compatibility fixture, not a normal
+    # production mode. A stale/incomplete shaping flag must not shadow the
+    # independent llm_request safety net.
+    if cfg.request_shaping_enabled and cfg.request_shaping_compatibility_test:
+        shaped = shape_request(
+            request, normalized_for_report, owner=cfg.request_shaping_owner,
+            native_tool_search=bool(context.get("native_tool_search")),
+            proxy_deferral=bool(context.get("headroom_proxy_deferral")),
+            compatibility_test=cfg.request_shaping_compatibility_test,
+        )
+        if shaped is not None and shaped is not request:
+            return {"request": shaped, "source": "headroom_retrieve", "reason": f"schema_shaping:{normalized_for_report}"}
+        return None
+    if not llm_request_compression_enabled():
         return None
     normalized_mode = str(api_mode or "").strip().lower()
     aliases = {

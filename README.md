@@ -191,6 +191,12 @@ context_reduction:
 
 This is a scoped development-loop override, not a portable-product default. It keeps `/headroom status`, `/headroom smoke`, `/headroom cache`, and `headroom_retrieve` available, but tool outputs return exact unless explicitly compressed through a wrapper/runtime path. Use it for plugin improvement sessions with repeated tests/gates; keep `HEADROOM_AUTO_COMPRESSION=1` or `context_reduction.auto_compression: true` for normal portable operation where eligible-intermediate compression is the point. The control disables only middleware auto-compression, not the runtime or the portable compression-first product posture.
 
+### Optional native context lifecycle (P2/P3)
+
+v0.6 adds an inert `headroom-composite` ContextEngine. It is registered only as a selectable Hermes engine and is never selected by plugin installation. When explicitly selected with `context.engine: headroom-composite` and `context_reduction.lifecycle.enabled: true`, it preserves Hermes's native compression policy, protects system/head/tail and hot tool results, requires durable CCR authority for replacements, and falls back to the original Hermes compressor on ambiguity or failure. See [docs/production-candidate.md](docs/production-candidate.md) for the bounded configuration and rollback contract.
+
+Provider-native schema deferral/request shaping is **not** part of the stable core: it remains an explicit compatibility-test fixture because Hermes native Tool Search owns disclosure and current Codex preflight does not accept the alternate `tool_search` contract.
+
 ### Opt-in common LLM-request safety net
 
 Hermes exposes a native `llm_request` middleware boundary after protocol payload construction and before the real provider transport. The plugin can use it to compress eligible legacy or bypassed tool-result text across `chat_completions`, `codex_responses`, `anthropic_messages`, and `bedrock_converse`:

@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from hermes_headroom_plugin import middleware
+from hermes_headroom_plugin.config import EffectiveConfig
 
 
 class LlmRequestCompressionConfigTest(unittest.TestCase):
@@ -261,7 +262,7 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
         self.assertEqual(events[-1]["reason"], "request_cache_reuse")
         self.assertFalse(events[-1]["new_savings_event"])
         self.assertEqual(events[-1]["logical_source_id"], self.calls[0]["logical_source_id"])
-        self.assertEqual(len(events), 1)
+        self.assertEqual(len([e for e in events if e.get("schema") != "headroom.waterfall.v1"]), 1)
         self.assertEqual(sum(bool(event.get("new_savings_event")) for event in events), 0)
 
     def test_request_cache_bound_is_runtime_resolved(self):
@@ -361,6 +362,23 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
             self.assertIsNone(middleware.on_llm_request(request=request, api_mode="chat_completions"))
         self.assertEqual(request, original)
 
+    def test_inert_request_shaping_flag_does_not_shadow_llm_request_safety_net(self):
+        request = {
+            "messages": [
+                {"role": "assistant", "tool_calls": [{"id": "shape-off", "function": {"name": "terminal", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": "shape-off", "content": self.large},
+            ]
+        }
+        cfg = EffectiveConfig(
+            request_shaping_enabled=True,
+            request_shaping_owner="provider",
+            request_shaping_compatibility_test=False,
+        )
+        with patch("hermes_headroom_plugin.middleware_request.resolve_effective_config", return_value=cfg):
+            effective, result = self.invoke(request, "chat_completions")
+        self.assertEqual(effective["messages"][1]["content"], "[COMPRESSED:terminal:shape-off]")
+        self.assertEqual(result["reason"], "compressed_tool_results:chat_completions:1")
+
 
 class CrossSurfaceAttributionTest(unittest.TestCase):
     def test_tool_execution_credit_is_not_recredited_by_llm_request(self):
@@ -429,7 +447,7 @@ class CrossSurfaceAttributionTest(unittest.TestCase):
         self.assertEqual(len(new_savings), 1)
         self.assertEqual(new_savings[0]["surface"], "tool_execution")
         self.assertEqual(new_savings[0]["marker"], "crosslane123456")
-        self.assertEqual(len(events), 1)
+        self.assertEqual(len([e for e in events if e.get("schema") != "headroom.waterfall.v1"]), 1)
 
 
 

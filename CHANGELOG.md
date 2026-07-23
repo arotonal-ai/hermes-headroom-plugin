@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.6.0rc1 — 2026-07-23
+
+- Integrate the verified P1 durable-CCR/fail-open reducer and P2/P3 age-aware lifecycle/composite ContextEngine onto the published v0.5.2 runtime-manager and hardening line.
+- Preserve Hermes's native compression threshold/protected-region policy across registration, model updates and deepcopy while keeping the engine inert until explicitly selected.
+- Keep provider-native P4 schema shaping outside the stable core as an explicit compatibility fixture; Hermes native Tool Search remains the disclosure authority.
+- Keep `llm_request` as a copy-on-write, fail-open, default-off safety net for legacy/bypassed tool results; an inert shaping flag no longer shadows that independent lane.
+- Preserve the managed Headroom 0.32.1/LiteLLM 1.91.3 default and test Headroom 0.31.0 only as an isolated plugin-compatibility/rollback lane.
+
 ## v0.5.2 — 2026-07-21
 
 - Honor `context_reduction.allow_remote_proxy: true` when a non-loopback proxy URL is resolved from YAML and then revalidated by `readyz`, `smoke`, `retrieve`, `retrieve_stats`, or `compress_messages`.

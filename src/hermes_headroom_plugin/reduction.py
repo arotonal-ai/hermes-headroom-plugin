@@ -611,13 +611,21 @@ def compress_tool_result_for_context(
     }
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    useful = bool(marker) or (isinstance(saved, int) and saved > 500 and isinstance(after, int) and isinstance(before, int) and after < before)
+    useful = (
+        bool(marker)
+        and isinstance(saved, int)
+        and saved > 500
+        and isinstance(after, int)
+        and isinstance(before, int)
+        and after < before
+    )
     if not useful:
+        skip_reason = "missing_durable_marker" if not marker else "compression_not_useful"
         _emit_headroom_event(
             action="skipped",
             tool_name=tool_name,
             args=args,
-            reason="compression_not_useful",
+            reason=skip_reason,
             task_id=task_id,
             tool_call_id=tool_call_id,
             session_id=session_id,
@@ -635,7 +643,7 @@ def compress_tool_result_for_context(
             report_path=report_path,
             source_path=source_path,
             compressed_path=compressed_path,
-            exact_authority="redacted_sidecar",
+            exact_authority="original_tool_result",
             compression_latency_ms=compression_latency_ms,
             measurement_scope=event_measurement_scope,
         )
@@ -650,22 +658,12 @@ def compress_tool_result_for_context(
         source_path=source_path,
         marker=marker,
     )
-    if marker:
-        payload = (
-            f"[Headroom auto-compressed tool result · tool={tool_name} original_chars={len(result)} "
-            f"tokens_before={before} tokens_after={after} saved={saved} marker={marker}]\n"
-            f"{exact_header}\n"
-            f"Use headroom_retrieve(hash='{marker}') for the complete exact retained payload."
-        )
-    else:
-        payload = (
-            f"[Headroom auto-compressed tool result · tool={tool_name} original_chars={len(result)} "
-            f"tokens_before={before} tokens_after={after} saved={saved} direct_compression=true]\n"
-            f"{exact_header}\n\n"
-            f"Compressed payload: {compressed_path}\n\n"
-            f"Compressed excerpt:\n{_compressed_excerpt(compressed)}\n\n"
-            f"Raw edge excerpt:\n{_edge_excerpt(redacted)}"
-        )
+    payload = (
+        f"[Headroom auto-compressed tool result · tool={tool_name} original_chars={len(result)} "
+        f"tokens_before={before} tokens_after={after} saved={saved} marker={marker}]\n"
+        f"{exact_header}\n"
+        f"Use headroom_retrieve(hash='{marker}') for the complete exact retained payload."
+    )
     final_payload = _shorten(payload)
 
     measurement_scope = event_measurement_scope

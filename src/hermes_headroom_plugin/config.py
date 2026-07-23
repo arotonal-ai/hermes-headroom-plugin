@@ -49,6 +49,19 @@ def load_context_reduction_config(home: Path | None = None) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
 
 
+def load_host_compression_config(home: Path | None = None) -> dict[str, Any]:
+    """Read Hermes's built-in compression policy for composite fallback parity."""
+    path = (home or hermes_home()) / "config.yaml"
+    if yaml is None or not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+    value = data.get("compression") if isinstance(data, dict) else {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _boolish(value: Any, *, default: bool) -> bool:
     if isinstance(value, bool):
         return value
@@ -107,6 +120,14 @@ class EffectiveConfig:
     auto_compression: bool = True
     llm_request_enabled: bool = False
     llm_request_mode: str = "tool_results"
+    request_shaping_enabled: bool = False
+    request_shaping_owner: str = "none"
+    request_shaping_compatibility_test: bool = False
+    lifecycle_enabled: bool = False
+    lifecycle_materiality_chars: int = 24_000
+    lifecycle_hot_tool_results: int = 4
+    lifecycle_warm_tool_results: int = 8
+    lifecycle_aggregate_budget_chars: int = 16_000
     min_tool_result_chars: int = DEFAULT_MIN_TOOL_RESULT_CHARS
     event_log_max_bytes: int = DEFAULT_EVENT_LOG_MAX_BYTES
     llm_request_cache_max: int = DEFAULT_LLM_REQUEST_CACHE_MAX
@@ -185,6 +206,11 @@ def resolve_effective_config(
         llm_enabled = _boolish(environment.get("HEADROOM_LLM_REQUEST_COMPRESSION"), default=False)
     else:
         llm_enabled = llm_default
+
+    shaping = configured("request_shaping", default={})
+    shaping = dict(shaping) if isinstance(shaping, Mapping) else {}
+    lifecycle = configured("lifecycle", default={})
+    lifecycle = dict(lifecycle) if isinstance(lifecycle, Mapping) else {}
 
     allow_remote = _boolish(configured("allow_remote_proxy", default=False), default=False)
     if environment.get("HEADROOM_ALLOW_REMOTE_PROXY") is not None and "allow_remote_proxy" not in explicit:
@@ -266,6 +292,14 @@ def resolve_effective_config(
         auto_compression=auto_compression,
         llm_request_enabled=llm_enabled,
         llm_request_mode=llm_mode,
+        request_shaping_enabled=_boolish(shaping.get("enabled"), default=False),
+        request_shaping_owner=str(shaping.get("disclosure_owner") or "none").strip().lower(),
+        request_shaping_compatibility_test=_boolish(shaping.get("compatibility_test_mode"), default=False),
+        lifecycle_enabled=_boolish(lifecycle.get("enabled"), default=False),
+        lifecycle_materiality_chars=_bounded_int(lifecycle.get("materiality_chars"), default=24_000, minimum=8_000, maximum=10_000_000),
+        lifecycle_hot_tool_results=_bounded_int(lifecycle.get("hot_tool_results"), default=4, minimum=0, maximum=1_000),
+        lifecycle_warm_tool_results=_bounded_int(lifecycle.get("warm_tool_results"), default=8, minimum=0, maximum=10_000),
+        lifecycle_aggregate_budget_chars=_bounded_int(lifecycle.get("aggregate_budget_chars"), default=16_000, minimum=2_000, maximum=10_000_000),
         min_tool_result_chars=_bounded_int(min_chars_value, default=DEFAULT_MIN_TOOL_RESULT_CHARS, minimum=2_000, maximum=10_000_000),
         event_log_max_bytes=_bounded_int(event_bytes, default=DEFAULT_EVENT_LOG_MAX_BYTES, minimum=64_000, maximum=1_000_000_000),
         llm_request_cache_max=_bounded_int(llm_cache_max, default=DEFAULT_LLM_REQUEST_CACHE_MAX, minimum=64, maximum=100_000),

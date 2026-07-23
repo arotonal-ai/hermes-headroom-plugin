@@ -32,7 +32,7 @@ def test_release_candidate_default_runtime_is_pinned() -> None:
 def test_package_proxy_extra_matches_certified_runtime() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
-    assert project["version"] == "0.5.2"
+    assert project["version"] == "0.6.0rc1"
     assert project["optional-dependencies"]["proxy"] == [
         MODULE.DEFAULT_HEADROOM_SPEC,
         MODULE.DEFAULT_LITELLM_SPEC,
@@ -45,12 +45,30 @@ def test_package_proxy_extra_matches_certified_runtime() -> None:
     assert f"hermes-headroom-plugin=={project['version']}" in portable_core
 
 
+def test_production_candidate_documents_real_config_keys_without_test_aliases() -> None:
+    text = (REPO / "docs" / "production-candidate.md").read_text(encoding="utf-8")
+    for key in (
+        "materiality_chars:",
+        "hot_tool_results:",
+        "warm_tool_results:",
+        "aggregate_budget_chars:",
+        "compatibility_test_mode:",
+        "disclosure_owner:",
+    ):
+        assert key in text
+    assert "cold_after_turns:" not in text
+    assert "min_reducible_tokens:" not in text
+    assert "max_reductions_per_pass:" not in text
+    assert "\n    compatibility_test:" not in text
+    assert "\n    owner:" not in text
+
+
 def test_archive_inspection_rejects_stale_packaged_portable_core() -> None:
     member = "package.data/data/share/doc/hermes-headroom-plugin/portable-core.md"
     expected_row = f"| Plugin | `{MODULE.EXPECTED_PLUGIN_SPEC}` |"
     invalid_documents = {
         "mixed": f"{expected_row}\n| Plugin | `hermes-headroom-plugin==0.5.1` |",
-        "local-suffix": "| Plugin | `hermes-headroom-plugin==0.5.2+0.5.1` |",
+        "local-suffix": "| Plugin | `hermes-headroom-plugin==0.6.0rc1+0.5.2` |",
     }
     with tempfile.TemporaryDirectory() as temp_dir:
         for name, document in invalid_documents.items():
@@ -92,12 +110,21 @@ def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> N
     assert "test-headroom-runtime-smoke.py" in future_monitor
 
 
+def test_release_candidate_workflow_fetches_tag_history_for_rollback() -> None:
+    release_candidate = (REPO / ".github" / "workflows" / "release-candidate.yml").read_text(encoding="utf-8")
+
+    assert "actions/checkout@v7" in release_candidate
+    assert "fetch-depth: 0" in release_candidate
+
+
 def test_release_gate_certifies_wheel_runtime_manager_lifecycle() -> None:
     gate_script = SCRIPT.read_text(encoding="utf-8")
     lifecycle_script = (REPO / "scripts" / "test-runtime-manager-lifecycle.py").read_text(encoding="utf-8")
 
     assert 'exe("headroom-runtime")' in gate_script
-    assert 'gates["wheel_runtime_manager_lifecycle"]' in gate_script
+    assert '"wheel_runtime_manager_lifecycle"' in gate_script
+    assert '"durable_lifecycle_deferred_to_release_gate"' in gate_script
+    assert '"--run-durable-lifecycle"' in gate_script
     assert '"mutations": manifest_data.get("mutations")' in lifecycle_script
     assert 'manifest_data.get("mutations") == []' in lifecycle_script
     assert "shell_unchanged" in lifecycle_script
@@ -154,6 +181,38 @@ def test_cleanup_ephemeral_envs_blocks_symlink_escape(tmp_path: Path) -> None:
     assert (outside / "keep.txt").read_text(encoding="utf-8") == "keep"
 
 
+def test_release_gate_lock_blocks_concurrent_run_root(tmp_path: Path) -> None:
+    lock_dir = MODULE.acquire_gate_lock(tmp_path, register_atexit=False)
+    try:
+        assert lock_dir.is_dir()
+        assert (lock_dir / "owner.json").is_file()
+        try:
+            MODULE.acquire_gate_lock(tmp_path, register_atexit=False)
+        except FileExistsError:
+            pass
+        else:
+            raise AssertionError("concurrent gate lock was not blocked")
+    finally:
+        MODULE.release_gate_lock(lock_dir)
+    assert not lock_dir.exists()
+
+
+def test_checkout_snapshot_reports_exact_checkout_identity() -> None:
+    snapshot = MODULE.checkout_snapshot()
+    assert snapshot["commands_ok"] is True
+    assert snapshot["head"]
+    assert snapshot["tree"]
+    assert isinstance(snapshot["status_short"], str)
+
+
+def test_release_gate_requires_checkout_stability() -> None:
+    gate_script = SCRIPT.read_text(encoding="utf-8")
+    assert 'gates["checkout_stability"]' in gate_script
+    assert '"RC_GATE_CONCURRENT_RUN_BLOCKED"' in gate_script
+    assert 'initial_checkout.get("head") == final_checkout.get("head")' in gate_script
+    assert 'initial_checkout.get("tree") == final_checkout.get("tree")' in gate_script
+
+
 def test_isolated_runtime_env_keeps_ccr_state_inside_run(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -184,3 +243,25 @@ def test_standalone_runtime_smoke_isolates_headroom_state(tmp_path: Path) -> Non
     assert env["HEADROOM_CCR_BACKEND"] == "memory"
     assert env["HEADROOM_CCR_TTL_SECONDS"] == "1800"
     assert workspace.is_dir()
+
+
+def test_leftover_proxy_check_allows_baseline_and_rejects_new_process(monkeypatch) -> None:
+    baseline = [{"pid": "100", "argv": ["headroom", "proxy"]}]
+    monkeypatch.setattr(MODULE, "headroom_proxy_processes", lambda: list(baseline))
+    assert MODULE.no_new_leftover_proxy(baseline)["pass"] is True
+
+    monkeypatch.setattr(
+        MODULE,
+        "headroom_proxy_processes",
+        lambda: [*baseline, {"pid": "101", "argv": ["headroom", "proxy"]}],
+    )
+    result = MODULE.no_new_leftover_proxy(baseline)
+    assert result["pass"] is False
+    assert [item["pid"] for item in result["new_headroom_proxy_processes"]] == ["101"]
+
+
+def test_proxy_scanner_contract_accepts_python_wrapped_console_script() -> None:
+    argv = ["/venv/bin/python", "/venv/bin/headroom", "proxy", "--port", "28787"]
+    is_headroom_cli = any(Path(item).name.lower() in {"headroom", "headroom.exe"} for item in argv)
+    assert is_headroom_cli is True
+    assert "proxy" in argv

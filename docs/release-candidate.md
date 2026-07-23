@@ -12,7 +12,7 @@ The gate is local-only. It does **not** push, tag, publish, mutate the real Herm
 release-candidate-runs/<UTC>-release-candidate-local-gate/
 ```
 
-By default the gate removes its five reproducible per-run virtualenvs after
+By default the gate removes its allowlisted reproducible per-run virtualenvs after
 writing reports, command receipts, logs, package artifacts and workload
 matrices.  This prevents repeated local gates from retaining roughly one full
 runtime environment per stage.  Use `--keep-ephemeral-envs` only for a bounded
@@ -36,10 +36,13 @@ A pass means the checkout is ready for owner review and remote CI readback. It i
 | unit/contract tests | runs the package test suite in a temporary venv with `.[test]` |
 | build/archive inspection | builds wheel + sdist and scans archives for forbidden members, owner-local paths, and secrets |
 | wheel install/entrypoints | installs the built wheel in a fresh venv and verifies packaged console scripts |
+| package upgrade/rollback | builds published `v0.5.2`, then proves `0.5.2 → 0.6.0rc1 → 0.5.2` in a fresh venv |
 | clean temp Hermes install | installs the local checkout into a temporary `HERMES_HOME` without touching the real profile when Hermes CLI is available; in generic CI runners without Hermes CLI this is recorded as `skipped: hermes_cli_not_available` and package portability is covered by the wheel/entrypoint gate |
-| runtime compress/retrieve smoke | installs upstream `headroom-ai[proxy]`, starts loopback proxy, and verifies compress → retrieve sentinel |
+| runtime compress/retrieve smoke | verifies the managed Headroom 0.32.1/LiteLLM 1.91.3 pair |
+| compatibility runtime smoke | separately verifies Headroom 0.31.0 as an isolated plugin-compatibility/rollback lane, not the managed default |
 | bulky workload matrix | verifies real plugin middleware over terminal/QA, delegate/subagent, browser/debug, and research-corpus lanes plus negative exact controls |
-| no leftover proxy | verifies no Headroom proxy process remains after the gate |
+| no new leftover proxy | snapshots pre-existing owner runtimes and verifies the gate leaks no additional Headroom proxy process |
+| durable lifecycle boundary | local default defers native supervisor mutation; pass `--run-durable-lifecycle` only at an explicitly authorized gate, or use the separate cross-OS Runtime Manager Lifecycle workflow |
 
 ## Workload expectations
 
@@ -76,6 +79,9 @@ python scripts/release-candidate-local-gate.py
 
 # Use a specific upstream Headroom package spec for rollback diagnostics
 python scripts/release-candidate-local-gate.py --headroom-spec 'headroom-ai[proxy]==0.28.0'
+
+# Explicitly run the native user-supervisor lifecycle (mutating, reversible)
+python scripts/release-candidate-local-gate.py --run-durable-lifecycle
 
 # Write evidence somewhere else
 python scripts/release-candidate-local-gate.py --run-root /tmp/hermes-headroom-rc

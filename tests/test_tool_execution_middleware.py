@@ -265,6 +265,39 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(events[-1]["action"], "compressed")
         self.assertEqual(events[-1]["lane"], "file")
 
+    def test_large_savings_without_durable_marker_fail_open_to_exact_result(self):
+        source = "\n".join(
+            f"seq={i} status=ok detail=bounded diagnostic fixture"
+            + (" sentinel=HR-P1P3-EXACT-777" if i == 777 else "")
+            for i in range(1200)
+        )
+        compressed = {
+            "ok": True,
+            "tokens_before": 18000,
+            "tokens_after": 1200,
+            "tokens_saved": 16800,
+            "compression_ratio": 0.066,
+            "messages": [{"role": "tool", "content": "summary without recovery handle"}],
+        }
+        with tempfile.TemporaryDirectory() as td, patch(
+            "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
+        ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
+            "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+        ):
+            out = middleware.on_tool_execution(
+                tool_name="terminal",
+                args={"command": "generate bounded diagnostic fixture"},
+                next_call=lambda args: source,
+                session_id="s-no-marker",
+                tool_call_id="call-no-marker",
+            )
+            events = self._events(td)
+        self.assertEqual(out, source)
+        self.assertIn("HR-P1P3-EXACT-777", out)
+        self.assertEqual(events[-1]["action"], "skipped")
+        self.assertEqual(events[-1]["reason"], "missing_durable_marker")
+        self.assertEqual(events[-1]["exact_authority"], "original_tool_result")
+
     def test_machine_consumer_read_file_keeps_structured_contract_exact(self):
         structured = {
             "content": self._large_result(lines=700),
@@ -788,10 +821,11 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertIsNone(first_request)
         self.assertIsNone(second_request)
         self.assertEqual(compress.call_count, 1)
-        self.assertEqual(len(events), 1)
-        self.assertEqual(events[0]["surface"], "tool_execution")
-        self.assertEqual(events[0]["reason"], "compression_not_useful")
-        self.assertFalse(events[0]["new_savings_event"])
+        reduction_events = [e for e in events if e.get("schema") != "headroom.waterfall.v1"]
+        self.assertEqual(len(reduction_events), 1)
+        self.assertEqual(reduction_events[0]["surface"], "tool_execution")
+        self.assertEqual(reduction_events[0]["reason"], "missing_durable_marker")
+        self.assertFalse(reduction_events[0]["new_savings_event"])
 
     def test_negative_outcome_cache_expires_and_is_runtime_bounded(self):
         keys = [
