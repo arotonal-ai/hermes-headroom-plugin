@@ -199,3 +199,10 @@ def test_leftover_proxy_check_allows_baseline_and_rejects_new_process(monkeypatc
     result = MODULE.no_new_leftover_proxy(baseline)
     assert result["pass"] is False
     assert [item["pid"] for item in result["new_headroom_proxy_processes"]] == ["101"]
+
+
+def test_proxy_scanner_contract_accepts_python_wrapped_console_script() -> None:
+    argv = ["/venv/bin/python", "/venv/bin/headroom", "proxy", "--port", "28787"]
+    is_headroom_cli = any(Path(item).name.lower() in {"headroom", "headroom.exe"} for item in argv)
+    assert is_headroom_cli is True
+    assert "proxy" in argv

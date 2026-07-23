@@ -650,7 +650,8 @@ def headroom_proxy_processes() -> list[dict[str, Any]]:
             except Exception:
                 continue
             argv = [a.decode("utf-8", "replace") for a in raw.split(b"\0") if a]
-            if argv and Path(argv[0]).name == "headroom" and "proxy" in argv[1:]:
+            is_headroom_cli = any(Path(item).name.lower() in {"headroom", "headroom.exe"} for item in argv)
+            if argv and is_headroom_cli and "proxy" in argv:
                 matches.append({"pid": p.name, "argv": argv})
     return matches
 
