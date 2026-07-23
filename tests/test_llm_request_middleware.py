@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from hermes_headroom_plugin import middleware
+from hermes_headroom_plugin.config import EffectiveConfig
 
 
 class LlmRequestCompressionConfigTest(unittest.TestCase):
@@ -360,6 +361,23 @@ class LlmRequestMiddlewareTest(unittest.TestCase):
         ):
             self.assertIsNone(middleware.on_llm_request(request=request, api_mode="chat_completions"))
         self.assertEqual(request, original)
+
+    def test_inert_request_shaping_flag_does_not_shadow_llm_request_safety_net(self):
+        request = {
+            "messages": [
+                {"role": "assistant", "tool_calls": [{"id": "shape-off", "function": {"name": "terminal", "arguments": "{}"}}]},
+                {"role": "tool", "tool_call_id": "shape-off", "content": self.large},
+            ]
+        }
+        cfg = EffectiveConfig(
+            request_shaping_enabled=True,
+            request_shaping_owner="provider",
+            request_shaping_compatibility_test=False,
+        )
+        with patch("hermes_headroom_plugin.middleware_request.resolve_effective_config", return_value=cfg):
+            effective, result = self.invoke(request, "chat_completions")
+        self.assertEqual(effective["messages"][1]["content"], "[COMPRESSED:terminal:shape-off]")
+        self.assertEqual(result["reason"], "compressed_tool_results:chat_completions:1")
 
 
 class CrossSurfaceAttributionTest(unittest.TestCase):

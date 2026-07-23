@@ -9,6 +9,17 @@ This page separates **published certified releases** from withdrawn releases and
 
 The v0.5.x pair passed its blocking setup → status → doctor → uninstall matrix on GitHub-hosted Ubuntu, macOS, and native Windows for Python 3.11 and 3.12, plus the final release-candidate, exact-pin documentation, and release-control gates. This evidence supports the published lifecycle; it does not claim production token savings.
 
+## Local v0.6.0rc1 candidate
+
+The candidate preserves the v0.5.2 managed pair and adds optional P1–P3 context lifecycle. Its local release gate requires both a default-runtime smoke and a separate compatibility smoke:
+
+| Lane | Headroom | LiteLLM | Meaning |
+|---|---|---|---|
+| managed default | `headroom-ai[proxy]==0.32.1` | `litellm==1.91.3` | blocking local RC runtime and workload lane |
+| compatibility / rollback | `headroom-ai[proxy]==0.31.0` | `litellm==1.91.3` | isolated Linux compress → retrieve proof only; not the manager default |
+
+This local matrix is not a substitute for the cross-OS/Python GitHub Actions release gate. P4 provider-native request shaping remains a compatibility fixture, while `llm_request` remains an opt-in safety net; see [production-candidate.md](production-candidate.md).
+
 ## Published v0.4.x baseline
 
 The v0.4 Runtime Smoke workflow installed the runtime, started a loopback proxy, and verified plugin compress → retrieve sentinel recovery.

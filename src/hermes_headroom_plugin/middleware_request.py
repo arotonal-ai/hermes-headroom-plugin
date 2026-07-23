@@ -429,7 +429,10 @@ def on_llm_request(request: dict[str, Any] | None = None, api_mode: str = "", **
         append_metadata_event(classify_request(request, normalized_for_report, context))
     except Exception:
         pass
-    if cfg.request_shaping_enabled:
+    # Provider-native schema shaping is a compatibility fixture, not a normal
+    # production mode. A stale/incomplete shaping flag must not shadow the
+    # independent llm_request safety net.
+    if cfg.request_shaping_enabled and cfg.request_shaping_compatibility_test:
         shaped = shape_request(
             request, normalized_for_report, owner=cfg.request_shaping_owner,
             native_tool_search=bool(context.get("native_tool_search")),
