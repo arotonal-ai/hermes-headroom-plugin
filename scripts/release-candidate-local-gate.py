@@ -9,6 +9,7 @@ Hermes profile.
 from __future__ import annotations
 
 import argparse
+import atexit
 import contextlib
 import json
 import os
@@ -171,6 +172,41 @@ def run(cmd: list[str], *, cwd: Path = REPO, timeout: int = 600, env: dict[str, 
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def release_gate_lock(lock_dir: Path) -> None:
+    """Release only the exact atomic lock directory created by this gate."""
+    with contextlib.suppress(FileNotFoundError):
+        (lock_dir / "owner.json").unlink()
+    with contextlib.suppress(FileNotFoundError):
+        lock_dir.rmdir()
+
+
+def acquire_gate_lock(run_root: Path, *, register_atexit: bool = True) -> Path:
+    """Fail closed when another RC gate is using the same evidence root."""
+    lock_dir = run_root / ".release-candidate-local-gate.lock"
+    lock_dir.mkdir()
+    write_json(
+        lock_dir / "owner.json",
+        {"pid": os.getpid(), "repo": str(REPO), "started_at": utc_iso(), "head": git_head()},
+    )
+    if register_atexit:
+        atexit.register(release_gate_lock, lock_dir)
+    return lock_dir
+
+
+def checkout_snapshot() -> dict[str, Any]:
+    """Capture the committed identity and all tracked/untracked checkout drift."""
+    head = run(["git", "rev-parse", "HEAD"], timeout=30)
+    tree = run(["git", "rev-parse", "HEAD^{tree}"], timeout=30)
+    status = run(["git", "status", "--short", "--untracked-files=all"], timeout=30)
+    return {
+        "commands_ok": all(item["returncode"] == 0 for item in (head, tree, status)),
+        "head": head["stdout"].strip(),
+        "tree": tree["stdout"].strip(),
+        "status_short": status["stdout"],
+        "status_returncode": status["returncode"],
+    }
 
 
 def free_loopback_port() -> int:
@@ -723,9 +759,21 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    run_dir = Path(args.run_root).expanduser().resolve() / f"{utc_stamp()}-release-candidate-local-gate"
+    run_root = Path(args.run_root).expanduser().resolve()
+    run_root.mkdir(parents=True, exist_ok=True)
+    try:
+        acquire_gate_lock(run_root)
+    except FileExistsError:
+        owner_path = run_root / ".release-candidate-local-gate.lock" / "owner.json"
+        owner = owner_path.read_text(encoding="utf-8", errors="replace") if owner_path.exists() else "unknown"
+        print(json.dumps({"decision": "RC_GATE_CONCURRENT_RUN_BLOCKED", "lock_owner": owner}, ensure_ascii=False))
+        return 2
+
+    run_dir = run_root / f"{utc_stamp()}-release-candidate-local-gate"
     run_dir.mkdir(parents=True, exist_ok=True)
     gates: dict[str, dict[str, Any]] = {}
+    initial_checkout = checkout_snapshot()
+    write_json(run_dir / "initial-checkout.json", initial_checkout)
     baseline_proxies = headroom_proxy_processes()
     write_json(run_dir / "preexisting-proxies.json", baseline_proxies)
 
@@ -853,15 +901,37 @@ def main(argv: list[str] | None = None) -> int:
     write_json(run_dir / "post-proxy-check.json", leftover)
     gates["no_new_leftover_proxy"] = {"pass": leftover.get("pass"), "evidence": str(run_dir / "post-proxy-check.json")}
 
-    status = run(["git", "status", "--short"], timeout=30)
-    write_json(run_dir / "git-status.json", status)
-
     ephemeral_cleanup = cleanup_ephemeral_envs(run_dir, keep=args.keep_ephemeral_envs)
     write_json(run_dir / "ephemeral-env-cleanup.json", ephemeral_cleanup)
     gates["ephemeral_env_cleanup"] = {
         "pass": ephemeral_cleanup.get("pass"),
         "evidence": str(run_dir / "ephemeral-env-cleanup.json"),
     }
+
+    final_checkout = checkout_snapshot()
+    checkout_stability = {
+        "pass": bool(
+            initial_checkout.get("commands_ok")
+            and final_checkout.get("commands_ok")
+            and not initial_checkout.get("status_short")
+            and not final_checkout.get("status_short")
+            and initial_checkout.get("head") == final_checkout.get("head")
+            and initial_checkout.get("tree") == final_checkout.get("tree")
+        ),
+        "initial": initial_checkout,
+        "final": final_checkout,
+    }
+    write_json(run_dir / "checkout-stability.json", checkout_stability)
+    gates["checkout_stability"] = {
+        "pass": checkout_stability["pass"],
+        "evidence": str(run_dir / "checkout-stability.json"),
+    }
+    status = {
+        "cmd": ["git", "status", "--short", "--untracked-files=all"],
+        "returncode": final_checkout.get("status_returncode", 1),
+        "stdout": final_checkout.get("status_short", ""),
+    }
+    write_json(run_dir / "git-status.json", status)
 
     pass_count = sum(1 for g in gates.values() if g.get("pass"))
     total = len(gates)
@@ -874,7 +944,8 @@ def main(argv: list[str] | None = None) -> int:
         "total_gates": total,
         "run_dir": str(run_dir),
         "repo": str(REPO),
-        "plugin_head": git_head(),
+        "plugin_head": final_checkout.get("head", "unknown"),
+        "plugin_tree": final_checkout.get("tree", "unknown"),
         "gates": gates,
         "workload_matrix": workload,
         "proxy_url_used": proxy_url,

@@ -174,6 +174,38 @@ def test_cleanup_ephemeral_envs_blocks_symlink_escape(tmp_path: Path) -> None:
     assert (outside / "keep.txt").read_text(encoding="utf-8") == "keep"
 
 
+def test_release_gate_lock_blocks_concurrent_run_root(tmp_path: Path) -> None:
+    lock_dir = MODULE.acquire_gate_lock(tmp_path, register_atexit=False)
+    try:
+        assert lock_dir.is_dir()
+        assert (lock_dir / "owner.json").is_file()
+        try:
+            MODULE.acquire_gate_lock(tmp_path, register_atexit=False)
+        except FileExistsError:
+            pass
+        else:
+            raise AssertionError("concurrent gate lock was not blocked")
+    finally:
+        MODULE.release_gate_lock(lock_dir)
+    assert not lock_dir.exists()
+
+
+def test_checkout_snapshot_reports_exact_checkout_identity() -> None:
+    snapshot = MODULE.checkout_snapshot()
+    assert snapshot["commands_ok"] is True
+    assert snapshot["head"]
+    assert snapshot["tree"]
+    assert isinstance(snapshot["status_short"], str)
+
+
+def test_release_gate_requires_checkout_stability() -> None:
+    gate_script = SCRIPT.read_text(encoding="utf-8")
+    assert 'gates["checkout_stability"]' in gate_script
+    assert '"RC_GATE_CONCURRENT_RUN_BLOCKED"' in gate_script
+    assert 'initial_checkout.get("head") == final_checkout.get("head")' in gate_script
+    assert 'initial_checkout.get("tree") == final_checkout.get("tree")' in gate_script
+
+
 def test_isolated_runtime_env_keeps_ccr_state_inside_run(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()
