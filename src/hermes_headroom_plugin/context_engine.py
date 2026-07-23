@@ -5,7 +5,40 @@ import hashlib
 from copy import deepcopy
 from typing import Any, Callable, Mapping
 
-from agent.context_engine import ContextEngine
+try:
+    from agent.context_engine import ContextEngine as _HermesContextEngine  # type: ignore[import-not-found]
+except ImportError:  # Standalone wheel/CLI environments do not install Hermes.
+    class _HermesContextEngine:
+        """Minimal host-absent compatibility base.
+
+        Hermes supplies the native class before plugin discovery.  The fallback
+        keeps package imports and runtime-manager entry points usable in an
+        isolated wheel environment without pretending that the composite engine
+        has been registered with a host.
+        """
+
+        threshold_percent: float
+
+        def update_model(
+            self,
+            model: str,
+            context_length: int,
+            base_url: str = "",
+            api_key: str = "",
+            provider: str = "",
+            api_mode: str = "",
+        ) -> None:
+            self.context_length = context_length
+            self.threshold_tokens = int(context_length * self.threshold_percent)
+
+        def on_session_reset(self) -> None:
+            self.last_prompt_tokens = 0
+            self.last_completion_tokens = 0
+            self.last_total_tokens = 0
+            self.compression_count = 0
+
+
+ContextEngine = _HermesContextEngine
 
 from .config import EffectiveConfig, resolve_effective_config
 from .lifecycle import transform_history
@@ -32,7 +65,7 @@ def _valid(original: list[dict[str, Any]], candidate: list[dict[str, Any]]) -> b
     return True
 
 
-class HeadroomCompositeEngine(ContextEngine):
+class HeadroomCompositeEngine(_HermesContextEngine):  # type: ignore[reportGeneralTypeIssues]
     def __init__(self, *, model: str = "", context_length: int = 200_000, threshold_percent: float = .75,
                  protect_first_n: int = 3, protect_last_n: int = 6, materiality_chars: int | None = None,
                  summary_target_ratio: float = .20, abort_on_summary_failure: bool = False,

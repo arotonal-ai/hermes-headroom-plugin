@@ -4,9 +4,8 @@ import sys
 from types import SimpleNamespace
 from pathlib import Path
 
-from agent.context_engine import ContextEngine
 from hermes_headroom_plugin.config import EffectiveConfig, load_host_compression_config, resolve_effective_config
-from hermes_headroom_plugin.context_engine import HeadroomCompositeEngine
+from hermes_headroom_plugin.context_engine import ContextEngine, HeadroomCompositeEngine
 from hermes_headroom_plugin.lifecycle import transform_history
 from hermes_headroom_plugin.middleware_request import on_llm_request
 from hermes_headroom_plugin.request_shaper import RESIDENT_TOOLS, shape_request
