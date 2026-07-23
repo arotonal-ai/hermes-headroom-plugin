@@ -796,7 +796,12 @@ def main(argv: list[str] | None = None) -> int:
         lifecycle_pass = True
         lifecycle_evidence = str(run_dir / "commands" / "runtime-manager-lifecycle-command.json")
     write_json(run_dir / "commands" / "runtime-manager-lifecycle-command.json", lifecycle)
-    gates["wheel_runtime_manager_lifecycle"] = {
+    lifecycle_gate_name = (
+        "wheel_runtime_manager_lifecycle"
+        if args.run_durable_lifecycle
+        else "durable_lifecycle_deferred_to_release_gate"
+    )
+    gates[lifecycle_gate_name] = {
         "pass": lifecycle_pass,
         "deferred": not args.run_durable_lifecycle,
         "evidence": lifecycle_evidence,

@@ -97,7 +97,9 @@ def test_release_gate_certifies_wheel_runtime_manager_lifecycle() -> None:
     lifecycle_script = (REPO / "scripts" / "test-runtime-manager-lifecycle.py").read_text(encoding="utf-8")
 
     assert 'exe("headroom-runtime")' in gate_script
-    assert 'gates["wheel_runtime_manager_lifecycle"]' in gate_script
+    assert '"wheel_runtime_manager_lifecycle"' in gate_script
+    assert '"durable_lifecycle_deferred_to_release_gate"' in gate_script
+    assert '"--run-durable-lifecycle"' in gate_script
     assert '"mutations": manifest_data.get("mutations")' in lifecycle_script
     assert 'manifest_data.get("mutations") == []' in lifecycle_script
     assert "shell_unchanged" in lifecycle_script
