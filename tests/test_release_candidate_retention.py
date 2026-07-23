@@ -184,3 +184,18 @@ def test_standalone_runtime_smoke_isolates_headroom_state(tmp_path: Path) -> Non
     assert env["HEADROOM_CCR_BACKEND"] == "memory"
     assert env["HEADROOM_CCR_TTL_SECONDS"] == "1800"
     assert workspace.is_dir()
+
+
+def test_leftover_proxy_check_allows_baseline_and_rejects_new_process(monkeypatch) -> None:
+    baseline = [{"pid": "100", "argv": ["headroom", "proxy"]}]
+    monkeypatch.setattr(MODULE, "headroom_proxy_processes", lambda: list(baseline))
+    assert MODULE.no_new_leftover_proxy(baseline)["pass"] is True
+
+    monkeypatch.setattr(
+        MODULE,
+        "headroom_proxy_processes",
+        lambda: [*baseline, {"pid": "101", "argv": ["headroom", "proxy"]}],
+    )
+    result = MODULE.no_new_leftover_proxy(baseline)
+    assert result["pass"] is False
+    assert [item["pid"] for item in result["new_headroom_proxy_processes"]] == ["101"]
