@@ -1,6 +1,6 @@
-# v0.6.0rc1 capability decisions
+# v0.6.0 capability decisions
 
-Status: local release candidate; no public release is authorized by this document.
+Status: stable promotion candidate; publication still requires complete local and remote release gates.
 
 ## Stable core
 
@@ -65,7 +65,7 @@ Decision: keep it opt-in rather than promote it to the default hot path. `tool_e
 - Compatibility/rollback lane: Headroom `0.31.0`; it is not installed by the runtime manager by default.
 - Python 3.13/3.14 and newer dependency ranges remain experimental until remote matrix evidence is promoted.
 
-A local Linux compress → retrieve smoke for both 0.32.1 and 0.31.0 is required by this RC run. Cross-OS/Python certification remains a separate remote-CI release gate; local evidence must not be relabeled as multi-platform certification.
+A local Linux compress → retrieve smoke for both 0.32.1 and 0.31.0 is required by the release gate. Cross-OS/Python certification remains a separate remote-CI release gate; local evidence must not be relabeled as multi-platform certification.
 
 ## Release boundary
 

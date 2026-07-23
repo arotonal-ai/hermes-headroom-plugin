@@ -36,7 +36,7 @@ A pass means the checkout is ready for owner review and remote CI readback. It i
 | unit/contract tests | runs the package test suite in a temporary venv with `.[test]` |
 | build/archive inspection | builds wheel + sdist and scans archives for forbidden members, owner-local paths, and secrets |
 | wheel install/entrypoints | installs the built wheel in a fresh venv and verifies packaged console scripts |
-| package upgrade/rollback | builds published `v0.5.2`, then proves `0.5.2 → 0.6.0rc1 → 0.5.2` in a fresh venv |
+| package upgrade/rollback | builds published `v0.5.2`, then proves `0.5.2 → 0.6.0 → 0.5.2` in a fresh venv |
 | clean temp Hermes install | installs the local checkout into a temporary `HERMES_HOME` without touching the real profile when Hermes CLI is available; in generic CI runners without Hermes CLI this is recorded as `skipped: hermes_cli_not_available` and package portability is covered by the wheel/entrypoint gate |
 | runtime compress/retrieve smoke | verifies the managed Headroom 0.32.1/LiteLLM 1.91.3 pair |
 | compatibility runtime smoke | separately verifies Headroom 0.31.0 as an isolated plugin-compatibility/rollback lane, not the managed default |

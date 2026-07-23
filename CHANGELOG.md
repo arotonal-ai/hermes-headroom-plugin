@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.0 — 2026-07-23
+
+- Promote the public `v0.6.0rc1` behavior unchanged after clean public-install/runtime canary evidence and complete local plus multi-OS release gates.
+- Keep P1–P3 optional, P4 compatibility-test-only, `llm_request` default-off, provider routing unchanged, and the managed Headroom 0.32.1/LiteLLM 1.91.3 pair pinned.
+
 ## v0.6.0rc1 — 2026-07-23
 
 - Integrate the verified P1 durable-CCR/fail-open reducer and P2/P3 age-aware lifecycle/composite ContextEngine onto the published v0.5.2 runtime-manager and hardening line.

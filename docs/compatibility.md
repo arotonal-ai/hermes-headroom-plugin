@@ -6,12 +6,13 @@ This page separates **published certified releases** from withdrawn releases and
 - Withdrawn `v0.5.0`: packaged `proxy` metadata still required Headroom 0.32.0; its GitHub release remains draft and its tag/artifacts are not rewritten.
 - Published `v0.5.1`: `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, managed through `headroom-runtime`.
 - Published `v0.5.2`: the same certified runtime pair, with the YAML remote-proxy opt-in correction from issue #20.
+- Published prerelease `v0.6.0rc1`: the same managed pair plus optional P1–P3 context lifecycle, validated locally and on the blocking multi-OS lifecycle matrix.
 
 The v0.5.x pair passed its blocking setup → status → doctor → uninstall matrix on GitHub-hosted Ubuntu, macOS, and native Windows for Python 3.11 and 3.12, plus the final release-candidate, exact-pin documentation, and release-control gates. This evidence supports the published lifecycle; it does not claim production token savings.
 
-## Local v0.6.0rc1 candidate
+## v0.6.0 stable promotion
 
-The candidate preserves the v0.5.2 managed pair and adds optional P1–P3 context lifecycle. Its local release gate requires both a default-runtime smoke and a separate compatibility smoke:
+The stable package preserves the v0.5.2 managed pair and promotes the optional P1–P3 context lifecycle proven by `v0.6.0rc1`. Its release gate requires both a default-runtime smoke and a separate compatibility smoke:
 
 | Lane | Headroom | LiteLLM | Meaning |
 |---|---|---|---|
