@@ -258,6 +258,7 @@ class RuntimeManagerTest(unittest.TestCase):
     def test_setup_writes_full_state_only_after_safe_apply_ready_and_smoke(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "runtime"
+            preset = "persistent-service"
             cli = manager._exe(manager._venv_dir(root), "headroom")
             cli.parent.mkdir(parents=True, exist_ok=True)
             cli.write_text("fake", encoding="utf-8")
@@ -272,7 +273,7 @@ class RuntimeManagerTest(unittest.TestCase):
                     root,
                     profile=manager.DEFAULT_PROFILE,
                     port=57884,
-                    preset=manager._default_preset(),
+                    preset=preset,
                 )
                 return applied
 
@@ -282,11 +283,12 @@ class RuntimeManagerTest(unittest.TestCase):
                 self._upstream_status_output(
                     profile=manager.DEFAULT_PROFILE,
                     port=57884,
-                    preset=manager._default_preset(),
+                    preset=preset,
                 ),
             )
 
             with (
+                patch.object(manager, "_is_windows", return_value=False),
                 patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
                 patch.object(
                     manager,
@@ -307,7 +309,16 @@ class RuntimeManagerTest(unittest.TestCase):
                 ),
             ):
                 code, output = self._run_main(
-                    ["setup", "--runtime-root", str(root), "--port", "57884", "--json"]
+                    [
+                        "setup",
+                        "--runtime-root",
+                        str(root),
+                        "--port",
+                        "57884",
+                        "--preset",
+                        preset,
+                        "--json",
+                    ]
                 )
             state = manager._load_state(root)
         self.assertEqual(code, 0)
@@ -547,6 +558,7 @@ class RuntimeManagerTest(unittest.TestCase):
     def test_setup_keeps_partial_state_when_upstream_reports_stopped(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "runtime"
+            preset = "persistent-service"
             cli = manager._exe(manager._venv_dir(root), "headroom")
             cli.parent.mkdir(parents=True, exist_ok=True)
             cli.write_text("fake", encoding="utf-8")
@@ -562,7 +574,7 @@ class RuntimeManagerTest(unittest.TestCase):
                     root,
                     profile=manager.DEFAULT_PROFILE,
                     port=57887,
-                    preset=manager._default_preset(),
+                    preset=preset,
                 )
                 return applied
 
@@ -572,11 +584,12 @@ class RuntimeManagerTest(unittest.TestCase):
                 self._upstream_status_output(
                     profile=manager.DEFAULT_PROFILE,
                     port=57887,
-                    preset=manager._default_preset(),
+                    preset=preset,
                     status="stopped",
                 ),
             )
             with (
+                patch.object(manager, "_is_windows", return_value=False),
                 patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
                 patch.object(
                     manager,
@@ -597,7 +610,16 @@ class RuntimeManagerTest(unittest.TestCase):
                 ),
             ):
                 code, output = self._run_main(
-                    ["setup", "--runtime-root", str(root), "--port", "57887", "--json"]
+                    [
+                        "setup",
+                        "--runtime-root",
+                        str(root),
+                        "--port",
+                        "57887",
+                        "--preset",
+                        preset,
+                        "--json",
+                    ]
                 )
             state = manager._load_state(root)
         payload = json.loads(output)
