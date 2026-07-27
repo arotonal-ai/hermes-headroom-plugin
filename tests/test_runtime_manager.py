@@ -2,6 +2,7 @@ import contextlib
 import io
 import inspect
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,31 @@ from hermes_headroom_plugin import runtime_manager as manager
 
 
 class RuntimeManagerTest(unittest.TestCase):
+    def setUp(self):
+        self._isolated_home = tempfile.TemporaryDirectory(prefix="headroom-runtime-manager-test-")
+        home = Path(self._isolated_home.name)
+        hermes_home = home / ".hermes"
+        hermes_home.mkdir()
+        clean_env = {
+            key: value for key, value in os.environ.items() if not key.startswith("HEADROOM_")
+        }
+        clean_env.update(
+            {"HOME": str(home), "USERPROFILE": str(home), "HERMES_HOME": str(hermes_home)}
+        )
+        self._isolated_env = patch.dict(os.environ, clean_env, clear=True)
+        self._isolated_env.start()
+        self._absent_supervisor = patch.object(
+            manager,
+            "_supervisor_presence",
+            return_value={"present": False, "evidence": []},
+        )
+        self._absent_supervisor.start()
+
+    def tearDown(self):
+        self._absent_supervisor.stop()
+        self._isolated_env.stop()
+        self._isolated_home.cleanup()
+
     def _state(self, root: Path, *, port: int = 57881) -> manager.RuntimeState:
         return manager._state_for(
             root,

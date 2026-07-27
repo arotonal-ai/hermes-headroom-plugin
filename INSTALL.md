@@ -95,13 +95,14 @@ Then verify inside Hermes: `/headroom smoke`; use `/headroom cache` for read-onl
 
 ## 4. Optional validation helpers
 
-Use these from a repo checkout when you want evidence without mutating real environments.
+Use these from a repo checkout when you want evidence without mutating real environments. The full-suite command requires `uv` only as a development tool; `--isolated --no-project` keeps dependency resolution and lock state outside the checkout.
 
 Analyze without installing:
 
 ```bash
 git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
 cd hermes-headroom-plugin
+uv run --isolated --no-project --with pytest --with PyYAML -- python scripts/run-isolated-unit-tests.py
 scripts/audit-repo-readiness.sh
 ```
 

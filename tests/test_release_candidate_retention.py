@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 import tempfile
 import tomllib
+import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -19,6 +22,35 @@ RUNTIME_SMOKE_SPEC = importlib.util.spec_from_file_location("headroom_runtime_sm
 assert RUNTIME_SMOKE_SPEC and RUNTIME_SMOKE_SPEC.loader
 RUNTIME_SMOKE_MODULE = importlib.util.module_from_spec(RUNTIME_SMOKE_SPEC)
 RUNTIME_SMOKE_SPEC.loader.exec_module(RUNTIME_SMOKE_MODULE)
+
+
+def _create_directory_symlink_or_skip(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+    except OSError as exc:
+        if sys.platform.startswith("win") and getattr(exc, "winerror", None) == 1314:
+            raise unittest.SkipTest(
+                "Windows directory symlink requires Developer Mode or elevation"
+            ) from exc
+        raise
+
+
+class SymlinkPrivilegeHandlingTest(unittest.TestCase):
+    def test_windows_privilege_error_skips(self):
+        error = OSError("privilege not held")
+        setattr(error, "winerror", 1314)
+        with patch.object(sys, "platform", "win32"), patch.object(
+            Path, "symlink_to", side_effect=error
+        ), self.assertRaises(unittest.SkipTest):
+            _create_directory_symlink_or_skip(Path("link"), Path("target"))
+
+    def test_other_symlink_errors_remain_failures(self):
+        error = OSError("access denied")
+        setattr(error, "winerror", 5)
+        with patch.object(sys, "platform", "win32"), patch.object(
+            Path, "symlink_to", side_effect=error
+        ), self.assertRaises(OSError):
+            _create_directory_symlink_or_skip(Path("link"), Path("target"))
 
 
 def test_release_candidate_default_runtime_is_pinned() -> None:
@@ -172,7 +204,7 @@ def test_cleanup_ephemeral_envs_blocks_symlink_escape(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "keep.txt").write_text("keep", encoding="utf-8")
-    (run_dir / MODULE.EPHEMERAL_ENV_DIRS[0]).symlink_to(outside, target_is_directory=True)
+    _create_directory_symlink_or_skip(run_dir / MODULE.EPHEMERAL_ENV_DIRS[0], outside)
 
     report = MODULE.cleanup_ephemeral_envs(run_dir)
 

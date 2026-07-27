@@ -420,7 +420,7 @@ If no evidence exists, the metrics page intentionally shows placeholders instead
 ## Development checks
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+uv run --isolated --no-project --with pytest --with PyYAML -- python scripts/run-isolated-unit-tests.py
 python3 -m py_compile $(find src tests scripts -name '*.py' | sort)
 bash -n scripts/*.sh
 scripts/audit-repo-readiness.sh

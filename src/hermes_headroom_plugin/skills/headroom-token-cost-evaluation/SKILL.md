@@ -210,7 +210,7 @@ If no evidence exists, the metrics page should show placeholders and `pending re
 From a checkout of the plugin repo:
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+uv run --isolated --no-project --with pytest --with PyYAML -- python scripts/run-isolated-unit-tests.py
 python3 -m py_compile $(find src tests scripts -name '*.py' | sort)
 bash -n scripts/*.sh
 bash scripts/audit-repo-readiness.sh
