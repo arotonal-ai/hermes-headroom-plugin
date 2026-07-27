@@ -80,7 +80,7 @@ headroom-runtime reconcile --apply --json  # explicit manager-owned migration
 headroom-runtime uninstall --json
 ```
 
-`reconcile --dry-run` performs no lock/log/state/manifest/supervisor write and makes no application-level listener request. It derives listener PID/executable identity from Windows OS tables; `/readyz` and upstream status are reported as `not_probed_read_only`. A foreign or unprovable listener returns `OWNERSHIP_AMBIGUOUS`; a positively manager-owned Windows deployment with legacy environment-mutation history returns `REINSTALL_REQUIRED` and preserves those records for symmetric rollback. Do not use `--apply` for that case; follow the explicit target-host-gated upgrade and rollback procedure in [docs/runtime-manager.md](docs/runtime-manager.md).
+`reconcile --dry-run` performs no lock/log/state/manifest/supervisor write and makes no application-level listener request. It reports manager deployment identity separately from listener PID/executable binding derived from Windows OS tables; `/readyz` and upstream status are `not_probed_read_only`. An unproven listener binding is never treated as adoption authority. A manager-identified deployment with legacy environment-mutation history returns `REINSTALL_REQUIRED`, preserves those records for symmetric rollback, and reports `mutation_authority.eligible=false`. Do not use `--apply` for that case; follow the explicit target-host-gated upgrade and rollback procedure in [docs/runtime-manager.md](docs/runtime-manager.md).
 
 The old `scripts/install-production-runtime.py` remains for v0.4 compatibility and optional companion operations only. New runtime installs should use the manager.
 

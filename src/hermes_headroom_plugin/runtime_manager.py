@@ -835,7 +835,11 @@ def _windows_arguments_match(value: str, launcher: Path) -> bool:
 
 
 def _parse_windows_task_xml(
-    xml_text: str | bytes, *, launcher: Path, trigger_kind: str
+    xml_text: str | bytes,
+    *,
+    launcher: Path,
+    trigger_kind: str,
+    legacy_launcher: Path | None = None,
 ) -> dict[str, Any]:
     reasons: list[str] = []
     candidates: list[str] = []
@@ -893,6 +897,14 @@ def _parse_windows_task_xml(
     command_name = re.split(r"[\\/]", command.strip().strip('"'))[-1].casefold()
     action_command_exact = action_structure_exact and command_name == "wscript.exe"
     action_arguments_exact = action_structure_exact and _windows_arguments_match(arguments, launcher)
+    legacy_action_command_exact = bool(
+        legacy_launcher is not None
+        and action_structure_exact
+        and _path_identity_equal(command.strip().strip('"'), legacy_launcher)
+    )
+    legacy_action_arguments_exact = bool(
+        legacy_action_command_exact and not arguments.strip()
+    )
     if not action_structure_exact:
         reasons.append("action_structure")
     if not action_command_exact:
@@ -936,6 +948,12 @@ def _parse_windows_task_xml(
         "enabled": enabled,
         "action_command_exact": action_command_exact,
         "action_arguments_exact": action_arguments_exact,
+        "legacy_action_command_exact": legacy_action_command_exact,
+        "legacy_action_arguments_exact": legacy_action_arguments_exact,
+        "managed_action_identity": bool(
+            (action_command_exact and action_arguments_exact)
+            or (legacy_action_command_exact and legacy_action_arguments_exact)
+        ),
         "trigger_exact": trigger_exact,
         "reasons": reasons,
     }
@@ -1015,6 +1033,7 @@ def _supervisor_contract(root: Path, *, profile: str, preset: str) -> dict[str, 
         data = {}
     manifest_contract = _windows_manifest_task_contract(root, profile=profile, data=data)
     launcher = _windows_launcher_path(root, profile)
+    legacy_launcher = _windows_ensure_command_path(root, profile)
     service = f"headroom-{profile}"
     tasks: dict[str, Any] = {}
     evidence: list[str] = []
@@ -1034,7 +1053,10 @@ def _supervisor_contract(root: Path, *, profile: str, preset: str) -> dict[str, 
             if not isinstance(xml_payload, (str, bytes)):
                 xml_payload = b""
             parsed = _parse_windows_task_xml(
-                xml_payload, launcher=launcher, trigger_kind=kind
+                xml_payload,
+                launcher=launcher,
+                trigger_kind=kind,
+                legacy_launcher=legacy_launcher,
             )
         tasks[kind] = parsed
         reasons.extend(f"{kind}:{reason}" for reason in parsed.get("reasons", []))
@@ -2144,6 +2166,17 @@ def _read_only_reconcile_plan(
         supervisor.get("present") is True
         and supervisor.get("service_name") == expected_service
     )
+    supervisor_tasks = supervisor.get("tasks", {})
+    managed_task_action_identity = bool(
+        isinstance(supervisor_tasks, dict)
+        and all(
+            isinstance(supervisor_tasks.get(kind), dict)
+            and supervisor_tasks[kind].get("exists") is True
+            and supervisor_tasks[kind].get("enabled") is True
+            and supervisor_tasks[kind].get("managed_action_identity") is True
+            for kind in ("startup", "health")
+        )
+    )
     mismatches = list(manifest_contract.get("mismatches") or [])
     mismatch_set = set(mismatches)
     migration_only = bool(mismatch_set) and mismatch_set <= {
@@ -2154,14 +2187,19 @@ def _read_only_reconcile_plan(
         manifest_contract.get("available")
         and (manifest_contract.get("ok") or migration_only)
     )
-    evidence_checks = {
+    deployment_evidence_checks = {
         "manager_state_identity": True,
         "purge_marker": marker_valid,
         "manifest_base_identity": manifest_base_identity,
         "runtime_identity": runtime_identity["ok"],
         "supervisor_name_identity": supervisor_identity,
-        "listener_process_identity": listener.get("identity", {}).get("proven") is True,
     }
+    listener_binding_proven = listener.get("identity", {}).get("proven") is True
+    evidence_checks = {
+        **deployment_evidence_checks,
+        "listener_process_identity": listener_binding_proven,
+    }
+    deployment_identity_proven = all(deployment_evidence_checks.values())
     ownership_proven = all(evidence_checks.values())
     inventory = {
         "manager_state": {
@@ -2182,6 +2220,24 @@ def _read_only_reconcile_plan(
         "proven": ownership_proven,
         "evidence": [key for key, value in evidence_checks.items() if value],
         "missing": [key for key, value in evidence_checks.items() if not value],
+        "deployment": {
+            "proven": deployment_identity_proven,
+            "evidence": [
+                key for key, value in deployment_evidence_checks.items() if value
+            ],
+            "missing": [
+                key for key, value in deployment_evidence_checks.items() if not value
+            ],
+        },
+        "listener_binding": {
+            "proven": listener_binding_proven,
+            "evidence": (
+                ["listener_process_identity"] if listener_binding_proven else []
+            ),
+            "missing": (
+                [] if listener_binding_proven else ["listener_process_identity"]
+            ),
+        },
     }
 
     if state.preset != "persistent-task":
@@ -2200,7 +2256,11 @@ def _read_only_reconcile_plan(
             0,
         )
 
-    if manifest_contract.get("ok") and supervisor.get("ok") and ownership_proven:
+    if (
+        manifest_contract.get("ok")
+        and supervisor.get("ok")
+        and deployment_identity_proven
+    ):
         return (
             {
                 "schema": "headroom-reconcile-plan-v1",
@@ -2217,17 +2277,23 @@ def _read_only_reconcile_plan(
         )
 
     if "mutations" in mismatch_set:
-        decision = "REINSTALL_REQUIRED" if ownership_proven else "OWNERSHIP_AMBIGUOUS"
+        decision = (
+            "REINSTALL_REQUIRED"
+            if deployment_identity_proven
+            else "OWNERSHIP_AMBIGUOUS"
+        )
         classification = (
             "manager_owned_legacy_mutations"
-            if ownership_proven
+            if deployment_identity_proven
             else "legacy_mutations_ownership_unproven"
         )
-        if ownership_proven:
+        if deployment_identity_proven:
             next_steps = [
                 "preserve manager state, manifest, supervisor task exports and mutation-target backups",
                 "obtain an explicit target-host mutation gate before changing the existing deployment",
-                "use the pinned upstream manifest removal path to replay recorded mutation rollback; verify listener and supervisor absence; then run setup",
+                "before any operation that may stop or replace the listener, establish listener binding independently",
+                "if listener binding cannot be established, preserve this deployment and use a separate clean runtime root, profile and loopback port",
+                "only after listener binding and the target-host gate, use the pinned upstream manifest removal path to replay recorded mutation rollback; verify listener and supervisor absence; then run setup",
             ]
             rollback = [
                 "do not delete or edit mutation records in the manifest",
@@ -2236,9 +2302,9 @@ def _read_only_reconcile_plan(
             ]
         else:
             next_steps = [
-                "do not run reconcile --apply, uninstall or upstream removal while ownership is unproven",
-                "preserve the deployment and resolve every missing ownership check and manifest mismatch independently",
-                "use a separate clean runtime root, profile and loopback port if exact ownership cannot be established",
+                "do not run reconcile --apply, uninstall or upstream removal while deployment identity is unproven",
+                "preserve the deployment and resolve every missing deployment identity check and manifest mismatch independently",
+                "use a separate clean runtime root, profile and loopback port if exact deployment identity cannot be established",
             ]
             rollback = ["no mutation was attempted; preserve the existing deployment unchanged"]
         return (
@@ -2249,6 +2315,20 @@ def _read_only_reconcile_plan(
                 "writes_performed": False,
                 "inventory": inventory,
                 "ownership": ownership,
+                "mutation_authority": {
+                    "eligible": False,
+                    "scope": None,
+                    "resources": [],
+                    "reasons": [
+                        "mutation_history_requires_symmetric_rollback",
+                        "explicit_target_host_mutation_gate_required",
+                        *(
+                            []
+                            if listener_binding_proven
+                            else ["listener_binding_unproven"]
+                        ),
+                    ],
+                },
                 "adoption": {
                     "eligible": False,
                     "reasons": [
@@ -2259,10 +2339,38 @@ def _read_only_reconcile_plan(
                 "next_steps": next_steps,
                 "rollback": rollback,
             },
-            1 if ownership_proven else 2,
+            1 if deployment_identity_proven else 2,
         )
 
-    if mismatch_set == {"windows_task_contract"} and ownership_proven:
+    if mismatch_set == {"windows_task_contract"} and deployment_identity_proven:
+        if not managed_task_action_identity:
+            return (
+                {
+                    "schema": "headroom-reconcile-plan-v1",
+                    "decision": "RECONCILE_BLOCKED",
+                    "classification": "manager_deployment_unproven_task_actions",
+                    "writes_performed": False,
+                    "apply_required": False,
+                    "inventory": inventory,
+                    "ownership": ownership,
+                    "mutation_authority": {
+                        "eligible": False,
+                        "scope": None,
+                        "resources": [],
+                        "evidence": [],
+                        "reasons": ["managed_task_action_identity_missing"],
+                    },
+                    "adoption": {
+                        "eligible": False,
+                        "reasons": ["manager_owned_reconciliation_not_adoption"],
+                    },
+                    "next_steps": [
+                        "preserve both task XML exports and inspect their actions before any mutation"
+                    ],
+                    "rollback": ["no mutation was attempted"],
+                },
+                2,
+            )
         return (
             {
                 "schema": "headroom-reconcile-plan-v1",
@@ -2272,10 +2380,28 @@ def _read_only_reconcile_plan(
                 "apply_required": True,
                 "inventory": inventory,
                 "ownership": ownership,
-                "adoption": {"eligible": False, "reasons": ["manager_owned_reconciliation_not_adoption"]},
+                "mutation_authority": {
+                    "eligible": True,
+                    "scope": "windows_task_contract",
+                    "resources": [
+                        "managed_windows_launcher",
+                        "managed_windows_scheduled_tasks",
+                        "manifest_artifacts",
+                    ],
+                    "evidence": ["managed_task_action_identity"],
+                    "reasons": [],
+                },
+                "adoption": {
+                    "eligible": False,
+                    "reasons": ["manager_owned_reconciliation_not_adoption"],
+                },
                 "next": "run headroom-runtime reconcile --apply --json",
-                "next_steps": ["review the inventory, then run headroom-runtime reconcile --apply --json"],
-                "rollback": ["apply snapshots both managed tasks and launcher before the first mutation"],
+                "next_steps": [
+                    "review the inventory, then run headroom-runtime reconcile --apply --json"
+                ],
+                "rollback": [
+                    "apply snapshots both managed tasks and launcher before the first mutation"
+                ],
             },
             1,
         )
@@ -2288,11 +2414,36 @@ def _read_only_reconcile_plan(
             "writes_performed": False,
             "inventory": inventory,
             "ownership": ownership,
+            "mutation_authority": {
+                "eligible": False,
+                "scope": None,
+                "resources": [],
+                "reasons": ["complete_positive_deployment_identity_missing"],
+            },
             "adoption": {"eligible": False, "reasons": ["complete_positive_identity_missing"]},
             "next_steps": ["preserve the runtime and inspect every reported mismatch before any mutation"],
             "rollback": ["no mutation was attempted"],
         },
         2,
+    )
+
+
+def _task_reconcile_apply_authorized(plan: dict[str, Any]) -> bool:
+    authority = plan.get("mutation_authority") or {}
+    ownership = plan.get("ownership") or {}
+    deployment = ownership.get("deployment") or {}
+    return bool(
+        plan.get("decision") == "MIGRATION_REQUIRED"
+        and deployment.get("proven") is True
+        and authority.get("eligible") is True
+        and authority.get("scope") == "windows_task_contract"
+        and authority.get("evidence") == ["managed_task_action_identity"]
+        and authority.get("resources")
+        == [
+            "managed_windows_launcher",
+            "managed_windows_scheduled_tasks",
+            "manifest_artifacts",
+        ]
     )
 
 
@@ -2322,8 +2473,37 @@ def reconcile(args: argparse.Namespace) -> int:
             as_json=args.json,
         )
         return 2
+    preflight, _ = _read_only_reconcile_plan(
+        root, timeout=args.timeout, probe_port=None
+    )
+    if not _task_reconcile_apply_authorized(preflight):
+        _emit(
+            {
+                "decision": "RECONCILE_BLOCKED",
+                "detail": "read-only preflight did not grant windows_task_contract mutation authority",
+                "writes_performed": False,
+                "preflight": preflight,
+            },
+            as_json=args.json,
+        )
+        return 2
     lock_fd = _acquire_lock(root)
     try:
+        locked_preflight, _ = _read_only_reconcile_plan(
+            root, timeout=args.timeout, probe_port=None
+        )
+        if not _task_reconcile_apply_authorized(locked_preflight):
+            _emit(
+                {
+                    "decision": "RECONCILE_BLOCKED",
+                    "detail": "windows_task_contract mutation authority changed after lock acquisition",
+                    "writes_performed": True,
+                    "write_scope": ["transaction_lock_only"],
+                    "preflight": locked_preflight,
+                },
+                as_json=args.json,
+            )
+            return 2
         state = _load_state(root)
         if state is None:
             _emit(
