@@ -810,8 +810,10 @@ def _xml_local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _xml_first(parent: ET.Element, name: str) -> ET.Element | None:
-    return next((item for item in parent.iter() if _xml_local_name(item.tag) == name), None)
+def _xml_direct_children(parent: ET.Element | None, name: str) -> list[ET.Element]:
+    if parent is None:
+        return []
+    return [item for item in parent if _xml_local_name(item.tag) == name]
 
 
 def _xml_direct_text(parent: ET.Element, name: str) -> str:
@@ -862,31 +864,64 @@ def _parse_windows_task_xml(
             continue
     if root is None:
         return {"ok": False, "exists": True, "reasons": ["invalid_xml"]}
-    settings = _xml_first(root, "Settings")
-    enabled_text = _xml_direct_text(settings, "Enabled") if settings is not None else ""
-    enabled = enabled_text.casefold() != "false"
+    if _xml_local_name(root.tag) != "Task":
+        reasons.append("document_root")
+
+    settings_nodes = _xml_direct_children(root, "Settings")
+    settings = settings_nodes[0] if len(settings_nodes) == 1 else None
+    if settings is None:
+        reasons.append("settings_structure")
+    enabled_text = _xml_direct_text(settings, "Enabled") if settings is not None else "false"
+    enabled = settings is not None and enabled_text.casefold() != "false"
     if not enabled:
         reasons.append("disabled")
-    exec_node = _xml_first(root, "Exec")
+
+    actions_nodes = _xml_direct_children(root, "Actions")
+    actions = actions_nodes[0] if len(actions_nodes) == 1 else None
+    action_children = list(actions) if actions is not None else []
+    exec_nodes = _xml_direct_children(actions, "Exec")
+    action_structure_exact = bool(
+        actions is not None
+        and len(action_children) == 1
+        and len(exec_nodes) == 1
+    )
+    exec_node = exec_nodes[0] if action_structure_exact else None
     command = _xml_direct_text(exec_node, "Command") if exec_node is not None else ""
     arguments = _xml_direct_text(exec_node, "Arguments") if exec_node is not None else ""
     command_name = re.split(r"[\\/]", command.strip().strip('"'))[-1].casefold()
-    action_command_exact = command_name == "wscript.exe"
-    action_arguments_exact = _windows_arguments_match(arguments, launcher)
+    action_command_exact = action_structure_exact and command_name == "wscript.exe"
+    action_arguments_exact = action_structure_exact and _windows_arguments_match(arguments, launcher)
+    if not action_structure_exact:
+        reasons.append("action_structure")
     if not action_command_exact:
         reasons.append("action_command")
     if not action_arguments_exact:
         reasons.append("action_arguments")
 
+    triggers_nodes = _xml_direct_children(root, "Triggers")
+    triggers = triggers_nodes[0] if len(triggers_nodes) == 1 else None
+    trigger_children = list(triggers) if triggers is not None else []
     trigger_exact = False
     if trigger_kind == "startup":
-        trigger = _xml_first(root, "BootTrigger")
-        trigger_exact = trigger is not None and _xml_direct_text(trigger, "Enabled").casefold() != "false"
-    elif trigger_kind == "health":
-        trigger = _xml_first(root, "TimeTrigger")
-        interval = _xml_first(trigger, "Interval") if trigger is not None else None
+        trigger_nodes = _xml_direct_children(triggers, "BootTrigger")
+        trigger = trigger_nodes[0] if len(trigger_nodes) == 1 else None
         trigger_exact = bool(
-            trigger is not None
+            triggers is not None
+            and len(trigger_children) == 1
+            and trigger is not None
+            and _xml_direct_text(trigger, "Enabled").casefold() != "false"
+        )
+    elif trigger_kind == "health":
+        trigger_nodes = _xml_direct_children(triggers, "TimeTrigger")
+        trigger = trigger_nodes[0] if len(trigger_nodes) == 1 else None
+        repetition_nodes = _xml_direct_children(trigger, "Repetition")
+        repetition = repetition_nodes[0] if len(repetition_nodes) == 1 else None
+        interval_nodes = _xml_direct_children(repetition, "Interval")
+        interval = interval_nodes[0] if len(interval_nodes) == 1 else None
+        trigger_exact = bool(
+            triggers is not None
+            and len(trigger_children) == 1
+            and trigger is not None
             and _xml_direct_text(trigger, "Enabled").casefold() != "false"
             and interval is not None
             and (interval.text or "").strip().upper() == "PT5M"

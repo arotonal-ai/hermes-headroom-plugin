@@ -1240,6 +1240,33 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertIn("disabled", evidence["reasons"])
         self.assertIn("trigger", evidence["reasons"])
 
+    def test_parse_windows_task_xml_rejects_wrappers_and_nested_contract_nodes(self):
+        launcher = Path(r"C:\Managed\ensure-headroom-hidden.vbs")
+        valid = f"""<Task>
+  <Triggers><BootTrigger><Enabled>true</Enabled></BootTrigger></Triggers>
+  <Settings><Enabled>true</Enabled></Settings>
+  <Actions><Exec><Command>wscript.exe</Command><Arguments>//B //NoLogo "{launcher}"</Arguments></Exec></Actions>
+</Task>"""
+        wrapped = manager._parse_windows_task_xml(
+            f"<NotTask>{valid}</NotTask>", launcher=launcher, trigger_kind="startup"
+        )
+        nested = manager._parse_windows_task_xml(
+            f"<Task><Container>{valid[6:-7]}</Container></Task>",
+            launcher=launcher,
+            trigger_kind="startup",
+        )
+        extra_action = manager._parse_windows_task_xml(
+            valid.replace("</Actions>", "<ComHandler /></Actions>"),
+            launcher=launcher,
+            trigger_kind="startup",
+        )
+        self.assertFalse(wrapped["ok"])
+        self.assertIn("document_root", wrapped["reasons"])
+        self.assertFalse(nested["ok"])
+        self.assertIn("settings_structure", nested["reasons"])
+        self.assertFalse(extra_action["ok"])
+        self.assertIn("action_structure", extra_action["reasons"])
+
     def test_windows_task_contract_rejects_unexpected_same_name_service(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "runtime"
