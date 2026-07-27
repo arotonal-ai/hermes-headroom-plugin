@@ -51,6 +51,37 @@ class RuntimeManagerTest(unittest.TestCase):
             versions={"headroom": manager.RUNTIME_VERSION, "litellm": manager.LITELLM_VERSION},
         )
 
+    def _upstream_status_output(
+        self,
+        *,
+        profile: str = "hermes-test",
+        port: int = 57881,
+        preset: str = "persistent-service",
+        status: str = "running",
+        healthy: str = "yes",
+    ) -> str:
+        supervisor = "service" if preset == "persistent-service" else "task"
+        return "\n".join(
+            [
+                f"Profile:    {profile}",
+                f"Preset:     {preset}",
+                "Runtime:    python",
+                f"Supervisor: {supervisor}",
+                "Scope:      user",
+                f"Port:       {port}",
+                f"Status:     {status}",
+                f"Healthy:    {healthy}",
+            ]
+        ) + "\n"
+
+    def _present_supervisor(self, profile: str = "hermes-test") -> dict[str, object]:
+        service_name = f"headroom-{profile}"
+        return {
+            "present": True,
+            "service_name": service_name,
+            "evidence": [f"test-supervisor:{service_name}"],
+        }
+
     def _fake_cli(self, state: manager.RuntimeState) -> Path:
         cli = manager._exe(Path(state.venv_dir), "headroom")
         cli.parent.mkdir(parents=True, exist_ok=True)
@@ -244,6 +275,16 @@ class RuntimeManagerTest(unittest.TestCase):
                 )
                 return applied
 
+            upstream_status = subprocess.CompletedProcess(
+                ["headroom"],
+                0,
+                self._upstream_status_output(
+                    profile=manager.DEFAULT_PROFILE,
+                    port=57884,
+                    preset=manager._default_preset(),
+                ),
+            )
+
             with (
                 patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
                 patch.object(
@@ -254,6 +295,15 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(manager, "_safe_apply", side_effect=apply_and_write_manifest) as safe_apply,
                 patch.object(manager, "_wait_ready", return_value={"ok": True, "status": 200}),
                 patch.object(manager, "smoke", return_value={"ok": True, "sentinel_found": True}),
+                patch.object(manager, "_run", return_value=upstream_status),
+                patch.object(
+                    manager,
+                    "_supervisor_presence",
+                    side_effect=[
+                        {"present": False, "service_name": "", "evidence": []},
+                        self._present_supervisor(manager.DEFAULT_PROFILE),
+                    ],
+                ),
             ):
                 code, output = self._run_main(
                     ["setup", "--runtime-root", str(root), "--port", "57884", "--json"]
@@ -334,10 +384,17 @@ class RuntimeManagerTest(unittest.TestCase):
             state = self._state(root)
             manager._write_state(root, state)
             self._write_manifest(root)
-            completed = subprocess.CompletedProcess(["headroom"], 0, "Healthy: yes\n")
+            completed = subprocess.CompletedProcess(
+                ["headroom"], 0, self._upstream_status_output()
+            )
             with (
                 patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
                 patch.object(manager, "_run", return_value=completed),
+                patch.object(
+                    manager,
+                    "_supervisor_presence",
+                    return_value=self._present_supervisor(),
+                ),
             ):
                 code_without_cli, _ = self._run_main(["status", "--runtime-root", str(root), "--json"])
                 self._fake_cli(state)
@@ -354,17 +411,200 @@ class RuntimeManagerTest(unittest.TestCase):
             manager._write_state(root, state)
             self._write_manifest(root)
             self._fake_cli(state)
-            completed = subprocess.CompletedProcess(["headroom"], 0, "Healthy: yes\n")
+            completed = subprocess.CompletedProcess(
+                ["headroom"], 0, self._upstream_status_output()
+            )
             with (
                 patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
                 patch.object(manager, "smoke", return_value={"ok": True, "sentinel_found": True}),
                 patch.object(manager, "_run", return_value=completed),
+                patch.object(
+                    manager,
+                    "_supervisor_presence",
+                    return_value=self._present_supervisor(),
+                ),
             ):
                 code, output = self._run_main(["doctor", "--runtime-root", str(root), "--json"])
         payload = json.loads(output)
         self.assertEqual(code, 0)
         self.assertEqual(payload["decision"], "RUNTIME_FULL_DURABLE")
         self.assertTrue(payload["smoke"]["sentinel_found"])
+
+    def test_parse_upstream_status_requires_complete_semantic_identity(self):
+        good = manager._parse_upstream_status(
+            self._upstream_status_output(),
+            profile="hermes-test",
+            preset="persistent-service",
+            port=57881,
+        )
+        self.assertIs(good["ok"], True)
+
+        cases = {
+            "stopped": self._upstream_status_output(status="stopped"),
+            "unhealthy": self._upstream_status_output(healthy="no"),
+            "wrong_profile": self._upstream_status_output(profile="foreign"),
+            "missing_status": self._upstream_status_output().replace(
+                "Status:     running\n", ""
+            ),
+            "duplicate_status": self._upstream_status_output() + "Status: stopped\n",
+        }
+        for name, output in cases.items():
+            with self.subTest(name=name):
+                evidence = manager._parse_upstream_status(
+                    output,
+                    profile="hermes-test",
+                    preset="persistent-service",
+                    port=57881,
+                )
+                self.assertIs(evidence["ok"], False)
+                self.assertTrue(evidence["reasons"])
+
+    def test_status_rejects_stopped_but_healthy_upstream(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            manager._write_state(root, state)
+            self._write_manifest(root)
+            self._fake_cli(state)
+            completed = subprocess.CompletedProcess(
+                ["headroom"], 0, self._upstream_status_output(status="stopped")
+            )
+            with (
+                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(manager, "_run", return_value=completed),
+                patch.object(
+                    manager,
+                    "_supervisor_presence",
+                    return_value=self._present_supervisor(),
+                ),
+            ):
+                code, output = self._run_main(
+                    ["status", "--runtime-root", str(root), "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["decision"], "RUNTIME_PARTIAL")
+        self.assertIn("mismatch:status", payload["upstream_status_semantic"]["reasons"])
+
+    def test_status_rejects_running_upstream_without_supervisor_artifact(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            manager._write_state(root, state)
+            self._write_manifest(root)
+            self._fake_cli(state)
+            completed = subprocess.CompletedProcess(
+                ["headroom"], 0, self._upstream_status_output()
+            )
+            with (
+                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(manager, "_run", return_value=completed),
+            ):
+                code, output = self._run_main(
+                    ["status", "--runtime-root", str(root), "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["decision"], "RUNTIME_PARTIAL")
+        self.assertIs(payload["upstream_status_semantic"]["ok"], True)
+        self.assertIs(payload["supervisor"]["present"], False)
+
+    def test_doctor_rejects_stopped_upstream_even_when_smoke_passes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            manager._write_state(root, state)
+            self._write_manifest(root)
+            self._fake_cli(state)
+            completed = subprocess.CompletedProcess(
+                ["headroom"], 0, self._upstream_status_output(status="stopped")
+            )
+            with (
+                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(manager, "smoke", return_value={"ok": True, "sentinel_found": True}),
+                patch.object(manager, "_run", return_value=completed),
+                patch.object(
+                    manager,
+                    "_supervisor_presence",
+                    return_value=self._present_supervisor(),
+                ),
+            ):
+                code, output = self._run_main(
+                    ["doctor", "--runtime-root", str(root), "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "RUNTIME_PARTIAL")
+        self.assertIn(
+            "mismatch:status",
+            payload["upstream_status"]["semantic"]["reasons"],
+        )
+
+    def test_setup_keeps_partial_state_when_upstream_reports_stopped(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            cli = manager._exe(manager._venv_dir(root), "headroom")
+            cli.parent.mkdir(parents=True, exist_ok=True)
+            cli.write_text("fake", encoding="utf-8")
+            manager._ensure_marker(root)
+            applied = subprocess.CompletedProcess(
+                ["safe-apply"],
+                0,
+                json.dumps({"provider_mode": "manual", "targets": [], "mutations": []}) + "\n",
+            )
+
+            def apply_and_write_manifest(**_kwargs):
+                self._write_manifest(
+                    root,
+                    profile=manager.DEFAULT_PROFILE,
+                    port=57887,
+                    preset=manager._default_preset(),
+                )
+                return applied
+
+            stopped = subprocess.CompletedProcess(
+                ["headroom"],
+                0,
+                self._upstream_status_output(
+                    profile=manager.DEFAULT_PROFILE,
+                    port=57887,
+                    preset=manager._default_preset(),
+                    status="stopped",
+                ),
+            )
+            with (
+                patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
+                patch.object(
+                    manager,
+                    "_ensure_runtime",
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                ),
+                patch.object(manager, "_safe_apply", side_effect=apply_and_write_manifest),
+                patch.object(manager, "_wait_ready", return_value={"ok": True, "status": 200}),
+                patch.object(manager, "smoke", return_value={"ok": True, "sentinel_found": True}),
+                patch.object(manager, "_run", return_value=stopped),
+                patch.object(
+                    manager,
+                    "_supervisor_presence",
+                    side_effect=[
+                        {"present": False, "service_name": "", "evidence": []},
+                        self._present_supervisor(manager.DEFAULT_PROFILE),
+                    ],
+                ),
+            ):
+                code, output = self._run_main(
+                    ["setup", "--runtime-root", str(root), "--port", "57887", "--json"]
+                )
+            state = manager._load_state(root)
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "RUNTIME_PARTIAL")
+        self.assertIn("durable lifecycle semantic verification failed", payload["detail"])
+        self.assertIsNotNone(state)
+        self.assertEqual(state.status if state else None, "RUNTIME_PARTIAL")
 
     def test_status_rejects_manifest_with_provider_mutations(self):
         with tempfile.TemporaryDirectory() as td:

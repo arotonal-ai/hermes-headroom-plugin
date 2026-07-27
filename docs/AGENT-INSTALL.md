@@ -54,7 +54,7 @@ headroom-runtime doctor --json
 headroom-runtime uninstall --json
 ```
 
-The native Git launcher accepts the same subcommands. Claim `RUNTIME_FULL_DURABLE` only when `doctor` returns exit `0` with upstream status, readiness, and sentinel recovery PASS. See [runtime-manager.md](runtime-manager.md).
+The native Git launcher accepts the same subcommands. Claim `RUNTIME_FULL_DURABLE` only when `doctor` verifies the expected upstream profile/preset/port as `Status: running` and `Healthy: yes`, finds the matching native supervisor artifact, and passes readiness plus sentinel recovery. Exit code `0` alone is insufficient. See [runtime-manager.md](runtime-manager.md).
 
 The old `install-production-runtime.py` remains only for v0.4 compatibility and optional `llm-monitor` companion operations.
 
@@ -109,7 +109,8 @@ FULL if:
 DURABLE if:
 
 - `headroom-runtime doctor --json` returns `RUNTIME_FULL_DURABLE`;
-- the upstream native user lifecycle is installed for the target platform;
+- the upstream native user lifecycle reports the matching identity as running and healthy;
+- the expected user-level supervisor artifact is present for the target platform;
 - `/headroom smoke` still returns PASS after the relevant restart/login lifecycle.
 
 Windows native runtime smoke is certified for Python 3.11/3.12 only after the blocking v0.5 matrix passes. WSL2/Termux and Python 3.13/3.14 remain target-evidence/experimental lanes.

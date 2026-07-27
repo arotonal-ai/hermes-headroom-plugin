@@ -43,6 +43,10 @@ STATE_FILE = "manager-state.json"
 MARKER_FILE = ".hermes-headroom-runtime-manager"
 LOCK_FILE = ".setup.lock"
 _PROFILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+_UPSTREAM_STATUS_FIELDS = frozenset(
+    {"profile", "preset", "runtime", "supervisor", "scope", "port", "status", "healthy"}
+)
 
 # Headroom 0.32's public ``install apply`` always writes persistent shell
 # environment blocks for user/system scope, even with manual providers and no
@@ -537,6 +541,100 @@ def _supervisor_presence(profile: str) -> dict[str, Any]:
     return {"present": bool(evidence), "service_name": service_name, "evidence": evidence}
 
 
+def _parse_upstream_status(
+    output: str, *, profile: str, preset: str, port: int
+) -> dict[str, Any]:
+    """Parse Headroom 0.32.1 human status output into fail-closed evidence."""
+
+    fields: dict[str, str] = {}
+    duplicates: list[str] = []
+    for raw_line in output.splitlines():
+        line = _ANSI_ESCAPE_RE.sub("", raw_line)
+        match = re.match(r"^\s*([A-Za-z]+)\s*:\s*(.*?)\s*$", line)
+        if match is None:
+            continue
+        key = match.group(1).casefold()
+        if key not in _UPSTREAM_STATUS_FIELDS:
+            continue
+        if key in fields:
+            duplicates.append(key)
+            continue
+        fields[key] = match.group(2).strip()
+
+    expected = {
+        "profile": profile,
+        "preset": preset,
+        "runtime": "python",
+        "supervisor": "service" if preset == "persistent-service" else "task",
+        "scope": "user",
+        "port": str(port),
+        "status": "running",
+        "healthy": "yes",
+    }
+    reasons: list[str] = []
+    missing = sorted(_UPSTREAM_STATUS_FIELDS.difference(fields))
+    if missing:
+        reasons.append("missing_fields:" + ",".join(missing))
+    if duplicates:
+        reasons.append("duplicate_fields:" + ",".join(sorted(set(duplicates))))
+    for key, expected_value in expected.items():
+        actual = fields.get(key)
+        if actual is None:
+            continue
+        matches = actual == expected_value if key == "profile" else actual.casefold() == expected_value
+        if not matches:
+            reasons.append(f"mismatch:{key}")
+    return {
+        "ok": not reasons,
+        "fields": fields,
+        "expected": expected,
+        "reasons": reasons,
+    }
+
+
+def _upstream_status_evidence(
+    *,
+    headroom: Path,
+    root: Path,
+    profile: str,
+    preset: str,
+    port: int,
+    timeout: int,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "available": headroom.is_file(),
+        "exit_code": None,
+        "output": "",
+        "semantic": {
+            "ok": False,
+            "fields": {},
+            "expected": {},
+            "reasons": ["managed_cli_missing"],
+        },
+        "ok": False,
+    }
+    if not headroom.is_file():
+        return result
+    proc = _run(
+        [str(headroom), "install", "status", "--profile", profile],
+        timeout=timeout,
+        log=root / "manager.log",
+        env=_runtime_env(root),
+    )
+    semantic = _parse_upstream_status(
+        proc.stdout, profile=profile, preset=preset, port=port
+    )
+    result.update(
+        {
+            "exit_code": proc.returncode,
+            "output": proc.stdout[-2000:],
+            "semantic": semantic,
+            "ok": proc.returncode == 0 and semantic.get("ok") is True,
+        }
+    )
+    return result
+
+
 def _ensure_runtime(
     root: Path,
     *,
@@ -924,18 +1022,18 @@ def setup(args: argparse.Namespace) -> int:
         managed_cli = _exe(_venv_dir(root), "headroom")
         if health.get("ok") and existing is not None:
             manifest_contract = _manifest_contract(root, profile=profile, port=port, preset=preset)
-            upstream = None
-            if managed_cli.is_file():
-                upstream = _run(
-                    [str(managed_cli), "install", "status", "--profile", profile],
-                    timeout=30,
-                    log=root / "manager.log",
-                    env=_runtime_env(root),
-                )
+            upstream = _upstream_status_evidence(
+                headroom=managed_cli,
+                root=root,
+                profile=profile,
+                preset=preset,
+                port=port,
+                timeout=30,
+            )
             verification = smoke(proxy_url)
             if (
-                upstream is not None
-                and upstream.returncode == 0
+                upstream.get("ok") is True
+                and supervisor.get("present") is True
                 and manifest_contract.get("ok")
                 and verification.get("ok")
                 and verification.get("sentinel_found") is True
@@ -950,6 +1048,8 @@ def setup(args: argparse.Namespace) -> int:
                         "decision": existing.status,
                         "manifest_contract": manifest_contract,
                         "smoke": verification,
+                        "upstream_status": upstream,
+                        "supervisor": supervisor,
                     },
                     as_json=args.json,
                 )
@@ -960,6 +1060,8 @@ def setup(args: argparse.Namespace) -> int:
                     "decision": "RUNTIME_PARTIAL",
                     "detail": "ready listener did not match complete manager/upstream/manifest evidence",
                     "manifest_contract": manifest_contract,
+                    "upstream_status": upstream,
+                    "supervisor": supervisor,
                     "next": "run headroom-runtime doctor, then uninstall before repair",
                 },
                 as_json=args.json,
@@ -1031,6 +1133,22 @@ def setup(args: argparse.Namespace) -> int:
             verification = smoke(proxy_url)
             if not verification.get("ok") or verification.get("sentinel_found") is not True:
                 raise RuntimeError(f"compress/retrieve sentinel smoke failed: {verification}")
+            upstream = _upstream_status_evidence(
+                headroom=headroom,
+                root=root,
+                profile=profile,
+                preset=preset,
+                port=port,
+                timeout=30,
+            )
+            supervisor = _supervisor_presence(profile)
+            if upstream.get("ok") is not True or supervisor.get("present") is not True:
+                reasons = upstream.get("semantic", {}).get("reasons", [])
+                raise RuntimeError(
+                    "durable lifecycle semantic verification failed: "
+                    f"upstream_reasons={reasons}, "
+                    f"supervisor_present={supervisor.get('present') is True}"
+                )
             full = _state_for(
                 root,
                 status="RUNTIME_FULL_DURABLE",
@@ -1042,7 +1160,16 @@ def setup(args: argparse.Namespace) -> int:
                 versions=versions,
             )
             _write_state(root, full)
-            _emit({**asdict(full), "decision": full.status, "smoke": verification}, as_json=args.json)
+            _emit(
+                {
+                    **asdict(full),
+                    "decision": full.status,
+                    "smoke": verification,
+                    "upstream_status": upstream,
+                    "supervisor": supervisor,
+                },
+                as_json=args.json,
+            )
             return 0
         except Exception as exc:
             failed = _state_for(
@@ -1086,20 +1213,25 @@ def status(args: argparse.Namespace) -> int:
     )
     payload = {**asdict(state), "readyz": health, "manifest_contract": manifest_contract}
     headroom = _exe(Path(state.venv_dir), "headroom")
-    upstream_exit: int | None = None
-    if headroom.is_file():
-        proc = _run(
-            [str(headroom), "install", "status", "--profile", state.profile],
-            timeout=args.timeout,
-            log=root / "manager.log",
-            env=_runtime_env(root),
-        )
-        upstream_exit = proc.returncode
-        payload["upstream_status_exit"] = proc.returncode
-        payload["upstream_status"] = proc.stdout[-2000:]
+    upstream = _upstream_status_evidence(
+        headroom=headroom,
+        root=root,
+        profile=state.profile,
+        preset=state.preset,
+        port=state.port,
+        timeout=args.timeout,
+    )
+    supervisor = _supervisor_presence(state.profile)
+    payload["upstream_status_exit"] = upstream.get("exit_code")
+    payload["upstream_status"] = upstream.get("output", "")
+    payload["upstream_status_semantic"] = upstream.get("semantic")
+    payload["supervisor"] = supervisor
     decision = (
         "RUNTIME_FULL_DURABLE"
-        if health.get("ok") and upstream_exit == 0 and manifest_contract.get("ok")
+        if health.get("ok")
+        and upstream.get("ok") is True
+        and supervisor.get("present") is True
+        and manifest_contract.get("ok")
         else "RUNTIME_PARTIAL"
     )
     payload["decision"] = decision
@@ -1122,20 +1254,21 @@ def doctor(args: argparse.Namespace) -> int:
         root, profile=state.profile, port=state.port, preset=state.preset
     )
     headroom = _exe(Path(state.venv_dir), "headroom")
-    upstream: dict[str, Any] = {"available": headroom.is_file()}
-    if headroom.is_file():
-        proc = _run(
-            [str(headroom), "install", "status", "--profile", state.profile],
-            timeout=args.timeout,
-            log=root / "manager.log",
-            env=_runtime_env(root),
-        )
-        upstream.update({"exit_code": proc.returncode, "output": proc.stdout[-2000:]})
+    upstream = _upstream_status_evidence(
+        headroom=headroom,
+        root=root,
+        profile=state.profile,
+        preset=state.preset,
+        port=state.port,
+        timeout=args.timeout,
+    )
+    supervisor = _supervisor_presence(state.profile)
     full = bool(
         health.get("ok")
         and verification.get("ok")
         and verification.get("sentinel_found") is True
-        and upstream.get("exit_code") == 0
+        and upstream.get("ok") is True
+        and supervisor.get("present") is True
         and manifest_contract.get("ok")
     )
     decision = "RUNTIME_FULL_DURABLE" if full else "RUNTIME_PARTIAL"
@@ -1147,6 +1280,7 @@ def doctor(args: argparse.Namespace) -> int:
             "smoke": verification,
             "manifest_contract": manifest_contract,
             "upstream_status": upstream,
+            "supervisor": supervisor,
             "next": None if full else "inspect manager.log/install.log or run headroom-runtime uninstall",
         },
         as_json=args.json,
