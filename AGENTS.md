@@ -12,7 +12,7 @@ Install and enable the plugin in the target Hermes instance without copying owne
 - Native Windows should use native Hermes commands plus Python helper scripts. Bash helpers require Git Bash/WSL and resolve `PYTHON_BIN`, Hermes' own Python, `python3`, `python`, then `py -3` to avoid broken Microsoft Store aliases and global Python/venv drift.
 - Windows `RUNTIME_FULL` is certified in GitHub Runtime Smoke for Python 3.11/3.12, but target-host evidence still matters when diagnosing local shell/Python drift.
 - `RUNTIME_FULL_DURABLE` requires `headroom-runtime doctor --json` exit 0 after upstream native lifecycle, readiness, and sentinel recovery pass.
-- Native Windows defaults to upstream user Task Scheduler lifecycle; Linux/macOS default to upstream user service lifecycle.
+- Native Windows defaults to upstream user Task Scheduler lifecycle with a manifest-owned `wscript.exe` hidden launcher; exact task actions/triggers, enabled state, and launcher hash are durability evidence. Linux/macOS default to upstream user service lifecycle.
 - Python 3.13/3.14 are monitored by the non-blocking Future Runtime Monitor; do not claim them as certified until promoted in `docs/compatibility.md`.
 - The packaged plugin includes fail-open `tool_execution` middleware for eligible bulky intermediate tool/lane results, including `delegate_task`, when the loopback Headroom proxy is healthy.
 - The packaged worker/background/preflight CLI wrappers (`headroom-worker-lane`, `headroom-background-lane`, `headroom-command-preflight`) are production behavior for explicit operator commands: they retain exact sidecars/final packets and optionally compress only bulky intermediate traces through the loopback Headroom proxy. They do not change provider/model routing.
@@ -51,7 +51,7 @@ python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" setup
 
 Windows uses `py -3 "$PluginDir\scripts\headroom-runtime.py" setup`; wheel environments use `headroom-runtime setup`. Add `--dry-run --json` for a no-write plan.
 
-The manager installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3` in an isolated venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It deliberately skips direct 0.32.1 apply because that path writes persistent shell blocks. Use `status`, `doctor`, and `uninstall` on the same entry point. The canonical contract is `docs/runtime-manager.md`.
+The manager installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3` in an isolated venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It deliberately skips direct 0.32.1 apply because that path writes persistent shell blocks. Use `status`, `doctor`, `reconcile`, and `uninstall` on the same entry point. Windows `reconcile` is read-only unless `--apply` is explicit and rejects foreign/non-base-contract deployments. The canonical contract is `docs/runtime-manager.md`.
 
 For a clean-instance canary, assert that `127.0.0.1:8787` is free before installation and that the started proxy belongs to the target run. A healthy proxy owned by another user or Hermes instance is not clean-instance evidence. Concurrent same-host canaries must use distinct free loopback ports and pass the matching `HEADROOM_PROXY_URL` explicitly.
 

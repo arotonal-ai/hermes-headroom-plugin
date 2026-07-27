@@ -183,6 +183,64 @@ def command_prefix(value: str) -> list[str]:
     return [value]
 
 
+def windows_silent_evidence(
+    manifest_data: dict[str, Any], status_json: dict[str, Any], profile: str
+) -> dict[str, bool]:
+    evidence = {
+        "applicable": os.name == "nt",
+        "owned_artifacts": True,
+        "launcher_hash": True,
+        "task_metadata": True,
+        "live_task_contract": True,
+    }
+    if os.name != "nt":
+        return evidence
+    artifact_records = [
+        item for item in manifest_data.get("artifacts", []) if isinstance(item, dict)
+    ]
+    owned = [
+        item
+        for item in artifact_records
+        if isinstance(item.get("metadata"), dict)
+        and item["metadata"].get("contract") == "hermes-windows-task-v1"
+    ]
+    launchers = [item for item in owned if item.get("kind") == "script"]
+    tasks = [item for item in owned if item.get("kind") == "windows-task"]
+    evidence["owned_artifacts"] = len(owned) == 3 and len(launchers) == 1 and len(tasks) == 2
+    launcher_path = Path(str(launchers[0].get("path"))) if len(launchers) == 1 else None
+    launcher_metadata = launchers[0].get("metadata", {}) if len(launchers) == 1 else {}
+    evidence["launcher_hash"] = bool(
+        launcher_path
+        and launcher_path.is_file()
+        and launcher_metadata.get("sha256") == digest(launcher_path)
+    )
+    task_names = {f"headroom-{profile}-startup", f"headroom-{profile}-health"}
+    evidence["task_metadata"] = bool(
+        launcher_path
+        and {str(item.get("path")) for item in tasks} == task_names
+        and all(
+            item.get("metadata", {}).get("enabled") is True
+            and item.get("metadata", {}).get("action", {}).get("command") == "wscript.exe"
+            and str(launcher_path)
+            in item.get("metadata", {}).get("action", {}).get("arguments", "")
+            for item in tasks
+        )
+    )
+    live_tasks = status_json.get("supervisor", {}).get("tasks", {})
+    evidence["live_task_contract"] = bool(
+        status_json.get("supervisor", {}).get("ok") is True
+        and set(live_tasks) == {"startup", "health"}
+        and all(
+            item.get("enabled") is True
+            and item.get("action_command_exact") is True
+            and item.get("action_arguments_exact") is True
+            and item.get("trigger_exact") is True
+            for item in live_tasks.values()
+        )
+    )
+    return evidence
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Exercise setup/status/doctor/uninstall with a real native supervisor.")
     parser.add_argument("--manager-command", default="headroom-runtime")
@@ -212,10 +270,14 @@ def main(argv: list[str] | None = None) -> int:
     setup_proc: subprocess.CompletedProcess[str] | None = None
     status_proc: subprocess.CompletedProcess[str] | None = None
     doctor_proc: subprocess.CompletedProcess[str] | None = None
+    reconcile_dry_proc: subprocess.CompletedProcess[str] | None = None
+    reconcile_apply_proc: subprocess.CompletedProcess[str] | None = None
+    reconcile_dry_immutable = True
     uninstall_proc: subprocess.CompletedProcess[str] | None = None
     manager_install_log_tail: str | None = None
     manifest_data: dict[str, Any] = {}
     artifacts: list[str] = []
+    windows_silent = windows_silent_evidence({}, {}, profile)
 
     try:
         setup_proc = run(
@@ -249,6 +311,86 @@ def main(argv: list[str] | None = None) -> int:
         if setup_proc.returncode == 0:
             status_proc = run(prefix + ["status", "--runtime-root", str(root), "--json"], timeout=90, log=log)
             doctor_proc = run(prefix + ["doctor", "--runtime-root", str(root), "--json"], timeout=180, log=log)
+            if os.name == "nt" and status_proc.returncode == 0 and doctor_proc.returncode == 0:
+                service = f"headroom-{profile}"
+                ensure_cmd = manifest.parent / "ensure-headroom.cmd"
+                for task_name, schedule in (
+                    (f"{service}-startup", ["/SC", "ONSTART"]),
+                    (f"{service}-health", ["/SC", "MINUTE", "/MO", "5"]),
+                ):
+                    degraded = run(
+                        [
+                            "schtasks",
+                            "/Create",
+                            "/TN",
+                            task_name,
+                            "/TR",
+                            str(ensure_cmd),
+                            *schedule,
+                            "/F",
+                        ],
+                        timeout=30,
+                        log=log,
+                    )
+                    if degraded.returncode != 0:
+                        raise RuntimeError(f"failed to create legacy fixture for {task_name}")
+                legacy_artifacts = []
+                launcher_path: Path | None = None
+                for item in manifest_data.get("artifacts", []):
+                    if not isinstance(item, dict):
+                        continue
+                    metadata = item.get("metadata")
+                    if (
+                        item.get("kind") == "script"
+                        and isinstance(metadata, dict)
+                        and metadata.get("contract") == "hermes-windows-task-v1"
+                    ):
+                        launcher_path = Path(str(item.get("path")))
+                        continue
+                    if item.get("kind") == "windows-task":
+                        item["metadata"] = {}
+                    legacy_artifacts.append(item)
+                manifest_data["artifacts"] = legacy_artifacts
+                manifest.write_text(
+                    json.dumps(manifest_data, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                if launcher_path is not None:
+                    launcher_path.unlink(missing_ok=True)
+                before_reconcile = manifest.read_bytes()
+                reconcile_dry_proc = run(
+                    prefix
+                    + ["reconcile", "--runtime-root", str(root), "--dry-run", "--json"],
+                    timeout=90,
+                    log=log,
+                )
+                reconcile_dry_immutable = manifest.read_bytes() == before_reconcile
+                reconcile_apply_proc = run(
+                    prefix
+                    + ["reconcile", "--runtime-root", str(root), "--apply", "--json"],
+                    timeout=240,
+                    log=log,
+                )
+                if reconcile_apply_proc.returncode == 0:
+                    status_proc = run(
+                        prefix + ["status", "--runtime-root", str(root), "--json"],
+                        timeout=90,
+                        log=log,
+                    )
+                    doctor_proc = run(
+                        prefix + ["doctor", "--runtime-root", str(root), "--json"],
+                        timeout=180,
+                        log=log,
+                    )
+                    manifest_data = json.loads(manifest.read_text(encoding="utf-8"))
+                    artifacts = [
+                        str(item.get("path"))
+                        for item in manifest_data.get("artifacts", [])
+                        if isinstance(item, dict) and item.get("path")
+                    ]
+            windows_silent = windows_silent_evidence(
+                manifest_data, parse_json(status_proc), profile
+            )
     except Exception as exc:  # noqa: BLE001
         setup_json = {"exception": f"{type(exc).__name__}: {exc}"}
     finally:
@@ -281,6 +423,23 @@ def main(argv: list[str] | None = None) -> int:
     status_json = parse_json(status_proc) if status_proc else {}
     doctor_json = parse_json(doctor_proc) if doctor_proc else {}
     uninstall_json = parse_json(uninstall_proc) if uninstall_proc else {}
+    windows_silent_ok = all(
+        value for key, value in windows_silent.items() if key != "applicable"
+    )
+    reconcile_dry_json = parse_json(reconcile_dry_proc) if reconcile_dry_proc else {}
+    reconcile_apply_json = parse_json(reconcile_apply_proc) if reconcile_apply_proc else {}
+    reconcile_ok = bool(
+        os.name != "nt"
+        or (
+            reconcile_dry_proc
+            and reconcile_dry_proc.returncode == 1
+            and reconcile_dry_json.get("decision") == "MIGRATION_REQUIRED"
+            and reconcile_dry_immutable
+            and reconcile_apply_proc
+            and reconcile_apply_proc.returncode == 0
+            and reconcile_apply_json.get("decision") == "RECONCILED"
+        )
+    )
     status_ok = bool(status_proc and status_proc.returncode == 0 and status_json.get("decision") == "RUNTIME_FULL_DURABLE")
     doctor_ok = bool(doctor_proc and doctor_proc.returncode == 0 and doctor_json.get("decision") == "RUNTIME_FULL_DURABLE")
     uninstall_ok = bool(
@@ -303,6 +462,8 @@ def main(argv: list[str] | None = None) -> int:
             stopped,
             artifacts_removed,
             supervisor_removed,
+            windows_silent_ok,
+            reconcile_ok,
             shell_unchanged,
             root_removed,
         )
@@ -327,6 +488,12 @@ def main(argv: list[str] | None = None) -> int:
             "mutations": manifest_data.get("mutations"),
             "supervisor_kind": manifest_data.get("supervisor_kind"),
             "service_name": manifest_data.get("service_name"),
+            "windows_silent": windows_silent,
+        },
+        "reconcile": {
+            "dry_run": reconcile_dry_json,
+            "dry_run_immutable": reconcile_dry_immutable,
+            "apply": reconcile_apply_json,
         },
         "rollback": {
             "uninstall": uninstall_json,
@@ -341,6 +508,8 @@ def main(argv: list[str] | None = None) -> int:
             "status": status_ok,
             "doctor": doctor_ok,
             "manifest": manifest_ok,
+            "windows_silent": windows_silent_ok,
+            "reconcile": reconcile_ok,
             "uninstall": uninstall_ok,
         },
         "log": str(log),

@@ -1,6 +1,14 @@
 name: Runtime Manager Lifecycle
 
 on:
+  pull_request:
+    paths:
+      - ".github/workflows/runtime-smoke.yml"
+      - "pyproject.toml"
+      - "src/hermes_headroom_plugin/proxy.py"
+      - "src/hermes_headroom_plugin/runtime_manager.py"
+      - "scripts/test-runtime-manager-lifecycle.py"
+      - "tests/test_runtime_manager.py"
   workflow_dispatch:
     inputs:
       headroom_spec:

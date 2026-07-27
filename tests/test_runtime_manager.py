@@ -97,6 +97,7 @@ class RuntimeManagerTest(unittest.TestCase):
         preset: str = "persistent-service",
         targets=None,
         mutations=None,
+        artifacts=None,
         service_name: str | None = None,
     ) -> Path:
         path = manager._workspace_dir(root) / "deploy" / profile / "manifest.json"
@@ -144,7 +145,7 @@ class RuntimeManagerTest(unittest.TestCase):
                         "--no-telemetry", "--no-code-aware",
                     ],
                     "mutations": [] if mutations is None else mutations,
-                    "artifacts": [],
+                    "artifacts": [] if artifacts is None else artifacts,
                 }
             ),
             encoding="utf-8",
@@ -257,6 +258,7 @@ class RuntimeManagerTest(unittest.TestCase):
     def test_setup_writes_full_state_only_after_safe_apply_ready_and_smoke(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "runtime"
+            preset = "persistent-service"
             cli = manager._exe(manager._venv_dir(root), "headroom")
             cli.parent.mkdir(parents=True, exist_ok=True)
             cli.write_text("fake", encoding="utf-8")
@@ -271,7 +273,7 @@ class RuntimeManagerTest(unittest.TestCase):
                     root,
                     profile=manager.DEFAULT_PROFILE,
                     port=57884,
-                    preset=manager._default_preset(),
+                    preset=preset,
                 )
                 return applied
 
@@ -281,11 +283,12 @@ class RuntimeManagerTest(unittest.TestCase):
                 self._upstream_status_output(
                     profile=manager.DEFAULT_PROFILE,
                     port=57884,
-                    preset=manager._default_preset(),
+                    preset=preset,
                 ),
             )
 
             with (
+                patch.object(manager, "_is_windows", return_value=False),
                 patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
                 patch.object(
                     manager,
@@ -306,7 +309,16 @@ class RuntimeManagerTest(unittest.TestCase):
                 ),
             ):
                 code, output = self._run_main(
-                    ["setup", "--runtime-root", str(root), "--port", "57884", "--json"]
+                    [
+                        "setup",
+                        "--runtime-root",
+                        str(root),
+                        "--port",
+                        "57884",
+                        "--preset",
+                        preset,
+                        "--json",
+                    ]
                 )
             state = manager._load_state(root)
         self.assertEqual(code, 0)
@@ -546,6 +558,7 @@ class RuntimeManagerTest(unittest.TestCase):
     def test_setup_keeps_partial_state_when_upstream_reports_stopped(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "runtime"
+            preset = "persistent-service"
             cli = manager._exe(manager._venv_dir(root), "headroom")
             cli.parent.mkdir(parents=True, exist_ok=True)
             cli.write_text("fake", encoding="utf-8")
@@ -561,7 +574,7 @@ class RuntimeManagerTest(unittest.TestCase):
                     root,
                     profile=manager.DEFAULT_PROFILE,
                     port=57887,
-                    preset=manager._default_preset(),
+                    preset=preset,
                 )
                 return applied
 
@@ -571,11 +584,12 @@ class RuntimeManagerTest(unittest.TestCase):
                 self._upstream_status_output(
                     profile=manager.DEFAULT_PROFILE,
                     port=57887,
-                    preset=manager._default_preset(),
+                    preset=preset,
                     status="stopped",
                 ),
             )
             with (
+                patch.object(manager, "_is_windows", return_value=False),
                 patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
                 patch.object(
                     manager,
@@ -596,7 +610,16 @@ class RuntimeManagerTest(unittest.TestCase):
                 ),
             ):
                 code, output = self._run_main(
-                    ["setup", "--runtime-root", str(root), "--port", "57887", "--json"]
+                    [
+                        "setup",
+                        "--runtime-root",
+                        str(root),
+                        "--port",
+                        "57887",
+                        "--preset",
+                        preset,
+                        "--json",
+                    ]
                 )
             state = manager._load_state(root)
         payload = json.loads(output)
@@ -1031,6 +1054,333 @@ class RuntimeManagerTest(unittest.TestCase):
             )
         self.assertEqual(code, 2)
         self.assertEqual(json.loads(output)["decision"], "ERROR")
+
+    def test_windows_launcher_content_is_hidden_waiting_and_deterministic(self):
+        command = Path(r"C:\Managed Runtime\ensure-headroom.cmd")
+        first = manager._windows_launcher_content(command)
+        second = manager._windows_launcher_content(command)
+        self.assertEqual(first, second)
+        self.assertIn("shell.Run(command, 0, True)", first)
+        self.assertIn('cmd.exe /d /c ""C:\\Managed Runtime\\ensure-headroom.cmd""', first)
+        self.assertIn("WScript.Quit exitCode", first)
+
+    def test_parse_windows_task_xml_requires_enabled_action_and_trigger(self):
+        launcher = Path(r"C:\Managed Runtime\ensure-headroom-hidden.vbs")
+        startup_xml = f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers><BootTrigger><Enabled>true</Enabled></BootTrigger></Triggers>
+  <Settings><Enabled>true</Enabled></Settings>
+  <Actions><Exec><Command>wscript.exe</Command><Arguments>//B //NoLogo "{launcher}"</Arguments></Exec></Actions>
+</Task>"""
+        health_xml = f"""<?xml version="1.0" encoding="UTF-16"?>
+<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers><TimeTrigger><Repetition><Interval>PT5M</Interval></Repetition><Enabled>true</Enabled></TimeTrigger></Triggers>
+  <Settings><Enabled>true</Enabled></Settings>
+  <Actions><Exec><Command>wscript.exe</Command><Arguments>//B //NoLogo "{launcher}"</Arguments></Exec></Actions>
+</Task>"""
+        startup = manager._parse_windows_task_xml(
+            startup_xml, launcher=launcher, trigger_kind="startup"
+        )
+        health = manager._parse_windows_task_xml(
+            health_xml, launcher=launcher, trigger_kind="health"
+        )
+        health_utf16 = manager._parse_windows_task_xml(
+            health_xml.encode("utf-16"), launcher=launcher, trigger_kind="health"
+        )
+        health_prefixed_utf16 = manager._parse_windows_task_xml(
+            ("\r\n\ufeff" + health_xml).encode("utf-16-le"),
+            launcher=launcher,
+            trigger_kind="health",
+        )
+        self.assertTrue(startup["ok"])
+        self.assertTrue(health["ok"])
+        self.assertTrue(health_utf16["ok"])
+        self.assertTrue(health_prefixed_utf16["ok"])
+        plain_launcher = Path(r"C:\Managed\ensure-headroom-hidden.vbs")
+        plain_xml = health_xml.replace(str(launcher), str(plain_launcher)).replace(
+            f'"{plain_launcher}"', str(plain_launcher)
+        )
+        unquoted = manager._parse_windows_task_xml(
+            plain_xml,
+            launcher=plain_launcher,
+            trigger_kind="health",
+        )
+        self.assertTrue(unquoted["ok"])
+        drifted = manager._parse_windows_task_xml(
+            startup_xml.replace("wscript.exe", "cmd.exe"),
+            launcher=launcher,
+            trigger_kind="startup",
+        )
+        self.assertFalse(drifted["ok"])
+        self.assertIn("action_command", drifted["reasons"])
+
+    def test_manifest_contract_marks_legacy_windows_tasks_for_migration(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            profile = "hermes-test"
+            service = f"headroom-{profile}"
+            self._write_manifest(
+                root,
+                profile=profile,
+                preset="persistent-task",
+                artifacts=[
+                    {"kind": "windows-task", "path": f"{service}-startup", "metadata": {}},
+                    {"kind": "windows-task", "path": f"{service}-health", "metadata": {}},
+                ],
+            )
+            with patch.object(manager, "_is_windows", return_value=True, create=True):
+                contract = manager._manifest_contract(
+                    root, profile=profile, port=57881, preset="persistent-task"
+                )
+        self.assertFalse(contract["ok"])
+        self.assertTrue(contract["windows_task_contract"]["migration_required"])
+        self.assertIn("windows_task_contract", contract["mismatches"])
+
+    def test_reconcile_is_read_only_by_default(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            state.preset = "persistent-task"
+            manager._write_state(root, state)
+            service = f"headroom-{state.profile}"
+            manifest = self._write_manifest(
+                root,
+                profile=state.profile,
+                preset=state.preset,
+                artifacts=[
+                    {"kind": "windows-task", "path": f"{service}-startup", "metadata": {}},
+                    {"kind": "windows-task", "path": f"{service}-health", "metadata": {}},
+                ],
+            )
+            before = manifest.read_bytes()
+            with (
+                patch.object(manager, "_is_windows", return_value=True, create=True),
+                patch.object(manager, "_safe_reconcile", create=True) as apply,
+            ):
+                code, output = self._run_main(
+                    ["reconcile", "--runtime-root", str(root), "--dry-run", "--json"]
+                )
+            after = manifest.read_bytes()
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(output)["decision"], "MIGRATION_REQUIRED")
+        self.assertEqual(before, after)
+        apply.assert_not_called()
+
+    def test_embedded_windows_lifecycle_scripts_compile(self):
+        compile(manager._SAFE_APPLY_SCRIPT, "<safe-apply>", "exec")
+        compile(manager._SAFE_RECONCILE_SCRIPT, "<safe-reconcile>", "exec")
+        self.assertIn("_install_silent_windows_tasks", manager._SAFE_APPLY_SCRIPT)
+        self.assertIn("_snapshot_supervisor", manager._SAFE_RECONCILE_SCRIPT)
+        self.assertIn("_restore_supervisor_snapshot", manager._SAFE_RECONCILE_SCRIPT)
+        install_offset = manager._WINDOWS_TASK_OVERLAY_SCRIPT.index(
+            "def _install_silent_windows_tasks"
+        )
+        self.assertLess(
+            manager._WINDOWS_TASK_OVERLAY_SCRIPT.index(
+                "snapshot = _snapshot_supervisor", install_offset
+            ),
+            manager._WINDOWS_TASK_OVERLAY_SCRIPT.index(
+                "launcher.write_bytes", install_offset
+            ),
+        )
+        self.assertIn(
+            "cannot safely snapshot scheduled task before mutation",
+            manager._WINDOWS_TASK_OVERLAY_SCRIPT,
+        )
+        self.assertNotIn(
+            '["schtasks", "/Delete", "/TN", name, "/F"]',
+            manager._WINDOWS_TASK_OVERLAY_SCRIPT,
+        )
+
+    def test_windows_manifest_contract_detects_launcher_hash_drift(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            profile = "hermes-test"
+            launcher = manager._windows_launcher_path(root, profile)
+            launcher.parent.mkdir(parents=True, exist_ok=True)
+            launcher.write_bytes(manager._windows_launcher_bytes(root, profile))
+            digest = manager.hashlib.sha256(launcher.read_bytes()).hexdigest()
+            artifacts = [
+                {
+                    "kind": "script",
+                    "path": str(launcher),
+                    "metadata": {"contract": manager._WINDOWS_TASK_CONTRACT, "sha256": digest},
+                },
+                *[
+                    {"kind": "windows-task", "path": name, "metadata": metadata}
+                    for name, metadata in manager._windows_task_metadata(root, profile).items()
+                ],
+            ]
+            manifest = self._write_manifest(
+                root,
+                profile=profile,
+                preset="persistent-task",
+                artifacts=artifacts,
+            )
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            good = manager._windows_manifest_task_contract(root, profile=profile, data=data)
+            launcher.write_bytes(b"drift")
+            drifted = manager._windows_manifest_task_contract(root, profile=profile, data=data)
+        self.assertTrue(good["ok"])
+        self.assertFalse(drifted["ok"])
+        self.assertIn("launcher_hash", drifted["reasons"])
+
+    def test_parse_windows_task_xml_rejects_disabled_and_trigger_drift(self):
+        launcher = Path(r"C:\Managed\ensure-headroom-hidden.vbs")
+        xml = f"""<Task xmlns="urn:task">
+  <Triggers><TimeTrigger><Repetition><Interval>PT10M</Interval></Repetition></TimeTrigger></Triggers>
+  <Settings><Enabled>false</Enabled></Settings>
+  <Actions><Exec><Command>wscript.exe</Command><Arguments>//B //NoLogo "{launcher}"</Arguments></Exec></Actions>
+</Task>"""
+        evidence = manager._parse_windows_task_xml(
+            xml, launcher=launcher, trigger_kind="health"
+        )
+        self.assertFalse(evidence["ok"])
+        self.assertIn("disabled", evidence["reasons"])
+        self.assertIn("trigger", evidence["reasons"])
+
+    def test_parse_windows_task_xml_rejects_wrappers_and_nested_contract_nodes(self):
+        launcher = Path(r"C:\Managed\ensure-headroom-hidden.vbs")
+        valid = f"""<Task>
+  <Triggers><BootTrigger><Enabled>true</Enabled></BootTrigger></Triggers>
+  <Settings><Enabled>true</Enabled></Settings>
+  <Actions><Exec><Command>wscript.exe</Command><Arguments>//B //NoLogo "{launcher}"</Arguments></Exec></Actions>
+</Task>"""
+        wrapped = manager._parse_windows_task_xml(
+            f"<NotTask>{valid}</NotTask>", launcher=launcher, trigger_kind="startup"
+        )
+        nested = manager._parse_windows_task_xml(
+            f"<Task><Container>{valid[6:-7]}</Container></Task>",
+            launcher=launcher,
+            trigger_kind="startup",
+        )
+        extra_action = manager._parse_windows_task_xml(
+            valid.replace("</Actions>", "<ComHandler /></Actions>"),
+            launcher=launcher,
+            trigger_kind="startup",
+        )
+        self.assertFalse(wrapped["ok"])
+        self.assertIn("document_root", wrapped["reasons"])
+        self.assertFalse(nested["ok"])
+        self.assertIn("settings_structure", nested["reasons"])
+        self.assertFalse(extra_action["ok"])
+        self.assertIn("action_structure", extra_action["reasons"])
+
+    def test_windows_task_contract_rejects_unexpected_same_name_service(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            profile = "hermes-test"
+            launcher = manager._windows_launcher_path(root, profile)
+            startup_xml = f"""<Task><Triggers><BootTrigger /></Triggers><Settings><Enabled>true</Enabled></Settings><Actions><Exec><Command>wscript.exe</Command><Arguments>//B //NoLogo "{launcher}"</Arguments></Exec></Actions></Task>"""
+            health_xml = f"""<Task><Triggers><TimeTrigger><Repetition><Interval>PT5M</Interval></Repetition></TimeTrigger></Triggers><Settings><Enabled>true</Enabled></Settings><Actions><Exec><Command>wscript.exe</Command><Arguments>//B //NoLogo "{launcher}"</Arguments></Exec></Actions></Task>"""
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(
+                    manager,
+                    "_supervisor_presence",
+                    return_value={
+                        "present": True,
+                        "service_name": f"headroom-{profile}",
+                        "evidence": [f"windows-service:headroom-{profile}"],
+                    },
+                ),
+                patch.object(
+                    manager,
+                    "_windows_manifest_task_contract",
+                    return_value={"ok": True, "migration_required": False, "reasons": []},
+                ),
+                patch.object(
+                    manager,
+                    "_query_windows_task_xml",
+                    side_effect=[
+                        {"exists": True, "xml": startup_xml.encode("utf-16")},
+                        {"exists": True, "xml": health_xml.encode("utf-16")},
+                    ],
+                ),
+            ):
+                contract = manager._supervisor_contract(
+                    root, profile=profile, preset="persistent-task"
+                )
+        self.assertFalse(contract["ok"])
+        self.assertIn("unexpected_windows_service", contract["reasons"])
+        self.assertNotIn("startup:invalid_xml", contract["reasons"])
+        self.assertNotIn("health:invalid_xml", contract["reasons"])
+
+    def test_reconcile_apply_requires_post_apply_durability(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            state.preset = "persistent-task"
+            manager._write_state(root, state)
+            self._fake_cli(state)
+            manager._exe(Path(state.venv_dir), "python").write_text("fake", encoding="utf-8")
+            service = f"headroom-{state.profile}"
+            self._write_manifest(
+                root,
+                profile=state.profile,
+                preset=state.preset,
+                artifacts=[
+                    {"kind": "windows-task", "path": f"{service}-startup", "metadata": {}},
+                    {"kind": "windows-task", "path": f"{service}-health", "metadata": {}},
+                ],
+            )
+            applied = subprocess.CompletedProcess(["python"], 0, "{}\n")
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "_safe_reconcile", return_value=applied),
+                patch.object(
+                    manager,
+                    "_manifest_contract",
+                    side_effect=[
+                        {"ok": True},
+                        {"ok": False, "windows_task_contract": {"migration_required": True}},
+                        {"ok": True},
+                    ],
+                ),
+                patch.object(manager, "_supervisor_contract", return_value={"ok": False, "reasons": ["health:trigger"]}),
+                patch.object(manager, "_upstream_status_evidence", return_value={"ok": True}),
+                patch.object(manager, "readyz", return_value={"ok": True}),
+                patch.object(manager, "smoke", return_value={"ok": True, "sentinel_found": True}),
+            ):
+                code, output = self._run_main(
+                    ["reconcile", "--runtime-root", str(root), "--apply", "--json"]
+                )
+        self.assertEqual(code, 2)
+        payload = json.loads(output)
+        self.assertEqual(payload["decision"], "RECONCILE_PARTIAL")
+        self.assertEqual(payload["supervisor"]["reasons"], ["health:trigger"])
+
+    def test_status_surfaces_windows_migration_required(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            state.preset = "persistent-task"
+            manager._write_state(root, state)
+            self._fake_cli(state)
+            contract = {
+                "ok": False,
+                "windows_task_contract": {
+                    "ok": False,
+                    "migration_required": True,
+                    "reasons": ["launcher_artifact"],
+                },
+            }
+            with (
+                patch.object(manager, "_manifest_contract", return_value=contract),
+                patch.object(manager, "readyz", return_value={"ok": True}),
+                patch.object(manager, "_upstream_status_evidence", return_value={"ok": True}),
+                patch.object(manager, "_supervisor_contract", return_value={"ok": False}),
+            ):
+                code, output = self._run_main(
+                    ["status", "--runtime-root", str(root), "--json"]
+                )
+        self.assertEqual(code, 1)
+        payload = json.loads(output)
+        self.assertEqual(payload["decision"], "RUNTIME_PARTIAL")
+        self.assertTrue(payload["migration_required"])
 
 
 if __name__ == "__main__":
