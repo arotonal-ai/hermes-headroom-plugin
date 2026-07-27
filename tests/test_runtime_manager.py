@@ -1224,6 +1224,7 @@ class RuntimeManagerTest(unittest.TestCase):
     def test_windows_listener_inventory_uses_os_tables_without_http(self):
         expected_python = Path("C:/Hermes/headroom/venv/Scripts/python.exe")
         expected_headroom = Path("C:/Hermes/headroom/venv/Scripts/headroom.exe")
+        expected_base = Path("C:/hostedtoolcache/windows/Python/3.11/x64/python.exe")
         completed = subprocess.CompletedProcess(
             ["powershell.exe"],
             0,
@@ -1233,7 +1234,8 @@ class RuntimeManagerTest(unittest.TestCase):
                         "local_address": "127.0.0.1",
                         "local_port": 57881,
                         "pid": 4242,
-                        "executable_path": str(expected_headroom),
+                        "executable_path": str(expected_base),
+                        "command_line": f'"{expected_headroom}" proxy --port 57881',
                     }
                 ]
             ),
@@ -1245,11 +1247,14 @@ class RuntimeManagerTest(unittest.TestCase):
             inventory = manager._windows_listener_inventory(
                 port=57881,
                 expected_executables=(expected_python, expected_headroom),
+                expected_venv_base_executables=(expected_base,),
                 timeout=60,
             )
         self.assertIs(inventory["inventory_ok"], True)
         self.assertIs(inventory["present"], True)
         self.assertIs(inventory["identity"]["proven"], True)
+        self.assertEqual(inventory["identity"]["match_basis"], ["venv_redirector_chain"])
+        self.assertNotIn("command_line", inventory["records"][0])
         self.assertEqual(inventory["http_probe"], "not_probed_read_only")
         command = run.call_args.args[0]
         self.assertIn("Get-NetTCPConnection", command[-1])
@@ -1268,6 +1273,7 @@ class RuntimeManagerTest(unittest.TestCase):
                     "local_port": 57881,
                     "pid": 4242,
                     "executable_path": str(expected_python),
+                    "command_line": f'"{expected_python}" -m headroom',
                 }
             ),
         )
@@ -1281,6 +1287,77 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertIs(inventory["present"], True)
         self.assertIs(inventory["identity"]["loopback_only"], False)
         self.assertIs(inventory["identity"]["proven"], False)
+
+    def test_windows_listener_inventory_rejects_managed_path_as_later_argument(self):
+        expected_python = Path("C:/Hermes/headroom/venv/Scripts/python.exe")
+        completed = subprocess.CompletedProcess(
+            ["powershell.exe"],
+            0,
+            json.dumps(
+                {
+                    "local_address": "127.0.0.1",
+                    "local_port": 57881,
+                    "pid": 4242,
+                    "executable_path": "C:/hostedtoolcache/windows/Python/3.11/x64/python.exe",
+                    "command_line": (
+                        '"C:/hostedtoolcache/windows/Python/3.11/x64/python.exe" '
+                        f'--untrusted-argument "{expected_python}"'
+                    ),
+                }
+            ),
+        )
+        with (
+            patch.object(manager.shutil, "which", return_value="powershell.exe"),
+            patch.object(manager, "_run", return_value=completed),
+        ):
+            inventory = manager._windows_listener_inventory(
+                port=57881, expected_executables=(expected_python,), timeout=60
+            )
+        self.assertIs(inventory["present"], True)
+        self.assertIs(inventory["identity"]["proven"], False)
+        self.assertEqual(inventory["identity"]["matching_pids"], [])
+        self.assertNotIn("command_line", inventory["records"][0])
+
+    def test_windows_listener_inventory_rejects_spoofed_command_image(self):
+        expected_python = Path("C:/Hermes/headroom/venv/Scripts/python.exe")
+        expected_base = Path("C:/hostedtoolcache/windows/Python/3.11/x64/python.exe")
+        completed = subprocess.CompletedProcess(
+            ["powershell.exe"],
+            0,
+            json.dumps(
+                {
+                    "local_address": "127.0.0.1",
+                    "local_port": 57881,
+                    "pid": 4242,
+                    "executable_path": "C:/untrusted/arbitrary.exe",
+                    "command_line": f'"{expected_python}" proxy --port 57881',
+                }
+            ),
+        )
+        with (
+            patch.object(manager.shutil, "which", return_value="powershell.exe"),
+            patch.object(manager, "_run", return_value=completed),
+        ):
+            inventory = manager._windows_listener_inventory(
+                port=57881,
+                expected_executables=(expected_python,),
+                expected_venv_base_executables=(expected_base,),
+                timeout=60,
+            )
+        self.assertIs(inventory["identity"]["proven"], False)
+        self.assertEqual(inventory["identity"]["matching_pids"], [])
+        self.assertEqual(inventory["identity"]["match_basis"], [])
+
+    def test_windows_venv_base_executable_is_read_from_managed_config(self):
+        with tempfile.TemporaryDirectory() as td:
+            venv = Path(td)
+            (venv / "pyvenv.cfg").write_text(
+                "home = C:\\Python311\n"
+                "executable = C:\\Python311\\python.exe\n",
+                encoding="utf-8",
+            )
+            executables = manager._windows_venv_base_executables(venv)
+        self.assertEqual(executables, (Path("C:\\Python311\\python.exe"),))
 
     def test_reconcile_is_read_only_by_default(self):
         with tempfile.TemporaryDirectory() as td:

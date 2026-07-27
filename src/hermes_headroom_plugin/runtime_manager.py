@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import ntpath
 import os
 import re
 import shutil
@@ -1277,7 +1278,8 @@ _WINDOWS_LISTENER_INVENTORY_PS = "\n".join(  # noqa: FLY002
         "        local_address = $item.LocalAddress",
         "        local_port = [int]$item.LocalPort",
         "        pid = [int]$item.OwningProcess",
-        "        executable_path = $proc.ExecutablePath",
+        "        executable_path = [string]$proc.ExecutablePath",
+        "        command_line = [string]$proc.CommandLine",
         "    }",
         "}",
         "@($rows) | ConvertTo-Json -Compress -Depth 4",
@@ -1285,8 +1287,44 @@ _WINDOWS_LISTENER_INVENTORY_PS = "\n".join(  # noqa: FLY002
 )
 
 
+def _windows_command_image(command_line: str) -> str:
+    value = command_line.lstrip()
+    if not value:
+        return ""
+    if value.startswith('"'):
+        end = value.find('"', 1)
+        if end < 0:
+            return ""
+        value = value[1:end]
+    else:
+        value = value.split(maxsplit=1)[0]
+    return value.replace("/", "\\").casefold()
+
+
+def _windows_venv_base_executables(venv_dir: Path) -> tuple[Path, ...]:
+    try:
+        lines = (venv_dir / "pyvenv.cfg").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ()
+    for line in lines:
+        key, separator, value = line.partition("=")
+        candidate = value.strip()
+        if (
+            separator
+            and key.strip().casefold() == "executable"
+            and ntpath.isabs(candidate)
+            and ntpath.basename(candidate).casefold() == "python.exe"
+        ):
+            return (Path(candidate),)
+    return ()
+
+
 def _windows_listener_inventory(
-    *, port: int, expected_executables: Sequence[Path] | None, timeout: int
+    *,
+    port: int,
+    expected_executables: Sequence[Path] | None,
+    expected_venv_base_executables: Sequence[Path] = (),
+    timeout: int,
 ) -> dict[str, Any]:
     """Inventory a Windows listener without connecting to the application."""
 
@@ -1305,6 +1343,9 @@ def _windows_listener_inventory(
                 if expected_executables is not None
                 else []
             ),
+            "expected_venv_base_executables": [
+                str(path) for path in expected_venv_base_executables
+            ],
         },
     }
     powershell = shutil.which("powershell.exe") or shutil.which("powershell")
@@ -1327,32 +1368,55 @@ def _windows_listener_inventory(
         result["reason"] = "windows_socket_inventory_invalid_json"
         return result
     records = decoded if isinstance(decoded, list) else [decoded]
-    normalized = [record for record in records if isinstance(record, dict)]
+    raw_records = [record for record in records if isinstance(record, dict)]
+    normalized: list[dict[str, Any]] = []
+    command_lines: list[str] = []
+    for record in raw_records:
+        sanitized = dict(record)
+        command_lines.append(str(sanitized.pop("command_line", "") or ""))
+        normalized.append(sanitized)
     result.update({"inventory_ok": True, "present": bool(normalized), "records": normalized})
     if expected_executables is None:
         return result
     expected = {
-        os.path.normcase(os.path.normpath(str(path))) for path in expected_executables
+        str(path).replace("/", "\\").casefold() for path in expected_executables
     }
-    matching = [
-        record
-        for record in normalized
-        if str(record.get("local_address") or "") == DEFAULT_HOST
-        if os.path.normcase(os.path.normpath(str(record.get("executable_path") or "")))
-        in expected
-    ]
+    expected_venv_bases = {
+        str(path).replace("/", "\\").casefold()
+        for path in expected_venv_base_executables
+    }
+    matching: list[dict[str, Any]] = []
+    match_basis: list[str] = []
+    for index, record in enumerate(normalized):
+        executable = str(record.get("executable_path") or "").replace("/", "\\").casefold()
+        command_image = _windows_command_image(command_lines[index])
+        basis = ""
+        if executable in expected:
+            basis = "managed_os_image"
+        elif executable in expected_venv_bases and command_image in expected:
+            basis = "venv_redirector_chain"
+        if (
+            str(record.get("local_address") or "") == DEFAULT_HOST
+            and basis
+        ):
+            matching.append(record)
+            match_basis.append(basis)
     pids: set[int] = {
         int(record["pid"]) for record in normalized if isinstance(record.get("pid"), int)
     }
     result["identity"] = {
         "proven": len(normalized) == 1 and len(pids) == 1 and len(matching) == 1,
         "expected_executables": [str(path) for path in expected_executables],
+        "expected_venv_base_executables": [
+            str(path) for path in expected_venv_base_executables
+        ],
         "loopback_only": all(
             str(record.get("local_address") or "") == DEFAULT_HOST for record in normalized
         ),
         "matching_pids": sorted(
             int(record["pid"]) for record in matching if isinstance(record.get("pid"), int)
         ),
+        "match_basis": match_basis,
         "observed_pids": sorted(pids),
     }
     return result
@@ -2064,6 +2128,9 @@ def _read_only_reconcile_plan(
     listener = _windows_listener_inventory(
         port=state.port,
         expected_executables=(runtime_python, headroom_cli),
+        expected_venv_base_executables=_windows_venv_base_executables(
+            Path(state.venv_dir)
+        ),
         timeout=timeout,
     )
     upstream = {
