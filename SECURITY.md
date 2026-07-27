@@ -28,8 +28,8 @@ The first-install path must not:
 
 ```bash
 scripts/audit-repo-readiness.sh
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-python3 -m py_compile $(find src tests -name '*.py' | sort)
+uv run --isolated --no-project --with pytest --with PyYAML -- python scripts/run-isolated-unit-tests.py
+python -m py_compile $(find src tests -name '*.py' | sort)
 bash -n scripts/*.sh
 ```
 
