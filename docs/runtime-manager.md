@@ -111,9 +111,9 @@ headroom-runtime reconcile --dry-run --json
 headroom-runtime reconcile --apply --json
 ```
 
-The first command is read-only and returns `MIGRATION_REQUIRED` when applicable. Apply is allowed only when manager state, purge marker, and the complete non-supervisor manifest identity prove ownership. Foreign profiles are never adopted.
+The first command is read-only and returns `MIGRATION_REQUIRED` when applicable. Apply is allowed only when manager state, purge marker, complete non-supervisor manifest identity, native supervisor identity, and the OS listener PID/executable identity prove ownership. Foreign profiles are never adopted.
 
-`reconcile --dry-run --json` is a strict zero-write inventory: it does not acquire the transaction lock, append `manager.log`, download packages, rewrite state/manifest files, or touch the listener/supervisor. The `headroom-reconcile-plan-v1` payload reads manager state, purge marker, runtime executables and pinned state versions, the complete manifest mismatch set, loopback readiness, native supervisor identity, and parsed upstream lifecycle status independently. A healthy `/readyz` result by itself returns `OWNERSHIP_AMBIGUOUS`; it is never adoption evidence.
+`reconcile --dry-run --json` is a strict zero-write inventory: it does not acquire the transaction lock, append runtime logs, download packages, rewrite state/manifest files, connect to the listener, or touch the supervisor. The `headroom-reconcile-plan-v1` payload reads manager state, purge marker, runtime executables and pinned state versions, the complete manifest mismatch set, native supervisor identity, and Windows OS socket/process tables independently. It deliberately does **not** call `/readyz` or `headroom install status`, because application-level discovery can append to proxy/access logs. The payload reports both probes as `not_probed_read_only`. A listener PID is ownership evidence only when its executable is the exact managed venv `python.exe` or `headroom.exe` and all independent manager identities also match. Unknown, inaccessible, multiple, non-loopback, or mismatched listener identity fails closed.
 
 When manager state is absent, the planner checks the default loopback port `8787`. Use `--probe-port <port>` to inventory a known non-default listener without scanning unrelated local ports. `--probe-port` is read-only discovery metadata and is rejected with `--apply`.
 
@@ -122,7 +122,7 @@ The read-only decision matrix is:
 | Decision | Meaning | Mutation allowed by dry-run? |
 |---|---|---:|
 | `RECONCILIATION_NOT_REQUIRED` | Complete manager manifest and live supervisor contracts already match. | No |
-| `MIGRATION_REQUIRED` | Positive manager/runtime/manifest/listener/upstream/supervisor identity; only the managed Windows task contract needs migration. | No; review before separate `--apply` |
+| `MIGRATION_REQUIRED` | Positive manager/runtime/manifest/OS-listener/supervisor identity; only the managed Windows task contract needs migration. | No; review before separate `--apply` |
 | `REINSTALL_REQUIRED` | Positive ownership, but the manifest contains legacy environment-mutation history (optionally with the legacy task contract). The records are rollback history, not fields that may be deleted to force adoption. | No |
 | `OWNERSHIP_AMBIGUOUS` / `RECONCILE_BLOCKED` | Manager identity is absent, foreign, incomplete, or has additional mismatches. | No |
 

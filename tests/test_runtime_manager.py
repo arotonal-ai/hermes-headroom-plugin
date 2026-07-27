@@ -82,6 +82,40 @@ class RuntimeManagerTest(unittest.TestCase):
             "evidence": [f"test-supervisor:{service_name}"],
         }
 
+    def _listener_inventory(
+        self,
+        state: manager.RuntimeState | None = None,
+        *,
+        port: int | None = None,
+        present: bool | None = True,
+        proven: bool = True,
+    ) -> dict[str, object]:
+        selected_port = state.port if state is not None else int(port or manager.DEFAULT_PORT)
+        expected_executables = (
+            [
+                str(manager._exe(Path(state.venv_dir), "python")),
+                str(manager._exe(Path(state.venv_dir), "headroom")),
+            ]
+            if state is not None
+            else []
+        )
+        return {
+            "method": "windows_os_socket_process_inventory",
+            "probe_port": selected_port,
+            "http_probe": "not_probed_read_only",
+            "inventory_ok": present is not None,
+            "present": present,
+            "records": (
+                [{"pid": 4242, "executable_path": expected_executables[0]}]
+                if present and expected_executables
+                else []
+            ),
+            "identity": {
+                "proven": proven,
+                "expected_executables": expected_executables,
+            },
+        }
+
     def _fake_cli(self, state: manager.RuntimeState) -> Path:
         cli = manager._exe(Path(state.venv_dir), "headroom")
         cli.parent.mkdir(parents=True, exist_ok=True)
@@ -1187,6 +1221,67 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertTrue(contract["windows_task_contract"]["migration_required"])
         self.assertIn("windows_task_contract", contract["mismatches"])
 
+    def test_windows_listener_inventory_uses_os_tables_without_http(self):
+        expected_python = Path("C:/Hermes/headroom/venv/Scripts/python.exe")
+        expected_headroom = Path("C:/Hermes/headroom/venv/Scripts/headroom.exe")
+        completed = subprocess.CompletedProcess(
+            ["powershell.exe"],
+            0,
+            json.dumps(
+                [
+                    {
+                        "local_address": "127.0.0.1",
+                        "local_port": 57881,
+                        "pid": 4242,
+                        "executable_path": str(expected_headroom),
+                    }
+                ]
+            ),
+        )
+        with (
+            patch.object(manager.shutil, "which", return_value="powershell.exe"),
+            patch.object(manager, "_run", return_value=completed) as run,
+        ):
+            inventory = manager._windows_listener_inventory(
+                port=57881,
+                expected_executables=(expected_python, expected_headroom),
+                timeout=60,
+            )
+        self.assertIs(inventory["inventory_ok"], True)
+        self.assertIs(inventory["present"], True)
+        self.assertIs(inventory["identity"]["proven"], True)
+        self.assertEqual(inventory["http_probe"], "not_probed_read_only")
+        command = run.call_args.args[0]
+        self.assertIn("Get-NetTCPConnection", command[-1])
+        self.assertNotIn("readyz", command[-1].lower())
+        self.assertNotIn("http", command[-1].lower())
+        self.assertIsNone(run.call_args.kwargs["log"])
+
+    def test_windows_listener_inventory_fails_closed_for_non_loopback(self):
+        expected_python = Path("C:/Hermes/headroom/venv/Scripts/python.exe")
+        completed = subprocess.CompletedProcess(
+            ["powershell.exe"],
+            0,
+            json.dumps(
+                {
+                    "local_address": "0.0.0.0",
+                    "local_port": 57881,
+                    "pid": 4242,
+                    "executable_path": str(expected_python),
+                }
+            ),
+        )
+        with (
+            patch.object(manager.shutil, "which", return_value="powershell.exe"),
+            patch.object(manager, "_run", return_value=completed),
+        ):
+            inventory = manager._windows_listener_inventory(
+                port=57881, expected_executables=(expected_python,), timeout=60
+            )
+        self.assertIs(inventory["present"], True)
+        self.assertIs(inventory["identity"]["loopback_only"], False)
+        self.assertIs(inventory["identity"]["proven"], False)
+
     def test_reconcile_is_read_only_by_default(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "runtime"
@@ -1209,7 +1304,12 @@ class RuntimeManagerTest(unittest.TestCase):
             before = manifest.read_bytes()
             with (
                 patch.object(manager, "_is_windows", return_value=True, create=True),
-                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(
+                    manager,
+                    "_windows_listener_inventory",
+                    return_value=self._listener_inventory(state),
+                ),
+                patch.object(manager, "readyz") as ready,
                 patch.object(
                     manager,
                     "_supervisor_contract",
@@ -1220,7 +1320,7 @@ class RuntimeManagerTest(unittest.TestCase):
                         "evidence": [f"scheduled-task:{service}-startup", f"scheduled-task:{service}-health"],
                     },
                 ),
-                patch.object(manager, "_upstream_status_evidence", return_value={"ok": True}),
+                patch.object(manager, "_upstream_status_evidence") as upstream,
                 patch.object(manager, "_acquire_lock") as acquire,
                 patch.object(manager, "_safe_reconcile", create=True) as apply,
             ):
@@ -1231,6 +1331,8 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(output)["decision"], "MIGRATION_REQUIRED")
         self.assertEqual(before, after)
+        ready.assert_not_called()
+        upstream.assert_not_called()
         acquire.assert_not_called()
         apply.assert_not_called()
 
@@ -1254,6 +1356,16 @@ class RuntimeManagerTest(unittest.TestCase):
                     {"kind": "windows-task", "path": f"{service}-health", "metadata": {}},
                 ],
             )
+            proxy_log = manager._workspace_dir(root) / "logs" / "proxy.log"
+            proxy_log.parent.mkdir(parents=True, exist_ok=True)
+            proxy_log.write_bytes(b"preexisting-log\n")
+
+            def application_probe_would_write(*args, **kwargs):
+                del args, kwargs
+                with proxy_log.open("ab") as stream:
+                    stream.write(b"forbidden-dry-run-write\n")
+                return {"ok": True}
+
             before = {
                 str(path.relative_to(root)): (path.stat().st_mtime_ns, path.read_bytes())
                 for path in root.rglob("*") if path.is_file()
@@ -1265,16 +1377,20 @@ class RuntimeManagerTest(unittest.TestCase):
                 "evidence": [f"scheduled-task:{service}-startup", f"scheduled-task:{service}-health"],
                 "reasons": ["manifest:legacy-task-contract"],
             }
-            upstream = {
-                "ok": True,
-                "exit_code": 0,
-                "semantic": {"ok": True, "profile": state.profile, "port": state.port},
-            }
             with (
                 patch.object(manager, "_is_windows", return_value=True),
-                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(
+                    manager,
+                    "_windows_listener_inventory",
+                    return_value=self._listener_inventory(state),
+                ),
+                patch.object(manager, "readyz", side_effect=application_probe_would_write) as ready,
                 patch.object(manager, "_supervisor_contract", return_value=supervisor),
-                patch.object(manager, "_upstream_status_evidence", return_value=upstream),
+                patch.object(
+                    manager,
+                    "_upstream_status_evidence",
+                    side_effect=application_probe_would_write,
+                ) as upstream,
                 patch.object(manager, "_acquire_lock") as acquire,
                 patch.object(manager, "_safe_reconcile") as apply,
             ):
@@ -1297,8 +1413,16 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertIn("mutation_history_requires_symmetric_rollback", payload["adoption"]["reasons"])
         self.assertTrue(payload["next_steps"])
         self.assertTrue(payload["rollback"])
+        self.assertEqual(
+            payload["inventory"]["listener"]["http_probe"], "not_probed_read_only"
+        )
+        self.assertEqual(
+            payload["inventory"]["upstream_status"]["status"], "not_probed_read_only"
+        )
         self.assertEqual(before, after)
         self.assertFalse(lock_exists)
+        ready.assert_not_called()
+        upstream.assert_not_called()
         acquire.assert_not_called()
         apply.assert_not_called()
 
@@ -1341,12 +1465,17 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertNotIn("use the pinned upstream manifest removal path", guidance)
         acquire.assert_not_called()
 
-    def test_reconcile_never_adopts_a_healthy_listener_without_manager_identity(self):
+    def test_reconcile_never_adopts_an_os_listener_without_manager_identity(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "absent-runtime"
             with (
                 patch.object(manager, "_is_windows", return_value=True),
-                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(
+                    manager,
+                    "_windows_listener_inventory",
+                    return_value=self._listener_inventory(port=manager.DEFAULT_PORT),
+                ),
+                patch.object(manager, "readyz") as ready,
                 patch.object(manager, "_acquire_lock") as acquire,
             ):
                 code, output = self._run_main(
@@ -1357,10 +1486,14 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(payload["decision"], "OWNERSHIP_AMBIGUOUS")
         self.assertEqual(payload["classification"], "foreign_or_unmanaged")
         self.assertIs(payload["writes_performed"], False)
-        self.assertIs(payload["inventory"]["listener"]["ok"], True)
+        self.assertIs(payload["inventory"]["listener"]["present"], True)
+        self.assertEqual(
+            payload["inventory"]["listener"]["http_probe"], "not_probed_read_only"
+        )
         self.assertIs(payload["inventory"]["manager_state"]["present"], False)
         self.assertIs(payload["adoption"]["eligible"], False)
         self.assertFalse(root.exists())
+        ready.assert_not_called()
         acquire.assert_not_called()
 
     def test_reconcile_can_probe_a_nondefault_listener_when_manager_state_is_absent(self):
@@ -1368,7 +1501,12 @@ class RuntimeManagerTest(unittest.TestCase):
             root = Path(td) / "absent-runtime"
             with (
                 patch.object(manager, "_is_windows", return_value=True),
-                patch.object(manager, "readyz", return_value={"ok": True}) as ready,
+                patch.object(
+                    manager,
+                    "_windows_listener_inventory",
+                    return_value=self._listener_inventory(port=18787),
+                ) as listener_inventory,
+                patch.object(manager, "readyz") as ready,
                 patch.object(manager, "_acquire_lock") as acquire,
             ):
                 code, output = self._run_main(
@@ -1386,7 +1524,10 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(payload["decision"], "OWNERSHIP_AMBIGUOUS")
         self.assertEqual(payload["inventory"]["listener"]["probe_port"], 18787)
-        ready.assert_called_once_with("http://127.0.0.1:18787")
+        listener_inventory.assert_called_once_with(
+            port=18787, expected_executables=None, timeout=60
+        )
+        ready.assert_not_called()
         self.assertFalse(root.exists())
         acquire.assert_not_called()
 
@@ -1466,8 +1607,13 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(manager, "_is_windows", return_value=True),
                 patch.object(manager, "_manifest_contract", return_value=manifest),
                 patch.object(manager, "_supervisor_contract", return_value=supervisor),
-                patch.object(manager, "readyz", return_value={"ok": True}),
-                patch.object(manager, "_upstream_status_evidence", return_value={"ok": True}),
+                patch.object(
+                    manager,
+                    "_windows_listener_inventory",
+                    return_value=self._listener_inventory(state),
+                ),
+                patch.object(manager, "readyz") as ready,
+                patch.object(manager, "_upstream_status_evidence") as upstream,
                 patch.object(manager, "_acquire_lock") as acquire,
             ):
                 code, output = self._run_main(
@@ -1477,6 +1623,8 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(payload["decision"], "RECONCILIATION_NOT_REQUIRED")
         self.assertIs(payload["ownership"]["proven"], True)
+        ready.assert_not_called()
+        upstream.assert_not_called()
         acquire.assert_not_called()
 
     def test_embedded_windows_lifecycle_scripts_compile(self):

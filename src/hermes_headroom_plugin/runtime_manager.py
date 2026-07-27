@@ -1264,6 +1264,100 @@ def _tcp_port_open(port: int) -> bool:
         return False
 
 
+_WINDOWS_LISTENER_INVENTORY_PS = "\n".join(  # noqa: FLY002
+    (
+        "$ErrorActionPreference = 'Stop'",
+        "$items = @(Get-NetTCPConnection -State Listen -ErrorAction Stop |",
+        "    Where-Object { $_.LocalPort -eq __PORT__ } |",
+        "    Select-Object LocalAddress, LocalPort, OwningProcess)",
+        "$rows = @()",
+        "foreach ($item in $items) {",
+        '    $proc = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $item.OwningProcess) -ErrorAction Stop',
+        "    $rows += [PSCustomObject]@{",
+        "        local_address = $item.LocalAddress",
+        "        local_port = [int]$item.LocalPort",
+        "        pid = [int]$item.OwningProcess",
+        "        executable_path = $proc.ExecutablePath",
+        "    }",
+        "}",
+        "@($rows) | ConvertTo-Json -Compress -Depth 4",
+    )
+)
+
+
+def _windows_listener_inventory(
+    *, port: int, expected_executables: Sequence[Path] | None, timeout: int
+) -> dict[str, Any]:
+    """Inventory a Windows listener without connecting to the application."""
+
+    selected_port = _validate_port(port)
+    result: dict[str, Any] = {
+        "method": "windows_os_socket_process_inventory",
+        "probe_port": selected_port,
+        "http_probe": "not_probed_read_only",
+        "inventory_ok": False,
+        "present": None,
+        "records": [],
+        "identity": {
+            "proven": False,
+            "expected_executables": (
+                [str(path) for path in expected_executables]
+                if expected_executables is not None
+                else []
+            ),
+        },
+    }
+    powershell = shutil.which("powershell.exe") or shutil.which("powershell")
+    if powershell is None:
+        result["reason"] = "powershell_unavailable"
+        return result
+    script = _WINDOWS_LISTENER_INVENTORY_PS.replace("__PORT__", str(selected_port))
+    proc = _run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+        timeout=min(max(timeout, 1), 30),
+        log=None,
+        env=os.environ.copy(),
+    )
+    if proc.returncode != 0:
+        result.update({"reason": "windows_socket_inventory_failed", "exit_code": proc.returncode})
+        return result
+    try:
+        decoded = json.loads(proc.stdout.strip() or "[]")
+    except json.JSONDecodeError:
+        result["reason"] = "windows_socket_inventory_invalid_json"
+        return result
+    records = decoded if isinstance(decoded, list) else [decoded]
+    normalized = [record for record in records if isinstance(record, dict)]
+    result.update({"inventory_ok": True, "present": bool(normalized), "records": normalized})
+    if expected_executables is None:
+        return result
+    expected = {
+        os.path.normcase(os.path.normpath(str(path))) for path in expected_executables
+    }
+    matching = [
+        record
+        for record in normalized
+        if str(record.get("local_address") or "") == DEFAULT_HOST
+        if os.path.normcase(os.path.normpath(str(record.get("executable_path") or "")))
+        in expected
+    ]
+    pids: set[int] = {
+        int(record["pid"]) for record in normalized if isinstance(record.get("pid"), int)
+    }
+    result["identity"] = {
+        "proven": len(normalized) == 1 and len(pids) == 1 and len(matching) == 1,
+        "expected_executables": [str(path) for path in expected_executables],
+        "loopback_only": all(
+            str(record.get("local_address") or "") == DEFAULT_HOST for record in normalized
+        ),
+        "matching_pids": sorted(
+            int(record["pid"]) for record in matching if isinstance(record.get("pid"), int)
+        ),
+        "observed_pids": sorted(pids),
+    }
+    return result
+
+
 def _manifest_path(root: Path, profile: str) -> Path:
     return _workspace_dir(root) / "deploy" / profile / "manifest.json"
 
@@ -1876,9 +1970,15 @@ def _read_only_reconcile_plan(
         selected_probe_port = (
             DEFAULT_PORT if probe_port is None else _validate_port(probe_port)
         )
-        listener = readyz(_proxy_url(selected_probe_port))
-        listener = {**listener, "probe_port": selected_probe_port}
-        if listener.get("ok"):
+        listener = _windows_listener_inventory(
+            port=selected_probe_port, expected_executables=None, timeout=timeout
+        )
+        if listener.get("present") is not False:
+            listener_reason = (
+                "os_listener_without_manager_identity"
+                if listener.get("present") is True
+                else "listener_inventory_unavailable"
+            )
             return (
                 {
                     "schema": "headroom-reconcile-plan-v1",
@@ -1896,7 +1996,9 @@ def _read_only_reconcile_plan(
                     },
                     "ownership": {
                         "proven": False,
-                        "evidence": ["listener_readiness_only"],
+                        "evidence": (
+                            ["os_listener_present"] if listener.get("present") is True else []
+                        ),
                         "missing": [
                             "manager_state_identity",
                             "purge_marker",
@@ -1907,7 +2009,7 @@ def _read_only_reconcile_plan(
                     },
                     "adoption": {
                         "eligible": False,
-                        "reasons": ["healthy_listener_is_not_ownership_evidence"],
+                        "reasons": [listener_reason],
                     },
                     "next_steps": [
                         "preserve the listener and inspect its owning process, manifest, supervisor and runtime independently",
@@ -1937,18 +2039,18 @@ def _read_only_reconcile_plan(
 
     marker_valid = _safe_to_purge(root)
     runtime_python = _exe(Path(state.venv_dir), "python")
-    headroom = _exe(Path(state.venv_dir), "headroom")
+    headroom_cli = _exe(Path(state.venv_dir), "headroom")
     runtime_identity = {
         "ok": bool(
             runtime_python.is_file()
-            and headroom.is_file()
+            and headroom_cli.is_file()
             and state.runtime_version == RUNTIME_VERSION
             and state.litellm_version == LITELLM_VERSION
             and state.headroom_spec == DEFAULT_HEADROOM_SPEC
             and state.litellm_spec == DEFAULT_LITELLM_SPEC
         ),
         "python_present": runtime_python.is_file(),
-        "headroom_cli_present": headroom.is_file(),
+        "headroom_cli_present": headroom_cli.is_file(),
         "runtime_version": state.runtime_version,
         "litellm_version": state.litellm_version,
         "specs_exact": (
@@ -1959,20 +2061,16 @@ def _read_only_reconcile_plan(
     manifest_contract = _manifest_contract(
         root, profile=state.profile, port=state.port, preset=state.preset
     )
-    listener = readyz(state.proxy_url)
-    upstream = (
-        _upstream_status_evidence(
-            headroom=headroom,
-            root=root,
-            profile=state.profile,
-            preset=state.preset,
-            port=state.port,
-            timeout=timeout,
-            write_log=False,
-        )
-        if headroom.is_file()
-        else {"ok": False, "reason": "managed_cli_missing"}
+    listener = _windows_listener_inventory(
+        port=state.port,
+        expected_executables=(runtime_python, headroom_cli),
+        timeout=timeout,
     )
+    upstream = {
+        "status": "not_probed_read_only",
+        "ok": None,
+        "reason": "application_level_status_can_write_runtime_logs",
+    }
     supervisor = _supervisor_contract(root, profile=state.profile, preset=state.preset)
     expected_service = f"headroom-{state.profile}"
     supervisor_identity = bool(
@@ -1994,9 +2092,8 @@ def _read_only_reconcile_plan(
         "purge_marker": marker_valid,
         "manifest_base_identity": manifest_base_identity,
         "runtime_identity": runtime_identity["ok"],
-        "upstream_lifecycle_identity": upstream.get("ok") is True,
         "supervisor_name_identity": supervisor_identity,
-        "listener_readiness": listener.get("ok") is True,
+        "listener_process_identity": listener.get("identity", {}).get("proven") is True,
     }
     ownership_proven = all(evidence_checks.values())
     inventory = {
@@ -2089,7 +2186,7 @@ def _read_only_reconcile_plan(
                     "eligible": False,
                     "reasons": [
                         "mutation_history_requires_symmetric_rollback",
-                        "healthy_listener_is_not_ownership_evidence",
+                        "listener_process_identity_does_not_replace_manager_identity",
                     ],
                 },
                 "next_steps": next_steps,
