@@ -834,9 +834,33 @@ def _parse_windows_task_xml(
     xml_text: str | bytes, *, launcher: Path, trigger_kind: str
 ) -> dict[str, Any]:
     reasons: list[str] = []
-    try:
-        root = ET.fromstring(xml_text)
-    except ET.ParseError:
+    candidates: list[str] = []
+    if isinstance(xml_text, str):
+        candidates.append(xml_text)
+    else:
+        for encoding in (
+            "utf-16",
+            "utf-16-le",
+            "utf-16-be",
+            "utf-8-sig",
+            "mbcs",
+            "cp1252",
+        ):
+            try:
+                decoded = xml_text.decode(encoding)
+            except (LookupError, UnicodeDecodeError):
+                continue
+            if decoded not in candidates:
+                candidates.append(decoded)
+    root: ET.Element | None = None
+    for candidate in candidates:
+        normalized = candidate.lstrip("\ufeff \t\r\n")
+        try:
+            root = ET.fromstring(normalized)
+            break
+        except ET.ParseError:
+            continue
+    if root is None:
         return {"ok": False, "exists": True, "reasons": ["invalid_xml"]}
     settings = _xml_first(root, "Settings")
     enabled_text = _xml_direct_text(settings, "Enabled") if settings is not None else ""

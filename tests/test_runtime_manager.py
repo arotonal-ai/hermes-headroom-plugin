@@ -1087,9 +1087,15 @@ class RuntimeManagerTest(unittest.TestCase):
         health_utf16 = manager._parse_windows_task_xml(
             health_xml.encode("utf-16"), launcher=launcher, trigger_kind="health"
         )
+        health_prefixed_utf16 = manager._parse_windows_task_xml(
+            ("\r\n\ufeff" + health_xml).encode("utf-16-le"),
+            launcher=launcher,
+            trigger_kind="health",
+        )
         self.assertTrue(startup["ok"])
         self.assertTrue(health["ok"])
         self.assertTrue(health_utf16["ok"])
+        self.assertTrue(health_prefixed_utf16["ok"])
         plain_launcher = Path(r"C:\Managed\ensure-headroom-hidden.vbs")
         plain_xml = health_xml.replace(str(launcher), str(plain_launcher)).replace(
             f'"{plain_launcher}"', str(plain_launcher)
