@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import locale
 import os
 import re
 import shutil
@@ -832,7 +831,7 @@ def _windows_arguments_match(value: str, launcher: Path) -> bool:
 
 
 def _parse_windows_task_xml(
-    xml_text: str, *, launcher: Path, trigger_kind: str
+    xml_text: str | bytes, *, launcher: Path, trigger_kind: str
 ) -> dict[str, Any]:
     reasons: list[str] = []
     try:
@@ -881,18 +880,6 @@ def _parse_windows_task_xml(
     }
 
 
-def _decode_windows_task_xml(payload: bytes) -> str:
-    encodings = ["utf-16", "utf-8-sig", locale.getpreferredencoding(False)]
-    if b"\x00" in payload[:100] and not payload.startswith((b"\xff\xfe", b"\xfe\xff")):
-        encodings.insert(0, "utf-16-le")
-    for encoding in dict.fromkeys(encodings):
-        try:
-            return payload.decode(encoding)
-        except (LookupError, UnicodeDecodeError):
-            continue
-    return payload.decode("utf-8", errors="replace")
-
-
 def _query_windows_task_xml(task_name: str) -> dict[str, Any]:
     try:
         proc = subprocess.run(
@@ -907,7 +894,7 @@ def _query_windows_task_xml(task_name: str) -> dict[str, Any]:
     if proc.returncode != 0:
         return {"exists": False, "xml": "", "reason": "not_found"}
     output = proc.stdout if isinstance(proc.stdout, bytes) else str(proc.stdout).encode()
-    return {"exists": True, "xml": _decode_windows_task_xml(output)}
+    return {"exists": True, "xml": output}
 
 
 def _probe_exists(command: Sequence[str]) -> bool:
@@ -982,8 +969,11 @@ def _supervisor_contract(root: Path, *, profile: str, preset: str) -> dict[str, 
             parsed = {"ok": False, "exists": False, "reasons": [queried.get("reason", "not_found")]}
         else:
             evidence.append(f"scheduled-task:{task_name}")
+            xml_payload = queried.get("xml", b"")
+            if not isinstance(xml_payload, (str, bytes)):
+                xml_payload = b""
             parsed = _parse_windows_task_xml(
-                str(queried.get("xml", "")), launcher=launcher, trigger_kind=kind
+                xml_payload, launcher=launcher, trigger_kind=kind
             )
         tasks[kind] = parsed
         reasons.extend(f"{kind}:{reason}" for reason in parsed.get("reasons", []))

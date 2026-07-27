@@ -1084,8 +1084,12 @@ class RuntimeManagerTest(unittest.TestCase):
         health = manager._parse_windows_task_xml(
             health_xml, launcher=launcher, trigger_kind="health"
         )
+        health_utf16 = manager._parse_windows_task_xml(
+            health_xml.encode("utf-16"), launcher=launcher, trigger_kind="health"
+        )
         self.assertTrue(startup["ok"])
         self.assertTrue(health["ok"])
+        self.assertTrue(health_utf16["ok"])
         plain_launcher = Path(r"C:\Managed\ensure-headroom-hidden.vbs")
         plain_xml = health_xml.replace(str(launcher), str(plain_launcher)).replace(
             f'"{plain_launcher}"', str(plain_launcher)
@@ -1257,8 +1261,8 @@ class RuntimeManagerTest(unittest.TestCase):
                     manager,
                     "_query_windows_task_xml",
                     side_effect=[
-                        {"exists": True, "xml": startup_xml},
-                        {"exists": True, "xml": health_xml},
+                        {"exists": True, "xml": startup_xml.encode("utf-16")},
+                        {"exists": True, "xml": health_xml.encode("utf-16")},
                     ],
                 ),
             ):
@@ -1267,6 +1271,8 @@ class RuntimeManagerTest(unittest.TestCase):
                 )
         self.assertFalse(contract["ok"])
         self.assertIn("unexpected_windows_service", contract["reasons"])
+        self.assertNotIn("startup:invalid_xml", contract["reasons"])
+        self.assertNotIn("health:invalid_xml", contract["reasons"])
 
     def test_reconcile_apply_requires_post_apply_durability(self):
         with tempfile.TemporaryDirectory() as td:
