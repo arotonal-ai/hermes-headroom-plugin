@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Derive `RUNTIME_FULL_DURABLE` from parsed Headroom lifecycle semantics and matching native supervisor evidence; exit code `0` plus a ready HTTP proxy no longer accepts `Status: stopped` or incomplete/ambiguous status output.
 - Isolate canonical unit verification from live operator `HOME`, `HERMES_HOME`, `USERPROFILE`, inherited `HEADROOM_*` settings, and global supervisor discovery; retain explicit foreign-supervisor tests.
 - Skip the Windows symlink-escape fixture only when `WinError 1314` proves Developer Mode/elevation is unavailable, while preserving the security assertion everywhere symlinks can be created.
 - Replace the repository-mutating `uv run --with pytest` path with a full-suite `uv --isolated --no-project` runner; direct pytest runs receive equivalent host-environment isolation.

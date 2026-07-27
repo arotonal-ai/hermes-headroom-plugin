@@ -39,7 +39,7 @@ The manager:
 - rejects filesystem, home, Hermes-home, shared-temp, shallow, non-directory, and non-empty unowned runtime roots;
 - makes the runtime root private (`0700` best-effort), requires a private marker, and deletes only validated manager-owned top-level entries;
 - on the certified Linux/macOS path, anchors recursive deletion to an open runtime-root descriptor and uses Python's symlink-attack-resistant `rmtree`; any unexpected entry, path swap, or deletion error fails closed;
-- reports `RUNTIME_FULL_DURABLE` only after the saved upstream manifest matches the complete manager-owned identity/environment/proxy-argument contract, upstream status passes, readiness succeeds, and compress → retrieve recovers the sentinel.
+- reports `RUNTIME_FULL_DURABLE` only after the saved upstream manifest matches the complete manager-owned identity/environment/proxy-argument contract, upstream status parses unambiguously as the expected profile/preset/runtime/supervisor/scope/port with `Status: running` and `Healthy: yes`, the expected native supervisor artifact exists, readiness succeeds, and compress → retrieve recovers the sentinel.
 
 It does **not** change Hermes model/provider routing, write persistent shell environment blocks, install API keys, enable a paid provider, or run from `register()`.
 
@@ -90,7 +90,7 @@ Use a non-default loopback port:
 headroom-runtime setup --port 18787 --json
 ```
 
-A successful `doctor` returns exit code `0` and decision `RUNTIME_FULL_DURABLE`.
+A successful `doctor` returns exit code `0` and decision `RUNTIME_FULL_DURABLE`. Exit code `0` from upstream `install status` is necessary but insufficient: its lifecycle and identity fields are parsed and cross-checked before the durable decision is emitted.
 
 ## Platform lifecycle
 
@@ -123,7 +123,7 @@ Key files:
 | `venv-0.32.1/` | isolated official runtime |
 | `workspace/` | upstream deployment manifest/workspace |
 
-Upstream's deployment manifest remains the supervisor authority. The manager state only records how the plugin-owned runtime was created and located.
+Upstream's deployment manifest remains the supervisor authority. The manager state only records how the plugin-owned runtime was created and located; current durability is derived from the manifest, parsed live lifecycle semantics, native supervisor evidence, and runtime probes. Existing state files remain readable and require no schema migration.
 
 ## Rollback
 
@@ -145,6 +145,7 @@ If state, the purge marker, or the saved complete manager-owned manifest contrac
 
 - The manager requires Python 3.11+ and network access to official PyPI during first setup.
 - A host without a usable native user supervisor cannot claim durable lifecycle from dry-run or unit tests alone.
+- Headroom 0.32.1 does not expose JSON for `install status`, so the manager uses a version-pinned parser for its documented labels. Missing or duplicate fields, unknown lifecycle values, and identity mismatches fail closed to `RUNTIME_PARTIAL`; an upstream format change requires an explicit adapter update.
 - Memory CCR markers intentionally do not survive runtime restart.
 - WSL2 and Termux require target-host evidence; they are not implied by Linux CI.
 - Provider-proxy routing remains outside this manager and outside the portable-core claim.

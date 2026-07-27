@@ -127,7 +127,7 @@ headroom-runtime doctor --json
 headroom-runtime uninstall --json
 ```
 
-The native Git launcher accepts the same subcommands. A successful doctor reports `RUNTIME_FULL_DURABLE`; if setup or remove is incomplete, manager state and private logs are preserved for rollback. Full contract: [docs/runtime-manager.md](docs/runtime-manager.md).
+The native Git launcher accepts the same subcommands. A successful doctor reports `RUNTIME_FULL_DURABLE` only when the pinned upstream status is semantically `running` and healthy for the expected profile/preset/port, the matching native supervisor artifact exists, readiness passes, and sentinel retrieval succeeds. Exit code `0` alone is not lifecycle evidence. If setup or remove is incomplete, manager state and private logs are preserved for rollback. Full contract: [docs/runtime-manager.md](docs/runtime-manager.md).
 
 The older `scripts/install-production-runtime.py` remains a compatibility path for v0.4 deployments and the optional `llm-monitor` companion. New installs should use the runtime manager.
 
@@ -242,7 +242,7 @@ This report is read-only: no config mutation, no cache purge, no provider/model 
 | `INSTALL_PASS` | Hermes installed and loaded the plugin | `headroom_retrieve` enabled and `/headroom status` responds after restart/new session |
 | `RUNTIME_PARTIAL` | Plugin commands load, but proxy is unavailable | `/headroom status` reports unavailable or `/headroom smoke` fails at `readyz`; status/audit are usable, but compression/retrieval/middleware compression are not active |
 | `RUNTIME_FULL` | Plugin, dependency, and local proxy all work in the current process/session | dependency smoke passes and `/headroom smoke` or runtime-smoke sentinel retrieval passes; eligible intermediate compression can run |
-| `RUNTIME_FULL_DURABLE` | Native user lifecycle is installed and healthy | `headroom-runtime doctor --json` reports upstream status + readyz + compress → retrieve PASS |
+| `RUNTIME_FULL_DURABLE` | Native user lifecycle is installed and healthy | `headroom-runtime doctor --json` verifies matching upstream identity with `Status: running` + `Healthy: yes`, expected supervisor artifact, readyz, and compress → retrieve PASS |
 | `FAIL` | Plugin not usable | plugin not enabled, `/headroom` unavailable after restart/new session, or install required copying owner-local state |
 
 ## Certified runtime matrix
