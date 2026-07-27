@@ -113,6 +113,21 @@ headroom-runtime reconcile --apply --json
 
 The first command is read-only and returns `MIGRATION_REQUIRED` when applicable. Apply is allowed only when manager state, purge marker, and the complete non-supervisor manifest identity prove ownership. Foreign profiles are never adopted.
 
+`reconcile --dry-run --json` is a strict zero-write inventory: it does not acquire the transaction lock, append `manager.log`, download packages, rewrite state/manifest files, or touch the listener/supervisor. The `headroom-reconcile-plan-v1` payload reads manager state, purge marker, runtime executables and pinned state versions, the complete manifest mismatch set, loopback readiness, native supervisor identity, and parsed upstream lifecycle status independently. A healthy `/readyz` result by itself returns `OWNERSHIP_AMBIGUOUS`; it is never adoption evidence.
+
+When manager state is absent, the planner checks the default loopback port `8787`. Use `--probe-port <port>` to inventory a known non-default listener without scanning unrelated local ports. `--probe-port` is read-only discovery metadata and is rejected with `--apply`.
+
+The read-only decision matrix is:
+
+| Decision | Meaning | Mutation allowed by dry-run? |
+|---|---|---:|
+| `RECONCILIATION_NOT_REQUIRED` | Complete manager manifest and live supervisor contracts already match. | No |
+| `MIGRATION_REQUIRED` | Positive manager/runtime/manifest/listener/upstream/supervisor identity; only the managed Windows task contract needs migration. | No; review before separate `--apply` |
+| `REINSTALL_REQUIRED` | Positive ownership, but the manifest contains legacy environment-mutation history (optionally with the legacy task contract). The records are rollback history, not fields that may be deleted to force adoption. | No |
+| `OWNERSHIP_AMBIGUOUS` / `RECONCILE_BLOCKED` | Manager identity is absent, foreign, incomplete, or has additional mismatches. | No |
+
+For `REINSTALL_REQUIRED`, this release intentionally stops at a plan: `--apply` remains limited to the task-contract-only migration and refuses legacy mutation history. Preserve manager state, the manifest, both Task Scheduler XML exports, and backups of every mutation target. After an explicit target-host mutation gate, use the pinned managed Headroom CLI's upstream `install remove --profile <profile>` path so the recorded mutations can be replayed symmetrically; verify that the listener and both tasks are absent; only then run clean `setup`. Do not edit or delete `mutations` manually. If any rollback step is inaccessible or cannot be reversed exactly, stop, restore the target/task backups, and retain the runtime for investigation.
+
 Apply also requires lossless XML snapshots of both existing managed tasks before
 the first mutation. A missing, inaccessible, or transiently unqueryable task is
 not inferred to be safely absent: reconciliation fails closed and does not alter

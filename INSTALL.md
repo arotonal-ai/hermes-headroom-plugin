@@ -75,11 +75,14 @@ Verify and roll back with the same launcher/entry point:
 headroom-runtime status --json
 headroom-runtime doctor --json
 headroom-runtime reconcile --dry-run --json # native Windows plan; no writes
+headroom-runtime reconcile --probe-port 18787 --dry-run --json # inspect a known non-default listener
 headroom-runtime reconcile --apply --json  # explicit manager-owned migration
 headroom-runtime uninstall --json
 ```
 
-The old `scripts/install-production-runtime.py` remains for v0.4 compatibility and optional companion operations only. New runtime installs should use the manager. See [docs/runtime-manager.md](docs/runtime-manager.md).
+`reconcile --dry-run` performs no lock/log/state/manifest/supervisor write. It inventories ownership evidence and all mismatches independently. A healthy foreign listener returns `OWNERSHIP_AMBIGUOUS`; a positively manager-owned Windows deployment with legacy environment-mutation history returns `REINSTALL_REQUIRED` and preserves those records for symmetric rollback. Do not use `--apply` for that case; follow the explicit target-host-gated upgrade and rollback procedure in [docs/runtime-manager.md](docs/runtime-manager.md).
+
+The old `scripts/install-production-runtime.py` remains for v0.4 compatibility and optional companion operations only. New runtime installs should use the manager.
 
 For a clean-instance canary, assert that `127.0.0.1:8787` is free or allocate a distinct loopback port with `--port`. Never count another instance's ready listener as clean-install evidence.
 

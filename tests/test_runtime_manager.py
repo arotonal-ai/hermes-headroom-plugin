@@ -442,6 +442,35 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(payload["decision"], "RUNTIME_FULL_DURABLE")
         self.assertTrue(payload["smoke"]["sentinel_found"])
 
+    def test_doctor_routes_legacy_manifest_mismatch_to_read_only_reconcile(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            state.preset = "persistent-task"
+            manager._write_state(root, state)
+            self._fake_cli(state)
+            self._write_manifest(
+                root,
+                profile=state.profile,
+                preset=state.preset,
+                mutations=[{"target": "legacy-environment"}],
+            )
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(manager, "smoke", return_value={"ok": True, "sentinel_found": True}),
+                patch.object(manager, "_upstream_status_evidence", return_value={"ok": True}),
+                patch.object(manager, "_supervisor_contract", return_value={"ok": False, "present": True}),
+            ):
+                code, output = self._run_main(
+                    ["doctor", "--runtime-root", str(root), "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "RUNTIME_PARTIAL")
+        self.assertEqual(payload["next"], "run headroom-runtime reconcile --dry-run --json")
+
     def test_parse_upstream_status_requires_complete_semantic_identity(self):
         good = manager._parse_upstream_status(
             self._upstream_status_output(),
@@ -470,6 +499,28 @@ class RuntimeManagerTest(unittest.TestCase):
                 )
                 self.assertIs(evidence["ok"], False)
                 self.assertTrue(evidence["reasons"])
+
+    def test_read_only_upstream_status_probe_disables_manager_log_write(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            state = self._state(root)
+            headroom = self._fake_cli(state)
+            completed = subprocess.CompletedProcess(
+                [str(headroom)], 0, self._upstream_status_output()
+            )
+            with patch.object(manager, "_run", return_value=completed) as run:
+                evidence = manager._upstream_status_evidence(
+                    headroom=headroom,
+                    root=root,
+                    profile=state.profile,
+                    preset=state.preset,
+                    port=state.port,
+                    timeout=30,
+                    write_log=False,
+                )
+        self.assertIs(evidence["ok"], True)
+        self.assertIsNone(run.call_args.kwargs["log"])
+        self.assertEqual(run.call_args.kwargs["env"]["PYTHONDONTWRITEBYTECODE"], "1")
 
     def test_status_rejects_stopped_but_healthy_upstream(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1143,6 +1194,8 @@ class RuntimeManagerTest(unittest.TestCase):
             state = self._state(root)
             state.preset = "persistent-task"
             manager._write_state(root, state)
+            self._fake_cli(state)
+            manager._exe(Path(state.venv_dir), "python").write_text("fake", encoding="utf-8")
             service = f"headroom-{state.profile}"
             manifest = self._write_manifest(
                 root,
@@ -1156,6 +1209,19 @@ class RuntimeManagerTest(unittest.TestCase):
             before = manifest.read_bytes()
             with (
                 patch.object(manager, "_is_windows", return_value=True, create=True),
+                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(
+                    manager,
+                    "_supervisor_contract",
+                    return_value={
+                        "ok": False,
+                        "present": True,
+                        "service_name": service,
+                        "evidence": [f"scheduled-task:{service}-startup", f"scheduled-task:{service}-health"],
+                    },
+                ),
+                patch.object(manager, "_upstream_status_evidence", return_value={"ok": True}),
+                patch.object(manager, "_acquire_lock") as acquire,
                 patch.object(manager, "_safe_reconcile", create=True) as apply,
             ):
                 code, output = self._run_main(
@@ -1165,7 +1231,253 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(output)["decision"], "MIGRATION_REQUIRED")
         self.assertEqual(before, after)
+        acquire.assert_not_called()
         apply.assert_not_called()
+
+    def test_reconcile_dry_run_classifies_legacy_mutations_without_any_write(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            state.preset = "persistent-task"
+            manager._write_state(root, state)
+            self._fake_cli(state)
+            manager._exe(Path(state.venv_dir), "python").write_text("fake", encoding="utf-8")
+            service = f"headroom-{state.profile}"
+            self._write_manifest(
+                root,
+                profile=state.profile,
+                preset=state.preset,
+                mutations=[{"target": "legacy-environment"}],
+                artifacts=[
+                    {"kind": "windows-task", "path": f"{service}-startup", "metadata": {}},
+                    {"kind": "windows-task", "path": f"{service}-health", "metadata": {}},
+                ],
+            )
+            before = {
+                str(path.relative_to(root)): (path.stat().st_mtime_ns, path.read_bytes())
+                for path in root.rglob("*") if path.is_file()
+            }
+            supervisor = {
+                "ok": False,
+                "present": True,
+                "service_name": service,
+                "evidence": [f"scheduled-task:{service}-startup", f"scheduled-task:{service}-health"],
+                "reasons": ["manifest:legacy-task-contract"],
+            }
+            upstream = {
+                "ok": True,
+                "exit_code": 0,
+                "semantic": {"ok": True, "profile": state.profile, "port": state.port},
+            }
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(manager, "_supervisor_contract", return_value=supervisor),
+                patch.object(manager, "_upstream_status_evidence", return_value=upstream),
+                patch.object(manager, "_acquire_lock") as acquire,
+                patch.object(manager, "_safe_reconcile") as apply,
+            ):
+                code, output = self._run_main(
+                    ["reconcile", "--runtime-root", str(root), "--dry-run", "--json"]
+                )
+            after = {
+                str(path.relative_to(root)): (path.stat().st_mtime_ns, path.read_bytes())
+                for path in root.rglob("*") if path.is_file()
+            }
+            lock_exists = manager._lock_path(root).exists()
+        payload = json.loads(output)
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["decision"], "REINSTALL_REQUIRED")
+        self.assertEqual(payload["classification"], "manager_owned_legacy_mutations")
+        self.assertIs(payload["writes_performed"], False)
+        self.assertEqual(payload["inventory"]["manifest"]["mismatches"], ["mutations", "windows_task_contract"])
+        self.assertIs(payload["ownership"]["proven"], True)
+        self.assertIs(payload["adoption"]["eligible"], False)
+        self.assertIn("mutation_history_requires_symmetric_rollback", payload["adoption"]["reasons"])
+        self.assertTrue(payload["next_steps"])
+        self.assertTrue(payload["rollback"])
+        self.assertEqual(before, after)
+        self.assertFalse(lock_exists)
+        acquire.assert_not_called()
+        apply.assert_not_called()
+
+    def test_reconcile_with_unproven_legacy_mutations_never_recommends_removal(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            state.preset = "persistent-task"
+            manager._write_state(root, state)
+            self._fake_cli(state)
+            manager._exe(Path(state.venv_dir), "python").write_text("fake", encoding="utf-8")
+            manifest = {
+                "ok": False,
+                "available": True,
+                "mismatches": ["mutations", "port"],
+            }
+            supervisor = {
+                "ok": False,
+                "present": True,
+                "service_name": f"headroom-{state.profile}",
+            }
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "_manifest_contract", return_value=manifest),
+                patch.object(manager, "_supervisor_contract", return_value=supervisor),
+                patch.object(manager, "readyz", return_value={"ok": True}),
+                patch.object(manager, "_upstream_status_evidence", return_value={"ok": True}),
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    ["reconcile", "--runtime-root", str(root), "--dry-run", "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "OWNERSHIP_AMBIGUOUS")
+        self.assertIs(payload["ownership"]["proven"], False)
+        guidance = " ".join(payload["next_steps"])
+        self.assertIn("do not run", guidance)
+        self.assertNotIn("use the pinned upstream manifest removal path", guidance)
+        acquire.assert_not_called()
+
+    def test_reconcile_never_adopts_a_healthy_listener_without_manager_identity(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "absent-runtime"
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "readyz", return_value={"ok": True, "status": 200}),
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    ["reconcile", "--runtime-root", str(root), "--dry-run", "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "OWNERSHIP_AMBIGUOUS")
+        self.assertEqual(payload["classification"], "foreign_or_unmanaged")
+        self.assertIs(payload["writes_performed"], False)
+        self.assertIs(payload["inventory"]["listener"]["ok"], True)
+        self.assertIs(payload["inventory"]["manager_state"]["present"], False)
+        self.assertIs(payload["adoption"]["eligible"], False)
+        self.assertFalse(root.exists())
+        acquire.assert_not_called()
+
+    def test_reconcile_can_probe_a_nondefault_listener_when_manager_state_is_absent(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "absent-runtime"
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "readyz", return_value={"ok": True}) as ready,
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    [
+                        "reconcile",
+                        "--runtime-root",
+                        str(root),
+                        "--probe-port",
+                        "18787",
+                        "--dry-run",
+                        "--json",
+                    ]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "OWNERSHIP_AMBIGUOUS")
+        self.assertEqual(payload["inventory"]["listener"]["probe_port"], 18787)
+        ready.assert_called_once_with("http://127.0.0.1:18787")
+        self.assertFalse(root.exists())
+        acquire.assert_not_called()
+
+    def test_reconcile_rejects_probe_port_with_apply_before_lock_or_mutation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    [
+                        "reconcile",
+                        "--runtime-root",
+                        str(root),
+                        "--probe-port",
+                        "18787",
+                        "--apply",
+                        "--json",
+                    ]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "RECONCILE_BLOCKED")
+        self.assertIn("read-only discovery", payload["detail"])
+        self.assertFalse(root.exists())
+        acquire.assert_not_called()
+
+    def test_reconcile_does_not_claim_current_contract_when_runtime_identity_is_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            state = self._state(root)
+            state.preset = "persistent-task"
+            manager._ensure_marker(root)
+            manager._write_state(root, state)
+            manifest = {"ok": True, "available": True, "mismatches": []}
+            supervisor = {
+                "ok": True,
+                "present": True,
+                "service_name": f"headroom-{state.profile}",
+            }
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "_manifest_contract", return_value=manifest),
+                patch.object(manager, "_supervisor_contract", return_value=supervisor),
+                patch.object(manager, "readyz", return_value={"ok": True}),
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    ["reconcile", "--runtime-root", str(root), "--dry-run", "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "RECONCILE_BLOCKED")
+        self.assertIs(payload["ownership"]["proven"], False)
+        self.assertIn("runtime_identity", payload["ownership"]["missing"])
+        acquire.assert_not_called()
+
+    def test_reconcile_reports_current_contract_only_with_complete_positive_identity(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            state = self._state(root)
+            state.preset = "persistent-task"
+            manager._ensure_marker(root)
+            manager._write_state(root, state)
+            self._fake_cli(state)
+            python_exe = manager._exe(Path(state.venv_dir), "python")
+            python_exe.parent.mkdir(parents=True, exist_ok=True)
+            python_exe.write_text("", encoding="utf-8")
+            manifest = {"ok": True, "available": True, "mismatches": []}
+            supervisor = {
+                "ok": True,
+                "present": True,
+                "service_name": f"headroom-{state.profile}",
+            }
+            with (
+                patch.object(manager, "_is_windows", return_value=True),
+                patch.object(manager, "_manifest_contract", return_value=manifest),
+                patch.object(manager, "_supervisor_contract", return_value=supervisor),
+                patch.object(manager, "readyz", return_value={"ok": True}),
+                patch.object(manager, "_upstream_status_evidence", return_value={"ok": True}),
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    ["reconcile", "--runtime-root", str(root), "--dry-run", "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["decision"], "RECONCILIATION_NOT_REQUIRED")
+        self.assertIs(payload["ownership"]["proven"], True)
+        acquire.assert_not_called()
 
     def test_embedded_windows_lifecycle_scripts_compile(self):
         compile(manager._SAFE_APPLY_SCRIPT, "<safe-apply>", "exec")

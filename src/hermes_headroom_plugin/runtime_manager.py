@@ -657,7 +657,7 @@ def _run(
     command: Sequence[str],
     *,
     timeout: int,
-    log: Path,
+    log: Path | None,
     env: dict[str, str] | None = None,
     input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
@@ -671,7 +671,8 @@ def _run(
         env=env,
         input=input_text,
     )
-    _append_log(log, command, proc.stdout)
+    if log is not None:
+        _append_log(log, command, proc.stdout)
     return proc
 
 
@@ -1113,6 +1114,7 @@ def _upstream_status_evidence(
     preset: str,
     port: int,
     timeout: int,
+    write_log: bool = True,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "available": headroom.is_file(),
@@ -1128,11 +1130,14 @@ def _upstream_status_evidence(
     }
     if not headroom.is_file():
         return result
+    runtime_env = _runtime_env(root)
+    if not write_log:
+        runtime_env["PYTHONDONTWRITEBYTECODE"] = "1"
     proc = _run(
         [str(headroom), "install", "status", "--profile", profile],
         timeout=timeout,
-        log=root / "manager.log",
-        env=_runtime_env(root),
+        log=root / "manager.log" if write_log else None,
+        env=runtime_env,
     )
     semantic = _parse_upstream_status(
         proc.stdout, profile=profile, preset=preset, port=port
@@ -1849,11 +1854,282 @@ def doctor(args: argparse.Namespace) -> int:
             "migration_required": _windows_migration_required(manifest_contract),
             "upstream_status": upstream,
             "supervisor": supervisor,
-            "next": None if full else "inspect manager.log/install.log or run headroom-runtime uninstall",
+            "next": (
+                None
+                if full
+                else "run headroom-runtime reconcile --dry-run --json"
+                if _is_windows() and state.preset == "persistent-task"
+                else "inspect manager.log/install.log or run headroom-runtime uninstall"
+            ),
         },
         as_json=args.json,
     )
     return 0 if full else 2
+
+
+def _read_only_reconcile_plan(
+    root: Path, *, timeout: int, probe_port: int | None = None
+) -> tuple[dict[str, Any], int]:
+    """Build a zero-write ownership and migration plan for an existing runtime."""
+    state = _load_state(root)
+    if state is None:
+        selected_probe_port = (
+            DEFAULT_PORT if probe_port is None else _validate_port(probe_port)
+        )
+        listener = readyz(_proxy_url(selected_probe_port))
+        listener = {**listener, "probe_port": selected_probe_port}
+        if listener.get("ok"):
+            return (
+                {
+                    "schema": "headroom-reconcile-plan-v1",
+                    "decision": "OWNERSHIP_AMBIGUOUS",
+                    "classification": "foreign_or_unmanaged",
+                    "writes_performed": False,
+                    "inventory": {
+                        "manager_state": {"present": False, "valid": False},
+                        "purge_marker": {"valid": False},
+                        "runtime": {"ok": False, "reason": "manager_state_missing"},
+                        "manifest": {"ok": False, "available": False},
+                        "listener": listener,
+                        "supervisor": {"ok": False, "present": None, "reason": "profile_unknown"},
+                        "upstream_status": {"ok": False, "reason": "managed_cli_unknown"},
+                    },
+                    "ownership": {
+                        "proven": False,
+                        "evidence": ["listener_readiness_only"],
+                        "missing": [
+                            "manager_state_identity",
+                            "purge_marker",
+                            "manifest_identity",
+                            "runtime_identity",
+                            "supervisor_identity",
+                        ],
+                    },
+                    "adoption": {
+                        "eligible": False,
+                        "reasons": ["healthy_listener_is_not_ownership_evidence"],
+                    },
+                    "next_steps": [
+                        "preserve the listener and inspect its owning process, manifest, supervisor and runtime independently",
+                        "use a different profile and loopback port unless exact manager ownership can be proven",
+                    ],
+                    "rollback": ["no mutation was attempted"],
+                },
+                2,
+            )
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": "RUNTIME_ABSENT",
+                "classification": "absent",
+                "writes_performed": False,
+                "inventory": {
+                    "manager_state": {"present": False, "valid": False},
+                    "listener": listener,
+                },
+                "ownership": {"proven": False, "evidence": [], "missing": ["manager_state_identity"]},
+                "adoption": {"eligible": False, "reasons": ["runtime_absent"]},
+                "next_steps": ["run headroom-runtime setup --dry-run --json"],
+                "rollback": ["no mutation was attempted"],
+            },
+            2,
+        )
+
+    marker_valid = _safe_to_purge(root)
+    runtime_python = _exe(Path(state.venv_dir), "python")
+    headroom = _exe(Path(state.venv_dir), "headroom")
+    runtime_identity = {
+        "ok": bool(
+            runtime_python.is_file()
+            and headroom.is_file()
+            and state.runtime_version == RUNTIME_VERSION
+            and state.litellm_version == LITELLM_VERSION
+            and state.headroom_spec == DEFAULT_HEADROOM_SPEC
+            and state.litellm_spec == DEFAULT_LITELLM_SPEC
+        ),
+        "python_present": runtime_python.is_file(),
+        "headroom_cli_present": headroom.is_file(),
+        "runtime_version": state.runtime_version,
+        "litellm_version": state.litellm_version,
+        "specs_exact": (
+            state.headroom_spec == DEFAULT_HEADROOM_SPEC
+            and state.litellm_spec == DEFAULT_LITELLM_SPEC
+        ),
+    }
+    manifest_contract = _manifest_contract(
+        root, profile=state.profile, port=state.port, preset=state.preset
+    )
+    listener = readyz(state.proxy_url)
+    upstream = (
+        _upstream_status_evidence(
+            headroom=headroom,
+            root=root,
+            profile=state.profile,
+            preset=state.preset,
+            port=state.port,
+            timeout=timeout,
+            write_log=False,
+        )
+        if headroom.is_file()
+        else {"ok": False, "reason": "managed_cli_missing"}
+    )
+    supervisor = _supervisor_contract(root, profile=state.profile, preset=state.preset)
+    expected_service = f"headroom-{state.profile}"
+    supervisor_identity = bool(
+        supervisor.get("present") is True
+        and supervisor.get("service_name") == expected_service
+    )
+    mismatches = list(manifest_contract.get("mismatches") or [])
+    mismatch_set = set(mismatches)
+    migration_only = bool(mismatch_set) and mismatch_set <= {
+        "mutations",
+        "windows_task_contract",
+    }
+    manifest_base_identity = bool(
+        manifest_contract.get("available")
+        and (manifest_contract.get("ok") or migration_only)
+    )
+    evidence_checks = {
+        "manager_state_identity": True,
+        "purge_marker": marker_valid,
+        "manifest_base_identity": manifest_base_identity,
+        "runtime_identity": runtime_identity["ok"],
+        "upstream_lifecycle_identity": upstream.get("ok") is True,
+        "supervisor_name_identity": supervisor_identity,
+        "listener_readiness": listener.get("ok") is True,
+    }
+    ownership_proven = all(evidence_checks.values())
+    inventory = {
+        "manager_state": {
+            "present": True,
+            "valid": True,
+            "profile": state.profile,
+            "preset": state.preset,
+            "port": state.port,
+        },
+        "purge_marker": {"valid": marker_valid},
+        "runtime": runtime_identity,
+        "manifest": manifest_contract,
+        "listener": listener,
+        "supervisor": supervisor,
+        "upstream_status": upstream,
+    }
+    ownership = {
+        "proven": ownership_proven,
+        "evidence": [key for key, value in evidence_checks.items() if value],
+        "missing": [key for key, value in evidence_checks.items() if not value],
+    }
+
+    if state.preset != "persistent-task":
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": "RECONCILIATION_NOT_APPLICABLE",
+                "classification": "non_windows_task_preset",
+                "writes_performed": False,
+                "inventory": inventory,
+                "ownership": ownership,
+                "adoption": {"eligible": False, "reasons": ["persistent_task_preset_required"]},
+                "next_steps": ["use status and doctor for this native lifecycle"],
+                "rollback": ["no mutation was attempted"],
+            },
+            0,
+        )
+
+    if manifest_contract.get("ok") and supervisor.get("ok") and ownership_proven:
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": "RECONCILIATION_NOT_REQUIRED",
+                "classification": "current_manager_contract",
+                "writes_performed": False,
+                "inventory": inventory,
+                "ownership": ownership,
+                "adoption": {"eligible": False, "reasons": ["already_manager_owned"]},
+                "next_steps": ["run headroom-runtime doctor --json"],
+                "rollback": ["no mutation was attempted"],
+            },
+            0,
+        )
+
+    if "mutations" in mismatch_set:
+        decision = "REINSTALL_REQUIRED" if ownership_proven else "OWNERSHIP_AMBIGUOUS"
+        classification = (
+            "manager_owned_legacy_mutations"
+            if ownership_proven
+            else "legacy_mutations_ownership_unproven"
+        )
+        if ownership_proven:
+            next_steps = [
+                "preserve manager state, manifest, supervisor task exports and mutation-target backups",
+                "obtain an explicit target-host mutation gate before changing the existing deployment",
+                "use the pinned upstream manifest removal path to replay recorded mutation rollback; verify listener and supervisor absence; then run setup",
+            ]
+            rollback = [
+                "do not delete or edit mutation records in the manifest",
+                "stop and restore target backups if any recorded mutation cannot be reversed exactly",
+                "retain the current runtime until the removal and clean setup gates are both available",
+            ]
+        else:
+            next_steps = [
+                "do not run reconcile --apply, uninstall or upstream removal while ownership is unproven",
+                "preserve the deployment and resolve every missing ownership check and manifest mismatch independently",
+                "use a separate clean runtime root, profile and loopback port if exact ownership cannot be established",
+            ]
+            rollback = ["no mutation was attempted; preserve the existing deployment unchanged"]
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": decision,
+                "classification": classification,
+                "writes_performed": False,
+                "inventory": inventory,
+                "ownership": ownership,
+                "adoption": {
+                    "eligible": False,
+                    "reasons": [
+                        "mutation_history_requires_symmetric_rollback",
+                        "healthy_listener_is_not_ownership_evidence",
+                    ],
+                },
+                "next_steps": next_steps,
+                "rollback": rollback,
+            },
+            1 if ownership_proven else 2,
+        )
+
+    if mismatch_set == {"windows_task_contract"} and ownership_proven:
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": "MIGRATION_REQUIRED",
+                "classification": "manager_owned_windows_task_contract",
+                "writes_performed": False,
+                "apply_required": True,
+                "inventory": inventory,
+                "ownership": ownership,
+                "adoption": {"eligible": False, "reasons": ["manager_owned_reconciliation_not_adoption"]},
+                "next": "run headroom-runtime reconcile --apply --json",
+                "next_steps": ["review the inventory, then run headroom-runtime reconcile --apply --json"],
+                "rollback": ["apply snapshots both managed tasks and launcher before the first mutation"],
+            },
+            1,
+        )
+
+    return (
+        {
+            "schema": "headroom-reconcile-plan-v1",
+            "decision": "RECONCILE_BLOCKED",
+            "classification": "ownership_or_identity_mismatch",
+            "writes_performed": False,
+            "inventory": inventory,
+            "ownership": ownership,
+            "adoption": {"eligible": False, "reasons": ["complete_positive_identity_missing"]},
+            "next_steps": ["preserve the runtime and inspect every reported mismatch before any mutation"],
+            "rollback": ["no mutation was attempted"],
+        },
+        2,
+    )
 
 
 def reconcile(args: argparse.Namespace) -> int:
@@ -1867,6 +2143,21 @@ def reconcile(args: argparse.Namespace) -> int:
             as_json=args.json,
         )
         return 0
+    if not args.apply:
+        plan, code = _read_only_reconcile_plan(
+            root, timeout=args.timeout, probe_port=args.probe_port
+        )
+        _emit(plan, as_json=args.json)
+        return code
+    if args.probe_port is not None:
+        _emit(
+            {
+                "decision": "RECONCILE_BLOCKED",
+                "detail": "--probe-port is a read-only discovery option and cannot be combined with --apply",
+            },
+            as_json=args.json,
+        )
+        return 2
     lock_fd = _acquire_lock(root)
     try:
         state = _load_state(root)
@@ -2223,6 +2514,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common(reconcile_parser)
     reconcile_parser.add_argument("--timeout", type=int, default=60)
+    reconcile_parser.add_argument(
+        "--probe-port",
+        type=int,
+        default=None,
+        help="loopback listener port to inspect when manager state is absent (default: 8787)",
+    )
     reconcile_mode = reconcile_parser.add_mutually_exclusive_group()
     reconcile_mode.add_argument(
         "--dry-run", action="store_true", help="print the no-write plan (default)"
