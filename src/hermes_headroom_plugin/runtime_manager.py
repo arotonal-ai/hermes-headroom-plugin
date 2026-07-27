@@ -8,7 +8,9 @@ compress -> retrieve contract. Plugin registration never invokes this module.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import locale
 import os
 import re
 import shutil
@@ -17,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
@@ -47,12 +50,157 @@ _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _UPSTREAM_STATUS_FIELDS = frozenset(
     {"profile", "preset", "runtime", "supervisor", "scope", "port", "status", "healthy"}
 )
+_WINDOWS_TASK_CONTRACT = "hermes-windows-task-v1"
+_WINDOWS_LAUNCHER_NAME = "ensure-headroom-hidden.vbs"
+
+
+_WINDOWS_TASK_OVERLAY_SCRIPT = r"""
+import hashlib
+import copy
+import os
+import subprocess
+import sys
+import tempfile
+
+from headroom.install.models import ArtifactRecord
+from headroom.install.paths import profile_root, windows_ensure_cmd_path
+
+_CONTRACT = "hermes-windows-task-v1"
+_LAUNCHER_NAME = "ensure-headroom-hidden.vbs"
+
+
+def _launcher_content(command):
+    escaped = str(command).replace('"', '""')
+    command_line = f'command = "cmd.exe /d /c ""{escaped}""' + '"\r\n'
+    return (
+        "Option Explicit\r\n"
+        "Dim shell, command, exitCode\r\n"
+        'Set shell = CreateObject("WScript.Shell")\r\n'
+        + command_line
+        + "exitCode = shell.Run(command, 0, True)\r\n"
+        + "WScript.Quit exitCode\r\n"
+    )
+
+
+def _task_specs(manifest, launcher):
+    action = f'wscript.exe //B //NoLogo "{launcher}"'
+    service = manifest.service_name
+    return [
+        (f"{service}-startup", ["/SC", "ONSTART"], {"kind": "boot"}, action),
+        (f"{service}-health", ["/SC", "MINUTE", "/MO", "5"], {"kind": "interval", "minutes": 5}, action),
+    ]
+
+
+def _snapshot_supervisor(specs, launcher):
+    tasks = {}
+    for name, _schedule, _trigger, _action in specs:
+        proc = subprocess.run(
+            ["schtasks", "/Query", "/TN", name, "/XML"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if proc.returncode != 0 or not proc.stdout:
+            raise RuntimeError(
+                f"cannot safely snapshot scheduled task before mutation: {name}"
+            )
+        tasks[name] = proc.stdout
+    return {
+        "tasks": tasks,
+        "launcher": launcher.read_bytes() if launcher.is_file() else None,
+    }
+
+
+def _restore_supervisor_snapshot(snapshot, launcher):
+    errors = []
+    for name, xml_payload in snapshot["tasks"].items():
+        if not xml_payload:
+            errors.append(f"empty-snapshot:{name}")
+            continue
+        xml_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".xml", delete=False) as handle:
+                handle.write(xml_payload)
+                xml_path = handle.name
+            subprocess.run(
+                ["schtasks", "/Create", "/TN", name, "/XML", xml_path, "/F"],
+                check=True,
+            )
+        except Exception:
+            errors.append(f"restore:{name}")
+        finally:
+            if xml_path is not None:
+                try:
+                    os.unlink(xml_path)
+                except OSError:
+                    errors.append(f"cleanup:{name}")
+    old_launcher = snapshot["launcher"]
+    if old_launcher is None:
+        launcher.unlink(missing_ok=True)
+    else:
+        launcher.write_bytes(old_launcher)
+    if errors:
+        raise RuntimeError("Windows task rollback failed: " + ",".join(errors))
+
+
+def _install_silent_windows_tasks(manifest, records, return_snapshot=False):
+    if not sys.platform.startswith("win") or manifest.supervisor_kind != "task":
+        return records
+    launcher = profile_root(manifest.profile) / _LAUNCHER_NAME
+    launcher_bytes = _launcher_content(windows_ensure_cmd_path(manifest.profile)).encode("utf-16")
+    launcher_hash = hashlib.sha256(launcher_bytes).hexdigest()
+    user_args = ["/RU", "SYSTEM"] if manifest.scope == "system" else []
+    specs = _task_specs(manifest, launcher)
+    snapshot = _snapshot_supervisor(specs, launcher)
+    launcher.write_bytes(launcher_bytes)
+    try:
+        for name, schedule, _trigger, action in specs:
+            subprocess.run(
+                ["schtasks", "/Create", "/TN", name, "/TR", action, *schedule, "/F", *user_args],
+                check=True,
+            )
+    except Exception:
+        _restore_supervisor_snapshot(snapshot, launcher)
+        raise
+
+    task_metadata = {
+        name: {
+            "contract": _CONTRACT,
+            "action": {"command": "wscript.exe", "arguments": f'//B //NoLogo "{launcher}"'},
+            "trigger": trigger,
+            "enabled": True,
+        }
+        for name, _schedule, trigger, _action in specs
+    }
+    found = set()
+    filtered = []
+    for record in records:
+        if record.kind == "script" and record.path == str(launcher):
+            continue
+        if record.kind == "windows-task" and record.path in task_metadata:
+            record.metadata = task_metadata[record.path]
+            found.add(record.path)
+        filtered.append(record)
+    if found != set(task_metadata):
+        _restore_supervisor_snapshot(snapshot, launcher)
+        raise RuntimeError("upstream task artifacts did not match the managed Windows task names")
+    filtered.append(
+        ArtifactRecord(
+            kind="script",
+            path=str(launcher),
+            metadata={"contract": _CONTRACT, "sha256": launcher_hash},
+        )
+    )
+    if return_snapshot:
+        return filtered, snapshot
+    return filtered
+"""
 
 # Headroom 0.32's public ``install apply`` always writes persistent shell
 # environment blocks for user/system scope, even with manual providers and no
 # targets. This pinned helper keeps upstream manifest/supervisor/runtime code
 # but deliberately omits only provider/shell mutation activation.
-_SAFE_APPLY_SCRIPT = r"""
+_SAFE_APPLY_SCRIPT = _WINDOWS_TASK_OVERLAY_SCRIPT + r"""
 import json
 import sys
 
@@ -101,6 +249,7 @@ if existing is not None:
     )
 try:
     manifest.artifacts = install_supervisor(manifest)
+    manifest.artifacts = _install_silent_windows_tasks(manifest, manifest.artifacts)
     save_manifest(manifest)
     _start_deployment(manifest)
 except Exception as exc:
@@ -122,6 +271,52 @@ print(json.dumps({
     "mutations": saved.mutations,
     "artifacts": [item.path for item in saved.artifacts],
 }, sort_keys=True))
+"""
+
+
+_SAFE_RECONCILE_SCRIPT = _WINDOWS_TASK_OVERLAY_SCRIPT + r"""
+import json
+import sys
+
+from headroom.install.state import ManifestError, load_manifest, save_manifest
+
+cfg = json.load(sys.stdin)
+try:
+    manifest = load_manifest(cfg["profile"])
+except ManifestError as exc:
+    raise RuntimeError(f"existing manifest is corrupt: {exc}") from exc
+if manifest is None:
+    raise RuntimeError("managed deployment manifest is missing")
+if (
+    not sys.platform.startswith("win")
+    or manifest.supervisor_kind != "task"
+    or manifest.scope != "user"
+    or manifest.provider_mode != "manual"
+    or manifest.targets
+    or manifest.mutations
+):
+    raise RuntimeError("manifest is not an eligible manager-owned Windows task deployment")
+original_artifacts = copy.deepcopy(manifest.artifacts)
+launcher = profile_root(manifest.profile) / _LAUNCHER_NAME
+try:
+    manifest.artifacts, supervisor_snapshot = _install_silent_windows_tasks(
+        manifest, manifest.artifacts, return_snapshot=True
+    )
+    save_manifest(manifest)
+    saved = load_manifest(manifest.profile)
+    owned = [
+        item for item in (saved.artifacts if saved is not None else [])
+        if item.metadata.get("contract") == _CONTRACT
+    ]
+    if saved is None or len(owned) != 3:
+        raise RuntimeError("reconciled manifest did not persist the complete Windows task contract")
+except Exception:
+    if "supervisor_snapshot" in locals():
+        _restore_supervisor_snapshot(supervisor_snapshot, launcher)
+    manifest.artifacts = original_artifacts
+    save_manifest(manifest)
+    raise
+print(json.dumps({"profile": saved.profile, "contract": _CONTRACT, "owned_artifacts": len(owned)}, sort_keys=True))
 """
 
 
@@ -495,6 +690,226 @@ def _runtime_env(root: Path) -> dict[str, str]:
     return env
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+def _windows_launcher_path(root: Path, profile: str) -> Path:
+    return _manifest_path(root, profile).parent / _WINDOWS_LAUNCHER_NAME
+
+
+def _windows_ensure_command_path(root: Path, profile: str) -> Path:
+    return _manifest_path(root, profile).parent / "ensure-headroom.cmd"
+
+
+def _windows_launcher_content(command: Path) -> str:
+    escaped = str(command).replace('"', '""')
+    command_line = f'command = "cmd.exe /d /c ""{escaped}""' + '"\r\n'
+    return (
+        "Option Explicit\r\n"
+        "Dim shell, command, exitCode\r\n"
+        'Set shell = CreateObject("WScript.Shell")\r\n'
+        + command_line
+        + "exitCode = shell.Run(command, 0, True)\r\n"
+        + "WScript.Quit exitCode\r\n"
+    )
+
+
+def _windows_launcher_bytes(root: Path, profile: str) -> bytes:
+    return _windows_launcher_content(_windows_ensure_command_path(root, profile)).encode("utf-16")
+
+
+def _windows_task_arguments(launcher: Path) -> str:
+    return f'//B //NoLogo "{launcher}"'
+
+
+def _windows_task_metadata(root: Path, profile: str) -> dict[str, dict[str, Any]]:
+    launcher = _windows_launcher_path(root, profile)
+    service = f"headroom-{profile}"
+    common = {
+        "contract": _WINDOWS_TASK_CONTRACT,
+        "action": {"command": "wscript.exe", "arguments": _windows_task_arguments(launcher)},
+        "enabled": True,
+    }
+    return {
+        f"{service}-startup": {**common, "trigger": {"kind": "boot"}},
+        f"{service}-health": {
+            **common,
+            "trigger": {"kind": "interval", "minutes": 5},
+        },
+    }
+
+
+def _windows_manifest_task_contract(
+    root: Path, *, profile: str, data: dict[str, Any]
+) -> dict[str, Any]:
+    reasons: list[str] = []
+    artifacts = data.get("artifacts")
+    if not isinstance(artifacts, list):
+        artifacts = []
+        reasons.append("artifacts_missing")
+    launcher = _windows_launcher_path(root, profile)
+    expected_hash = hashlib.sha256(_windows_launcher_bytes(root, profile)).hexdigest()
+    launcher_records = [
+        item
+        for item in artifacts
+        if isinstance(item, dict)
+        and item.get("kind") == "script"
+        and _path_identity_equal(item.get("path", ""), launcher)
+    ]
+    if len(launcher_records) != 1:
+        reasons.append("launcher_artifact")
+    else:
+        metadata = launcher_records[0].get("metadata")
+        if not isinstance(metadata, dict) or metadata != {
+            "contract": _WINDOWS_TASK_CONTRACT,
+            "sha256": expected_hash,
+        }:
+            reasons.append("launcher_metadata")
+    if not launcher.is_file():
+        reasons.append("launcher_missing")
+    else:
+        try:
+            actual_hash = hashlib.sha256(launcher.read_bytes()).hexdigest()
+        except OSError:
+            actual_hash = ""
+        if actual_hash != expected_hash:
+            reasons.append("launcher_hash")
+
+    expected_tasks = _windows_task_metadata(root, profile)
+    for task_name, expected_metadata in expected_tasks.items():
+        records = [
+            item
+            for item in artifacts
+            if isinstance(item, dict)
+            and item.get("kind") == "windows-task"
+            and str(item.get("path", "")).casefold() == task_name.casefold()
+        ]
+        if len(records) != 1:
+            reasons.append(f"task_artifact:{task_name.rsplit('-', 1)[-1]}")
+            continue
+        if records[0].get("metadata") != expected_metadata:
+            reasons.append(f"task_metadata:{task_name.rsplit('-', 1)[-1]}")
+    return {
+        "ok": not reasons,
+        "contract": _WINDOWS_TASK_CONTRACT,
+        "migration_required": bool(reasons),
+        "launcher_present": launcher.is_file(),
+        "reasons": reasons,
+    }
+
+
+def _windows_migration_required(manifest_contract: dict[str, Any]) -> bool:
+    windows_contract = manifest_contract.get("windows_task_contract")
+    return bool(
+        isinstance(windows_contract, dict)
+        and windows_contract.get("migration_required") is True
+    )
+
+
+def _xml_local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def _xml_first(parent: ET.Element, name: str) -> ET.Element | None:
+    return next((item for item in parent.iter() if _xml_local_name(item.tag) == name), None)
+
+
+def _xml_direct_text(parent: ET.Element, name: str) -> str:
+    child = next((item for item in parent if _xml_local_name(item.tag) == name), None)
+    return (child.text or "").strip() if child is not None else ""
+
+
+def _windows_arguments_match(value: str, launcher: Path) -> bool:
+    match = re.fullmatch(
+        r'\s*//B\s+//NoLogo\s+(?:"([^"]+)"|(\S+))\s*',
+        value,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return False
+    return _path_identity_equal(match.group(1) or match.group(2), launcher)
+
+
+def _parse_windows_task_xml(
+    xml_text: str, *, launcher: Path, trigger_kind: str
+) -> dict[str, Any]:
+    reasons: list[str] = []
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return {"ok": False, "exists": True, "reasons": ["invalid_xml"]}
+    settings = _xml_first(root, "Settings")
+    enabled_text = _xml_direct_text(settings, "Enabled") if settings is not None else ""
+    enabled = enabled_text.casefold() != "false"
+    if not enabled:
+        reasons.append("disabled")
+    exec_node = _xml_first(root, "Exec")
+    command = _xml_direct_text(exec_node, "Command") if exec_node is not None else ""
+    arguments = _xml_direct_text(exec_node, "Arguments") if exec_node is not None else ""
+    command_name = re.split(r"[\\/]", command.strip().strip('"'))[-1].casefold()
+    action_command_exact = command_name == "wscript.exe"
+    action_arguments_exact = _windows_arguments_match(arguments, launcher)
+    if not action_command_exact:
+        reasons.append("action_command")
+    if not action_arguments_exact:
+        reasons.append("action_arguments")
+
+    trigger_exact = False
+    if trigger_kind == "startup":
+        trigger = _xml_first(root, "BootTrigger")
+        trigger_exact = trigger is not None and _xml_direct_text(trigger, "Enabled").casefold() != "false"
+    elif trigger_kind == "health":
+        trigger = _xml_first(root, "TimeTrigger")
+        interval = _xml_first(trigger, "Interval") if trigger is not None else None
+        trigger_exact = bool(
+            trigger is not None
+            and _xml_direct_text(trigger, "Enabled").casefold() != "false"
+            and interval is not None
+            and (interval.text or "").strip().upper() == "PT5M"
+        )
+    if not trigger_exact:
+        reasons.append("trigger")
+    return {
+        "ok": not reasons,
+        "exists": True,
+        "enabled": enabled,
+        "action_command_exact": action_command_exact,
+        "action_arguments_exact": action_arguments_exact,
+        "trigger_exact": trigger_exact,
+        "reasons": reasons,
+    }
+
+
+def _decode_windows_task_xml(payload: bytes) -> str:
+    encodings = ["utf-16", "utf-8-sig", locale.getpreferredencoding(False)]
+    if b"\x00" in payload[:100] and not payload.startswith((b"\xff\xfe", b"\xfe\xff")):
+        encodings.insert(0, "utf-16-le")
+    for encoding in dict.fromkeys(encodings):
+        try:
+            return payload.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return payload.decode("utf-8", errors="replace")
+
+
+def _query_windows_task_xml(task_name: str) -> dict[str, Any]:
+    try:
+        proc = subprocess.run(
+            ["schtasks", "/Query", "/TN", task_name, "/XML"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {"exists": False, "xml": "", "reason": "query_failed"}
+    if proc.returncode != 0:
+        return {"exists": False, "xml": "", "reason": "not_found"}
+    output = proc.stdout if isinstance(proc.stdout, bytes) else str(proc.stdout).encode()
+    return {"exists": True, "xml": _decode_windows_task_xml(output)}
+
+
 def _probe_exists(command: Sequence[str]) -> bool:
     try:
         proc = subprocess.run(
@@ -539,6 +954,55 @@ def _supervisor_presence(profile: str) -> dict[str, Any]:
         if cron is not None and f"# >>> headroom {profile} >>>" in cron.stdout:
             evidence.append(f"crontab:{profile}")
     return {"present": bool(evidence), "service_name": service_name, "evidence": evidence}
+
+
+def _supervisor_contract(root: Path, *, profile: str, preset: str) -> dict[str, Any]:
+    presence = _supervisor_presence(profile)
+    if not (_is_windows() and preset == "persistent-task"):
+        return {**presence, "ok": presence.get("present") is True, "reasons": []}
+    path = _manifest_path(root, profile)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    manifest_contract = _windows_manifest_task_contract(root, profile=profile, data=data)
+    launcher = _windows_launcher_path(root, profile)
+    service = f"headroom-{profile}"
+    tasks: dict[str, Any] = {}
+    evidence: list[str] = []
+    reasons: list[str] = []
+    if any(str(item).startswith("windows-service:") for item in presence.get("evidence", [])):
+        reasons.append("unexpected_windows_service")
+    for kind, task_name in (
+        ("startup", f"{service}-startup"),
+        ("health", f"{service}-health"),
+    ):
+        queried = _query_windows_task_xml(task_name)
+        if not queried.get("exists"):
+            parsed = {"ok": False, "exists": False, "reasons": [queried.get("reason", "not_found")]}
+        else:
+            evidence.append(f"scheduled-task:{task_name}")
+            parsed = _parse_windows_task_xml(
+                str(queried.get("xml", "")), launcher=launcher, trigger_kind=kind
+            )
+        tasks[kind] = parsed
+        reasons.extend(f"{kind}:{reason}" for reason in parsed.get("reasons", []))
+    if not manifest_contract.get("ok"):
+        reasons.extend(
+            f"manifest:{reason}" for reason in manifest_contract.get("reasons", [])
+        )
+    present = all(task.get("exists") is True for task in tasks.values())
+    combined_evidence = sorted(set(presence.get("evidence", [])) | set(evidence))
+    return {
+        "ok": not reasons,
+        "present": present,
+        "service_name": service,
+        "evidence": combined_evidence,
+        "tasks": tasks,
+        "manifest": manifest_contract,
+        "migration_required": manifest_contract.get("migration_required") is True,
+        "reasons": reasons,
+    }
 
 
 def _parse_upstream_status(
@@ -727,6 +1191,17 @@ def _safe_apply(
     )
 
 
+def _safe_reconcile(*, root: Path, profile: str, timeout: int) -> subprocess.CompletedProcess[str]:
+    python_exe = _exe(_venv_dir(root), "python")
+    return _run(
+        [str(python_exe), "-c", _SAFE_RECONCILE_SCRIPT],
+        timeout=timeout,
+        log=root / "manager.log",
+        env=_runtime_env(root),
+        input_text=json.dumps({"profile": profile}, sort_keys=True),
+    )
+
+
 def _tcp_port_open(port: int) -> bool:
     try:
         with socket.create_connection((DEFAULT_HOST, port), timeout=0.25):
@@ -740,7 +1215,12 @@ def _manifest_path(root: Path, profile: str) -> Path:
 
 
 def _manifest_contract(
-    root: Path, *, profile: str, port: int, preset: str
+    root: Path,
+    *,
+    profile: str,
+    port: int,
+    preset: str,
+    require_windows_task_contract: bool = True,
 ) -> dict[str, Any]:
     path = _manifest_path(root, profile)
     result: dict[str, Any] = {"ok": False, "path": str(path), "available": path.is_file()}
@@ -815,6 +1295,13 @@ def _manifest_contract(
         mismatches.append("base_env")
     if data.get("proxy_args") != expected_proxy_args:
         mismatches.append("proxy_args")
+    windows_task_contract: dict[str, Any] | None = None
+    if _is_windows() and preset == "persistent-task":
+        windows_task_contract = _windows_manifest_task_contract(
+            root, profile=profile, data=data
+        )
+        if require_windows_task_contract and not windows_task_contract.get("ok"):
+            mismatches.append("windows_task_contract")
     result.update(
         {
             "profile": data.get("profile"),
@@ -830,6 +1317,7 @@ def _manifest_contract(
             "mutations_empty": data.get("mutations") == [],
             "environment_exact": environment_exact,
             "proxy_args_exact": data.get("proxy_args") == expected_proxy_args,
+            "windows_task_contract": windows_task_contract,
             "mismatches": mismatches,
         }
     )
@@ -1022,6 +1510,30 @@ def setup(args: argparse.Namespace) -> int:
         managed_cli = _exe(_venv_dir(root), "headroom")
         if health.get("ok") and existing is not None:
             manifest_contract = _manifest_contract(root, profile=profile, port=port, preset=preset)
+            migration_required = _windows_migration_required(manifest_contract)
+            if migration_required:
+                base_contract = _manifest_contract(
+                    root,
+                    profile=profile,
+                    port=port,
+                    preset=preset,
+                    require_windows_task_contract=False,
+                )
+                if base_contract.get("ok"):
+                    _emit(
+                        {
+                            "decision": "MIGRATION_REQUIRED",
+                            "profile": profile,
+                            "migration_required": True,
+                            "manifest_contract": manifest_contract,
+                            "next": "run headroom-runtime reconcile --dry-run --json",
+                        },
+                        as_json=args.json,
+                    )
+                    return 1
+            supervisor_contract = _supervisor_contract(
+                root, profile=profile, preset=preset
+            )
             upstream = _upstream_status_evidence(
                 headroom=managed_cli,
                 root=root,
@@ -1033,7 +1545,7 @@ def setup(args: argparse.Namespace) -> int:
             verification = smoke(proxy_url)
             if (
                 upstream.get("ok") is True
-                and supervisor.get("present") is True
+                and supervisor_contract.get("ok") is True
                 and manifest_contract.get("ok")
                 and verification.get("ok")
                 and verification.get("sentinel_found") is True
@@ -1049,7 +1561,7 @@ def setup(args: argparse.Namespace) -> int:
                         "manifest_contract": manifest_contract,
                         "smoke": verification,
                         "upstream_status": upstream,
-                        "supervisor": supervisor,
+                        "supervisor": supervisor_contract,
                     },
                     as_json=args.json,
                 )
@@ -1061,8 +1573,8 @@ def setup(args: argparse.Namespace) -> int:
                     "detail": "ready listener did not match complete manager/upstream/manifest evidence",
                     "manifest_contract": manifest_contract,
                     "upstream_status": upstream,
-                    "supervisor": supervisor,
-                    "next": "run headroom-runtime doctor, then uninstall before repair",
+                    "supervisor": supervisor_contract,
+                    "next": "run headroom-runtime doctor, then reconcile or uninstall before repair",
                 },
                 as_json=args.json,
             )
@@ -1141,13 +1653,14 @@ def setup(args: argparse.Namespace) -> int:
                 port=port,
                 timeout=30,
             )
-            supervisor = _supervisor_presence(profile)
-            if upstream.get("ok") is not True or supervisor.get("present") is not True:
+            supervisor = _supervisor_contract(root, profile=profile, preset=preset)
+            if upstream.get("ok") is not True or supervisor.get("ok") is not True:
                 reasons = upstream.get("semantic", {}).get("reasons", [])
                 raise RuntimeError(
                     "durable lifecycle semantic verification failed: "
                     f"upstream_reasons={reasons}, "
-                    f"supervisor_present={supervisor.get('present') is True}"
+                    f"supervisor_ok={supervisor.get('ok') is True}, "
+                    f"supervisor_reasons={supervisor.get('reasons', [])}"
                 )
             full = _state_for(
                 root,
@@ -1211,7 +1724,12 @@ def status(args: argparse.Namespace) -> int:
     manifest_contract = _manifest_contract(
         root, profile=state.profile, port=state.port, preset=state.preset
     )
-    payload = {**asdict(state), "readyz": health, "manifest_contract": manifest_contract}
+    payload = {
+        **asdict(state),
+        "readyz": health,
+        "manifest_contract": manifest_contract,
+        "migration_required": _windows_migration_required(manifest_contract),
+    }
     headroom = _exe(Path(state.venv_dir), "headroom")
     upstream = _upstream_status_evidence(
         headroom=headroom,
@@ -1221,7 +1739,7 @@ def status(args: argparse.Namespace) -> int:
         port=state.port,
         timeout=args.timeout,
     )
-    supervisor = _supervisor_presence(state.profile)
+    supervisor = _supervisor_contract(root, profile=state.profile, preset=state.preset)
     payload["upstream_status_exit"] = upstream.get("exit_code")
     payload["upstream_status"] = upstream.get("output", "")
     payload["upstream_status_semantic"] = upstream.get("semantic")
@@ -1230,7 +1748,7 @@ def status(args: argparse.Namespace) -> int:
         "RUNTIME_FULL_DURABLE"
         if health.get("ok")
         and upstream.get("ok") is True
-        and supervisor.get("present") is True
+        and supervisor.get("ok") is True
         and manifest_contract.get("ok")
         else "RUNTIME_PARTIAL"
     )
@@ -1262,13 +1780,13 @@ def doctor(args: argparse.Namespace) -> int:
         port=state.port,
         timeout=args.timeout,
     )
-    supervisor = _supervisor_presence(state.profile)
+    supervisor = _supervisor_contract(root, profile=state.profile, preset=state.preset)
     full = bool(
         health.get("ok")
         and verification.get("ok")
         and verification.get("sentinel_found") is True
         and upstream.get("ok") is True
-        and supervisor.get("present") is True
+        and supervisor.get("ok") is True
         and manifest_contract.get("ok")
     )
     decision = "RUNTIME_FULL_DURABLE" if full else "RUNTIME_PARTIAL"
@@ -1279,6 +1797,7 @@ def doctor(args: argparse.Namespace) -> int:
             "readyz": health,
             "smoke": verification,
             "manifest_contract": manifest_contract,
+            "migration_required": _windows_migration_required(manifest_contract),
             "upstream_status": upstream,
             "supervisor": supervisor,
             "next": None if full else "inspect manager.log/install.log or run headroom-runtime uninstall",
@@ -1286,6 +1805,181 @@ def doctor(args: argparse.Namespace) -> int:
         as_json=args.json,
     )
     return 0 if full else 2
+
+
+def reconcile(args: argparse.Namespace) -> int:
+    root = _resolve_root(args.runtime_root)
+    if not _is_windows():
+        _emit(
+            {
+                "decision": "RECONCILIATION_NOT_APPLICABLE",
+                "detail": "managed silent-task reconciliation is native-Windows only",
+            },
+            as_json=args.json,
+        )
+        return 0
+    lock_fd = _acquire_lock(root)
+    try:
+        state = _load_state(root)
+        if state is None:
+            _emit(
+                {
+                    "decision": "RUNTIME_ABSENT",
+                    "runtime_root": str(root),
+                    "next": "run headroom-runtime setup",
+                },
+                as_json=args.json,
+            )
+            return 2
+        if not _safe_to_purge(root):
+            _emit(
+                {
+                    "decision": "RECONCILE_BLOCKED",
+                    "detail": "manager marker is missing or invalid",
+                },
+                as_json=args.json,
+            )
+            return 2
+        if state.preset != "persistent-task":
+            _emit(
+                {
+                    "decision": "RECONCILIATION_NOT_APPLICABLE",
+                    "profile": state.profile,
+                    "detail": "managed deployment does not use the Windows persistent-task preset",
+                },
+                as_json=args.json,
+            )
+            return 0
+        base_contract = _manifest_contract(
+            root,
+            profile=state.profile,
+            port=state.port,
+            preset=state.preset,
+            require_windows_task_contract=False,
+        )
+        if not base_contract.get("ok"):
+            _emit(
+                {
+                    "decision": "RECONCILE_BLOCKED",
+                    "profile": state.profile,
+                    "detail": "manifest failed the manager-owned base identity contract",
+                    "manifest_contract": base_contract,
+                    "next": "preserve the runtime and inspect or uninstall explicitly",
+                },
+                as_json=args.json,
+            )
+            return 2
+        manifest_contract = _manifest_contract(
+            root, profile=state.profile, port=state.port, preset=state.preset
+        )
+        supervisor = None
+        if manifest_contract.get("ok"):
+            supervisor = _supervisor_contract(
+                root, profile=state.profile, preset=state.preset
+            )
+            if supervisor.get("ok"):
+                _emit(
+                    {
+                        "decision": "RECONCILIATION_NOT_REQUIRED",
+                        "profile": state.profile,
+                        "manifest_contract": manifest_contract,
+                        "supervisor": supervisor,
+                    },
+                    as_json=args.json,
+                )
+                return 0
+        plan = {
+            "decision": "MIGRATION_REQUIRED",
+            "profile": state.profile,
+            "apply_required": True,
+            "manifest_contract": manifest_contract,
+            "supervisor": supervisor,
+            "next": "run headroom-runtime reconcile --apply --json",
+        }
+        if not args.apply:
+            _emit(plan, as_json=args.json)
+            return 1
+        python_exe = _exe(_venv_dir(root), "python")
+        if not python_exe.is_file():
+            _emit(
+                {
+                    **plan,
+                    "decision": "RECONCILE_BLOCKED",
+                    "detail": "managed runtime Python is missing",
+                },
+                as_json=args.json,
+            )
+            return 2
+        applied = _safe_reconcile(root=root, profile=state.profile, timeout=args.timeout)
+        if applied.returncode != 0:
+            _emit(
+                {
+                    **plan,
+                    "decision": "RECONCILE_PARTIAL",
+                    "detail": "managed Windows task reconciliation failed; evidence was preserved",
+                    "next": "inspect manager.log, then retry or run explicit uninstall",
+                },
+                as_json=args.json,
+            )
+            return 2
+        manifest_contract = _manifest_contract(
+            root, profile=state.profile, port=state.port, preset=state.preset
+        )
+        supervisor = _supervisor_contract(root, profile=state.profile, preset=state.preset)
+        headroom = _exe(Path(state.venv_dir), "headroom")
+        upstream = _upstream_status_evidence(
+            headroom=headroom,
+            root=root,
+            profile=state.profile,
+            preset=state.preset,
+            port=state.port,
+            timeout=args.timeout,
+        )
+        health = readyz(state.proxy_url)
+        verification = smoke(state.proxy_url) if health.get("ok") else {"ok": False, "phase": "readyz"}
+        full = bool(
+            manifest_contract.get("ok")
+            and supervisor.get("ok")
+            and upstream.get("ok") is True
+            and health.get("ok")
+            and verification.get("ok")
+            and verification.get("sentinel_found") is True
+        )
+        if not full:
+            _emit(
+                {
+                    "decision": "RECONCILE_PARTIAL",
+                    "profile": state.profile,
+                    "manifest_contract": manifest_contract,
+                    "supervisor": supervisor,
+                    "upstream_status": upstream,
+                    "readyz": health,
+                    "smoke": verification,
+                    "next": "inspect manager.log, then retry or run explicit uninstall",
+                },
+                as_json=args.json,
+            )
+            return 2
+        state.status = "RUNTIME_FULL_DURABLE"
+        state.updated_at = _utc_now()
+        state.last_error = None
+        _write_state(root, state)
+        _emit(
+            {
+                "decision": "RECONCILED",
+                "durability": state.status,
+                "profile": state.profile,
+                "manifest_contract": manifest_contract,
+                "supervisor": supervisor,
+                "upstream_status": upstream,
+                "readyz": health,
+                "smoke": verification,
+            },
+            as_json=args.json,
+        )
+        return 0
+    finally:
+        _release_lock(root, lock_fd)
 
 
 def uninstall(args: argparse.Namespace) -> int:
@@ -1306,7 +2000,11 @@ def uninstall(args: argparse.Namespace) -> int:
             )
             return 2
         manifest_contract = _manifest_contract(
-            root, profile=state.profile, port=state.port, preset=state.preset
+            root,
+            profile=state.profile,
+            port=state.port,
+            preset=state.preset,
+            require_windows_task_contract=False,
         )
         if not manifest_contract.get("ok"):
             partial_without_manifest = (
@@ -1470,6 +2168,20 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(doctor_parser)
     doctor_parser.add_argument("--timeout", type=int, default=30)
     doctor_parser.set_defaults(func=doctor)
+
+    reconcile_parser = sub.add_parser(
+        "reconcile", help="plan or explicitly apply the managed Windows silent-task contract"
+    )
+    _add_common(reconcile_parser)
+    reconcile_parser.add_argument("--timeout", type=int, default=60)
+    reconcile_mode = reconcile_parser.add_mutually_exclusive_group()
+    reconcile_mode.add_argument(
+        "--dry-run", action="store_true", help="print the no-write plan (default)"
+    )
+    reconcile_mode.add_argument(
+        "--apply", action="store_true", help="apply the displayed manager-owned reconciliation"
+    )
+    reconcile_parser.set_defaults(func=reconcile)
 
     uninstall_parser = sub.add_parser("uninstall", help="remove supervisor, manifest, managed mutations, and runtime files")
     _add_common(uninstall_parser)

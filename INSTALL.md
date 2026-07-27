@@ -74,6 +74,8 @@ Verify and roll back with the same launcher/entry point:
 ```bash
 headroom-runtime status --json
 headroom-runtime doctor --json
+headroom-runtime reconcile --dry-run --json # native Windows plan; no writes
+headroom-runtime reconcile --apply --json  # explicit manager-owned migration
 headroom-runtime uninstall --json
 ```
 

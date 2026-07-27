@@ -39,7 +39,7 @@ The manager:
 - rejects filesystem, home, Hermes-home, shared-temp, shallow, non-directory, and non-empty unowned runtime roots;
 - makes the runtime root private (`0700` best-effort), requires a private marker, and deletes only validated manager-owned top-level entries;
 - on the certified Linux/macOS path, anchors recursive deletion to an open runtime-root descriptor and uses Python's symlink-attack-resistant `rmtree`; any unexpected entry, path swap, or deletion error fails closed;
-- reports `RUNTIME_FULL_DURABLE` only after the saved upstream manifest matches the complete manager-owned identity/environment/proxy-argument contract, upstream status parses unambiguously as the expected profile/preset/runtime/supervisor/scope/port with `Status: running` and `Healthy: yes`, the expected native supervisor artifact exists, readiness succeeds, and compress → retrieve recovers the sentinel.
+- reports `RUNTIME_FULL_DURABLE` only after the saved upstream manifest matches the complete manager-owned identity/environment/proxy-argument contract, upstream status parses unambiguously as the expected profile/preset/runtime/supervisor/scope/port with `Status: running` and `Healthy: yes`, the expected native supervisor contract is exact, readiness succeeds, and compress → retrieve recovers the sentinel. On Windows this includes enabled startup/health tasks, exact actions/triggers, and the managed launcher hash.
 
 It does **not** change Hermes model/provider routing, write persistent shell environment blocks, install API keys, enable a paid provider, or run from `register()`.
 
@@ -102,6 +102,23 @@ A successful `doctor` returns exit code `0` and decision `RUNTIME_FULL_DURABLE`.
 
 The host must provide the corresponding native supervisor. Use `--preset persistent-task` as an explicit Linux/macOS fallback only when task scheduling is the intended lifecycle.
 
+Native Windows setup creates a deterministic UTF-16 VBS launcher in the upstream profile root and runs it with `wscript.exe //B //NoLogo`. The launcher waits for the upstream `ensure-headroom.cmd` result while requesting a hidden window; both Task Scheduler actions, their boot/five-minute triggers, enabled state, and the launcher SHA-256 are recorded through upstream `ArtifactRecord.metadata`. The manager queries Task Scheduler XML and fails closed on action, trigger, enabled-state, artifact, or hash drift without returning raw XML.
+
+Manager-owned Windows deployments created before this contract are not rewritten implicitly. Inspect the plan, then opt in explicitly:
+
+```powershell
+headroom-runtime reconcile --dry-run --json
+headroom-runtime reconcile --apply --json
+```
+
+The first command is read-only and returns `MIGRATION_REQUIRED` when applicable. Apply is allowed only when manager state, purge marker, and the complete non-supervisor manifest identity prove ownership. Foreign profiles are never adopted.
+
+Apply also requires lossless XML snapshots of both existing managed tasks before
+the first mutation. A missing, inaccessible, or transiently unqueryable task is
+not inferred to be safely absent: reconciliation fails closed and does not alter
+the launcher or either task. Use explicit uninstall/setup for an incomplete task
+set after verifying ownership.
+
 The default profile is `hermes-plugin` (native supervisor name `headroom-hermes-plugin`). Concurrent runtime roots on one user account must use distinct `--profile` values and distinct ports because native supervisor names are user-global; the manager will not adopt or replace another root's deployment.
 
 ## State and evidence
@@ -123,6 +140,8 @@ Key files:
 | `venv-0.32.1/` | isolated official runtime |
 | `workspace/` | upstream deployment manifest/workspace |
 
+On Windows, `workspace/deploy/<profile>/ensure-headroom-hidden.vbs` is an upstream-profile artifact governed by the manifest. It is removed with the profile; it is not a separate global launcher.
+
 Upstream's deployment manifest remains the supervisor authority. The manager state only records how the plugin-owned runtime was created and located; current durability is derived from the manifest, parsed live lifecycle semantics, native supervisor evidence, and runtime probes. Existing state files remain readable and require no schema migration.
 
 ## Rollback
@@ -131,7 +150,7 @@ Upstream's deployment manifest remains the supervisor authority. The manager sta
 headroom-runtime uninstall --json
 ```
 
-`uninstall` delegates to `headroom install remove`, waits for both the listener and native supervisor to disappear, validates every top-level runtime-root entry, and then deletes only the known manager-owned venv, workspace, state, marker, and logs. If upstream remove fails, the listener or supervisor remains present, an unexpected path is found, or a deletion race/error occurs, it returns `UNINSTALL_PARTIAL` and preserves the root for recovery.
+`uninstall` delegates to `headroom install remove`, waits for both the listener and native supervisor to disappear, validates every top-level runtime-root entry, and then deletes only the known manager-owned venv, workspace, state, marker, and logs. It intentionally accepts the complete base identity contract when a Windows launcher/task contract is legacy or drifted so rollback remains possible; provider targets, mutations, foreign identity, or unsafe paths still block upstream mutation. If upstream remove fails, the listener or supervisor remains present, an unexpected path is found, or a deletion race/error occurs, it returns `UNINSTALL_PARTIAL` and preserves the root for recovery.
 
 Preserve the venv while removing deployment state:
 
@@ -139,7 +158,7 @@ Preserve the venv while removing deployment state:
 headroom-runtime uninstall --keep-runtime --json
 ```
 
-If state, the purge marker, or the saved complete manager-owned manifest contract is missing or invalid, upstream remove and normal deletion are blocked. One narrow recovery is allowed after setup fails before writing a manifest: a `RUNTIME_PARTIAL` root may be removed without invoking upstream only when both listener and supervisor are absent and its entries match the managed-root deletion contract. Remove supervisor artifacts manually only after verifying the upstream profile and target paths.
+If state, the purge marker, or the saved manager-owned base manifest contract is missing or invalid, upstream remove and normal deletion are blocked. One narrow recovery is allowed after setup fails before writing a manifest: a `RUNTIME_PARTIAL` root may be removed without invoking upstream only when both listener and supervisor are absent and its entries match the managed-root deletion contract. Remove supervisor artifacts manually only after verifying the upstream profile and target paths.
 
 ## Known limits
 
