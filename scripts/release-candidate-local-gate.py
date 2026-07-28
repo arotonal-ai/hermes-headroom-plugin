@@ -33,7 +33,7 @@ PROJECT_VERSION = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="ut
 EXPECTED_PLUGIN_SPEC = f"hermes-headroom-plugin=={PROJECT_VERSION}"
 HEADROOM_RUNTIME_VERSION = "0.32.1"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
-LITELLM_RUNTIME_VERSION = "1.91.3"
+LITELLM_RUNTIME_VERSION = "1.94.0rc3"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"
 COMPAT_HEADROOM_RUNTIME_VERSION = "0.31.0"
 DEFAULT_COMPAT_HEADROOM_SPEC = f"headroom-ai[proxy]=={COMPAT_HEADROOM_RUNTIME_VERSION}"
@@ -515,6 +515,7 @@ def isolated_runtime_env(run_dir: Path) -> dict[str, str]:
             "HEADROOM_CCR_BACKEND": "memory",
             "HEADROOM_CCR_TTL_SECONDS": "1800",
             "HEADROOM_TELEMETRY": "off",
+            "HEADROOM_DISABLE_KOMPRESS": "1",
             "HEADROOM_MEMORY_ENABLED": "0",
             "HEADROOM_MEMORY_LEARN": "0",
             "PYTHONUNBUFFERED": "1",

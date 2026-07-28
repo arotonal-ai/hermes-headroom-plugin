@@ -17,7 +17,7 @@ import venv
 from pathlib import Path
 
 DEFAULT_SPEC = "headroom-ai[proxy]==0.32.1"
-DEFAULT_LITELLM_SPEC = "litellm==1.91.3"
+DEFAULT_LITELLM_SPEC = "litellm==1.94.0rc3"
 
 
 def bin_dir(venv_dir: Path) -> Path:
@@ -60,6 +60,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--keep", action="store_true", help="keep the temporary venv for inspection")
     args = parser.parse_args(argv)
 
+    if not ((3, 11) <= sys.version_info[:2] < (3, 15)):
+        print(
+            f"FAIL: certified runtime requires Python >=3.11,<3.15; got {sys.version.split()[0]}",
+            file=sys.stderr,
+        )
+        return 2
+
     tmp_root = Path(tempfile.mkdtemp(prefix="headroom-dep-"))
     venv_dir = tmp_root / "venv"
     log = tmp_root / "dependency-smoke.log"
@@ -83,8 +90,6 @@ modules = ['headroom', 'fastapi', 'uvicorn', 'pydantic_core._pydantic_core']
 missing = [name for name in modules if importlib.util.find_spec(name) is None]
 if missing:
     raise SystemExit(f'missing runtime modules: {missing}')
-if sys.version_info >= (3, 13):
-    print(f'WARN: Python {sys.version.split()[0]} is newer than the currently smoke-tested Windows runtime path; prefer 3.11/3.12 if proxy startup fails')
 print(f"headroom-ai={md.version('headroom-ai')} litellm={md.version('litellm')}")
 """.strip()
         proc = run([str(python), "-c", code], timeout=60, log=log)

@@ -61,7 +61,7 @@ class PythonResolverTest(unittest.TestCase):
     def test_dependency_helper_checks_native_pydantic_core_runtime_import(self):
         text = DEPENDENCY_HELPER.read_text(encoding="utf-8")
         self.assertIn("pydantic_core._pydantic_core", text)
-        self.assertIn("newer than the currently smoke-tested Windows runtime path", text)
+        self.assertIn("certified runtime requires Python >=3.11,<3.15", text)
 
 
 if __name__ == "__main__":

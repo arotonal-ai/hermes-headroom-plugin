@@ -44,7 +44,7 @@ Wheel environments use the packaged entry point:
 headroom-runtime setup
 ```
 
-Before mutation, an agent may run `setup --dry-run --json`. The manager installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3` in an isolated versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct 0.32.1 apply because that path writes persistent shell blocks, then verifies `/readyz` and real compress → retrieve smoke. No provider API key or global routing change is required.
+Before mutation, an agent may run `setup --dry-run --json`. The manager installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.94.0rc3` in an isolated versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct 0.32.1 apply because that path writes persistent shell blocks, then verifies `/readyz` and real compress → retrieve smoke. No provider API key or global routing change is required.
 
 Status, full verification, and rollback:
 
@@ -113,7 +113,7 @@ DURABLE if:
 - the expected user-level supervisor artifact is present for the target platform;
 - `/headroom smoke` still returns PASS after the relevant restart/login lifecycle.
 
-Windows native runtime smoke is certified for Python 3.11/3.12 only after the blocking v0.5 matrix passes. WSL2/Termux and Python 3.13/3.14 remain target-evidence/experimental lanes.
+Windows native runtime smoke is published-certified for Python 3.11/3.12. Python 3.13 remains experimental; Python 3.14 is a blocking Issue #24 candidate lane and still requires green CI plus target-host `RUNTIME_FULL_DURABLE` evidence. WSL2/Termux remain target-evidence lanes.
 
 FAIL if:
 

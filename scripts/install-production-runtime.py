@@ -8,7 +8,7 @@ smoke verification.
 
 Default behavior:
 - create/update a persistent versioned venv at ~/.cache/hermes-headroom-venv-0.31.0
-- install pinned `headroom-ai[proxy]==0.31.0` and `litellm==1.91.3` unless their specs are overridden
+- install pinned `headroom-ai[proxy]==0.31.0` and `litellm==1.94.0rc3` unless their specs are overridden
 - start `headroom proxy --host 127.0.0.1 --port 8787` when not already ready
 - run the plugin smoke against that endpoint
 - leave the bundled llm-monitor companion uninstalled unless explicitly requested
@@ -36,7 +36,7 @@ from typing import Any
 
 HEADROOM_RUNTIME_VERSION = "0.31.0"
 DEFAULT_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
-LITELLM_RUNTIME_VERSION = "1.91.3"
+LITELLM_RUNTIME_VERSION = "1.94.0rc3"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8787
@@ -144,6 +144,7 @@ def start_proxy(
     runtime_env = os.environ.copy()
     runtime_env["HEADROOM_CCR_BACKEND"] = ccr_backend
     runtime_env["HEADROOM_CCR_TTL_SECONDS"] = str(ccr_ttl_seconds)
+    runtime_env["HEADROOM_DISABLE_KOMPRESS"] = "1"
     kwargs: dict[str, Any] = {
         "stdin": subprocess.DEVNULL,
         "stdout": out,
@@ -220,6 +221,7 @@ Restart=on-failure
 RestartSec=5
 Environment=HEADROOM_TELEMETRY=off
 Environment=HEADROOM_DISABLE_UPDATE_CHECK=1
+Environment=HEADROOM_DISABLE_KOMPRESS=1
 Environment=HEADROOM_HOST={host}
 Environment=HEADROOM_PORT={port}
 Environment=HEADROOM_CCR_BACKEND={ccr_backend}

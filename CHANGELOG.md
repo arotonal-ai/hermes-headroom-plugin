@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## v0.6.1 — 2026-07-28
 
+- Certify the managed runtime on Python `>=3.11,<3.15` with `litellm==1.94.0rc3`, validate compatibility during dry-run and before any lock/runtime-root mutation, require an explicit `--allow-unsupported-python` flag for out-of-range custom-LiteLLM canaries, pin pytest `9.1.1`, and add blocking Python 3.11/3.14 boundary unit plus lifecycle coverage on native Linux, macOS, and Windows.
+- Strip inherited `PYTHONPATH` and `PYTHONHOME` case-insensitively from managed venv creation, package installation, version probes, and runtime subprocesses so the portable runtime cannot import packages from the invoking Hermes process.
+- Disable optional Kompress in the managed runtime contract until a backend is explicitly reviewed, avoiding a durable service whose optional readiness check remains unhealthy.
 - Derive `RUNTIME_FULL_DURABLE` from parsed Headroom lifecycle semantics and matching native supervisor evidence; exit code `0` plus a ready HTTP proxy no longer accepts `Status: stopped` or incomplete/ambiguous status output.
 - Isolate canonical unit verification from live operator `HOME`, `HERMES_HOME`, `USERPROFILE`, inherited `HEADROOM_*` settings, and global supervisor discovery; retain explicit foreign-supervisor tests.
 - Skip the Windows symlink-escape fixture only when `WinError 1314` proves Developer Mode/elevation is unavailable, while preserving the security assertion everywhere symlinks can be created.

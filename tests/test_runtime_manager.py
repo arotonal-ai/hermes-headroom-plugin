@@ -175,6 +175,7 @@ class RuntimeManagerTest(unittest.TestCase):
                         "HEADROOM_CCR_BACKEND": manager.DEFAULT_CCR_BACKEND,
                         "HEADROOM_CCR_TTL_SECONDS": str(manager.DEFAULT_CCR_TTL_SECONDS),
                         "HEADROOM_DISABLE_UPDATE_CHECK": "1",
+                        "HEADROOM_DISABLE_KOMPRESS": "1",
                     },
                     "tool_envs": {},
                     "proxy_args": [
@@ -222,7 +223,123 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertNotIn("command", payload)
         self.assertIn("install_supervisor", payload["upstream_api"])
         self.assertEqual(payload["headroom_spec"], "headroom-ai[proxy]==0.32.1")
-        self.assertEqual(payload["litellm_spec"], "litellm==1.91.3")
+        self.assertEqual(payload["litellm_spec"], "litellm==1.94.0rc3")
+
+    def test_setup_rejects_incompatible_certified_python_before_root_or_lock(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "absent-runtime-root"
+            with (
+                patch.object(manager, "_selected_python_version", return_value=(3, 15, 0)),
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    ["setup", "--runtime-root", str(root), "--port", "57899", "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "ERROR")
+        self.assertIn("requires Python >=3.11,<3.15", payload["detail"])
+        self.assertFalse(root.exists())
+        acquire.assert_not_called()
+
+    def test_setup_dry_run_rejects_incompatible_python_before_root_or_lock(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "absent-runtime-root"
+            with (
+                patch.object(manager, "_selected_python_version", return_value=(3, 15, 0)),
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    [
+                        "setup",
+                        "--runtime-root",
+                        str(root),
+                        "--port",
+                        "57900",
+                        "--dry-run",
+                        "--json",
+                    ]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "ERROR")
+        self.assertIn("requires Python >=3.11,<3.15", payload["detail"])
+        self.assertFalse(root.exists())
+        acquire.assert_not_called()
+
+    def test_certified_python_accepts_python_314(self):
+        with patch.object(manager, "_selected_python_version", return_value=(3, 14, 5)):
+            result = manager._validate_certified_python(
+                sys.executable, manager.DEFAULT_LITELLM_SPEC
+            )
+        self.assertTrue(result["checked"])
+        self.assertEqual(result["version"], "3.14.5")
+
+    def test_unsupported_flag_never_bypasses_certified_default_pair(self):
+        with patch.object(manager, "_selected_python_version", return_value=(3, 15, 0)):
+            with self.assertRaisesRegex(RuntimeError, "incompatible with certified"):
+                manager._validate_certified_python(
+                    sys.executable,
+                    manager.DEFAULT_LITELLM_SPEC,
+                    allow_unsupported=True,
+                )
+
+    def test_explicit_litellm_override_remains_operator_owned_canary(self):
+        with patch.object(manager, "_selected_python_version", return_value=(3, 14, 5)) as probe:
+            result = manager._validate_certified_python(
+                sys.executable, "litellm==9.9.9"
+            )
+        self.assertFalse(result["checked"])
+        self.assertTrue(result["python_range_checked"])
+        self.assertFalse(result["allowed_unsupported"])
+        probe.assert_called_once_with(sys.executable)
+
+    def test_explicit_litellm_override_does_not_implicitly_bypass_python_gate(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "absent-runtime-root"
+            with (
+                patch.object(manager, "_selected_python_version", return_value=(3, 15, 0)),
+                patch.object(manager, "_acquire_lock") as acquire,
+            ):
+                code, output = self._run_main(
+                    [
+                        "setup",
+                        "--runtime-root",
+                        str(root),
+                        "--litellm-spec",
+                        "litellm==9.9.9",
+                        "--dry-run",
+                        "--json",
+                    ]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "ERROR")
+        self.assertIn("does not bypass this gate", payload["detail"])
+        self.assertFalse(root.exists())
+        acquire.assert_not_called()
+
+    def test_explicit_flag_allows_unsupported_python_only_for_custom_litellm_canary(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "absent-runtime-root"
+            with patch.object(manager, "_selected_python_version", return_value=(3, 15, 0)):
+                code, output = self._run_main(
+                    [
+                        "setup",
+                        "--runtime-root",
+                        str(root),
+                        "--litellm-spec",
+                        "litellm==9.9.9",
+                        "--allow-unsupported-python",
+                        "--dry-run",
+                        "--json",
+                    ]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 0)
+        self.assertFalse(root.exists())
+        self.assertTrue(payload["python_compatibility"]["allowed_unsupported"])
+        self.assertEqual(payload["python_compatibility"]["version"], "3.15.0")
 
     def test_default_preset_is_user_service_except_windows_task(self):
         with patch.object(manager.sys, "platform", "win32"):
@@ -261,6 +378,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 "HEADROOM_CCR_BACKEND",
                 "HEADROOM_CCR_TTL_SECONDS",
                 "HEADROOM_DISABLE_UPDATE_CHECK",
+                "HEADROOM_DISABLE_KOMPRESS",
             },
         )
 
@@ -329,11 +447,12 @@ class RuntimeManagerTest(unittest.TestCase):
 
             with (
                 patch.object(manager, "_is_windows", return_value=False),
+                patch.object(manager, "_selected_python_version", return_value=(3, 11, 15)),
                 patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.94.0rc3"}),
                 ),
                 patch.object(manager, "_safe_apply", side_effect=apply_and_write_manifest) as safe_apply,
                 patch.object(manager, "_wait_ready", return_value={"ok": True, "status": 200}),
@@ -390,7 +509,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.94.0rc3"}),
                 ),
                 patch.object(manager, "_safe_apply", return_value=unsafe),
             ):
@@ -414,7 +533,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.94.0rc3"}),
                 ),
                 patch.object(manager, "_safe_apply", return_value=completed),
             ):
@@ -681,11 +800,12 @@ class RuntimeManagerTest(unittest.TestCase):
             )
             with (
                 patch.object(manager, "_is_windows", return_value=False),
+                patch.object(manager, "_selected_python_version", return_value=(3, 11, 15)),
                 patch.object(manager, "readyz", return_value={"ok": False, "status": None}),
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.94.0rc3"}),
                 ),
                 patch.object(manager, "_safe_apply", side_effect=apply_and_write_manifest),
                 patch.object(manager, "_wait_ready", return_value={"ok": True, "status": 200}),
@@ -836,7 +956,10 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertFalse(root.exists())
 
     def test_runtime_install_uses_isolated_official_pypi(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, patch.dict(
+            "os.environ",
+            {"PYTHONPATH": "/foreign/site-packages", "PYTHONHOME": "/foreign/python"},
+        ):
             root = Path(td) / "runtime"
             venv = manager._venv_dir(root)
             python_exe = manager._exe(venv, "python")
@@ -846,7 +969,7 @@ class RuntimeManagerTest(unittest.TestCase):
             pip.write_text("fake", encoding="utf-8")
             completed = [
                 subprocess.CompletedProcess([str(pip)], 0, "installed\n"),
-                subprocess.CompletedProcess([str(python_exe)], 0, "0.32.1\n1.91.3\n"),
+                subprocess.CompletedProcess([str(python_exe)], 0, "0.32.1\n1.94.0rc3\n"),
             ]
             with patch.object(manager, "_run", side_effect=completed) as run:
                 manager._ensure_runtime(
@@ -860,6 +983,10 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(install_command[:3], [str(pip), "--isolated", "install"])
         self.assertIn(manager.PYPI_INDEX_URL, install_command)
         self.assertIn("--no-input", install_command)
+        for call in run.call_args_list:
+            call_env = call.kwargs.get("env") or {}
+            self.assertNotIn("PYTHONPATH", call_env)
+            self.assertNotIn("PYTHONHOME", call_env)
 
     def test_setup_blocks_foreign_manifest_before_install(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1068,13 +1195,36 @@ class RuntimeManagerTest(unittest.TestCase):
     def test_runtime_env_drops_uncontrolled_headroom_variables(self):
         with tempfile.TemporaryDirectory() as td, patch.dict(
             "os.environ",
-            {"HEADROOM_PORT": "9999", "HEADROOM_CONFIG_DIR": "/unsafe", "KEEP_ME": "yes"},
+            {
+                "HEADROOM_PORT": "9999",
+                "HEADROOM_CONFIG_DIR": "/unsafe",
+                "PYTHONPATH": "/foreign/site-packages",
+                "PYTHONHOME": "/foreign/python",
+                "KEEP_ME": "yes",
+            },
         ):
             env = manager._runtime_env(Path(td) / "runtime")
         self.assertNotIn("HEADROOM_PORT", env)
         self.assertNotIn("HEADROOM_CONFIG_DIR", env)
+        self.assertNotIn("PYTHONPATH", env)
+        self.assertNotIn("PYTHONHOME", env)
         self.assertEqual(env["KEEP_ME"], "yes")
         self.assertEqual(env["HEADROOM_TELEMETRY"], "off")
+
+    def test_isolated_python_env_drops_pythonpath_and_pythonhome_case_insensitively(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "PYTHONPATH": "/foreign/site-packages",
+                "pythonhome": "/foreign/python",
+                "KEEP_ME": "yes",
+            },
+            clear=True,
+        ):
+            env = manager._isolated_python_env()
+        self.assertNotIn("PYTHONPATH", env)
+        self.assertNotIn("pythonhome", env)
+        self.assertEqual(env["KEEP_ME"], "yes")
 
     def test_setup_requires_uninstall_before_managed_identity_change(self):
         with tempfile.TemporaryDirectory() as td:

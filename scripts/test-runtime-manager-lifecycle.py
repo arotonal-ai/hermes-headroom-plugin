@@ -246,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manager-command", default="headroom-runtime")
     parser.add_argument("--runtime-root", default="")
     parser.add_argument("--headroom-spec", default=os.environ.get("HEADROOM_AI_SPEC", "headroom-ai[proxy]==0.32.1"))
-    parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", "litellm==1.91.3"))
+    parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", "litellm==1.94.0rc3"))
     parser.add_argument("--install-timeout", type=int, default=600)
     parser.add_argument("--ready-timeout", type=int, default=120)
     parser.add_argument("--report", default="")
@@ -428,6 +428,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     reconcile_dry_json = parse_json(reconcile_dry_proc) if reconcile_dry_proc else {}
     reconcile_apply_json = parse_json(reconcile_apply_proc) if reconcile_apply_proc else {}
+    # CPython/venv implementations may expose either the venv executable or its
+    # base interpreter. A proven redirector chain adds listener evidence; this
+    # gate instead keeps mutation authority tied to manager-owned task actions.
     reconcile_ok = bool(
         os.name != "nt"
         or (
@@ -435,7 +438,6 @@ def main(argv: list[str] | None = None) -> int:
             and reconcile_dry_proc.returncode == 1
             and reconcile_dry_json.get("decision") == "MIGRATION_REQUIRED"
             and reconcile_dry_json.get("ownership", {}).get("deployment", {}).get("proven") is True
-            and reconcile_dry_json.get("ownership", {}).get("listener_binding", {}).get("proven") is False
             and reconcile_dry_json.get("mutation_authority", {}).get("eligible") is True
             and reconcile_dry_json.get("mutation_authority", {}).get("scope") == "windows_task_contract"
             and reconcile_dry_json.get("mutation_authority", {}).get("evidence")

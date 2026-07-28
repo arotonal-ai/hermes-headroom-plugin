@@ -67,7 +67,7 @@ Wheel install:
 headroom-runtime setup
 ```
 
-Use `setup --dry-run --json` for a no-write plan. The manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, and uses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It does not invoke the 0.32.1 direct apply path that writes persistent shell blocks. It verifies upstream status, `/readyz`, and real plugin compress → retrieve smoke before reporting `RUNTIME_FULL_DURABLE`.
+Use `setup --dry-run --json` for a no-write plan. The manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.94.0rc3`, and uses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It does not invoke the 0.32.1 direct apply path that writes persistent shell blocks. It verifies upstream status, `/readyz`, and real plugin compress → retrieve smoke before reporting `RUNTIME_FULL_DURABLE`.
 
 Verify and roll back with the same launcher/entry point:
 
@@ -126,7 +126,7 @@ Validate plugin install in a temporary Hermes home:
 scripts/test-clean-hermes-install.sh --local
 ```
 
-Compatibility: v0.6.0 preserves the published v0.5.2 managed default, `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, and adds P1–P3 context-lifecycle capability without changing provider routing. Headroom 0.31.0 remains a plugin-compatibility/rollback lane, not the managed install default. Use `--spec` / `HEADROOM_AI_SPEC` or `--litellm-spec` / `HEADROOM_LITELLM_SPEC` only for an explicit rollback, target-host diagnostic, or isolated canary. See [docs/compatibility.md](docs/compatibility.md); Python 3.13/3.14 and newer dependency ranges remain experimental.
+Compatibility: the production portable lane uses `headroom-ai[proxy]==0.32.1` plus `litellm==1.94.0rc3`, fail-fast Python `>=3.11,<3.15` validation, isolated Python subprocess environments, and blocking native-Windows Python 3.14 CI. Headroom 0.31.0 remains a plugin-compatibility/rollback lane, not the manager default. Use `--spec` / `HEADROOM_AI_SPEC` or `--litellm-spec` / `HEADROOM_LITELLM_SPEC` only for an explicit rollback, target-host canary, or incident override. A non-default LiteLLM spec does not silently bypass the Python gate; Python outside the certified range additionally requires `--allow-unsupported-python` and remains canary-only. See the [compatibility contract](docs/compatibility.md) for platform evidence and host-level durability limits.
 
 ## 5. Scoped on-demand mode and cache
 Portable plugin operation should favor compression and savings by default. For this repo's own heavy iterative improvement loops, disable middleware auto-compression without stopping the runtime: set `HEADROOM_AUTO_COMPRESSION=0` for the development process, or `context_reduction.auto_compression: false` in Hermes config plus fresh session/gateway restart. Status/smoke/cache/retrieve still work; eligible tool outputs return exact unless an explicit wrapper/runtime path compresses them. Re-enable automatic compression for normal portable operation.

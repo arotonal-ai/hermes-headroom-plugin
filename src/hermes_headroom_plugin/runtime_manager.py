@@ -27,9 +27,11 @@ from typing import Any, Sequence
 from .proxy import readyz, smoke
 
 RUNTIME_VERSION = "0.32.1"
-LITELLM_VERSION = "1.91.3"
+LITELLM_VERSION = "1.94.0rc3"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={RUNTIME_VERSION}"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_VERSION}"
+CERTIFIED_LITELLM_PYTHON_MIN = (3, 11)
+CERTIFIED_LITELLM_PYTHON_MAX_EXCLUSIVE = (3, 15)
 PYPI_INDEX_URL = "https://pypi.org/simple"
 _OPERATOR_RE = r"(?:===|==|~=|!=|<=|>=|<|>)"
 _VERSION_TOKEN_RE = r"[A-Za-z0-9][A-Za-z0-9.*+!_-]*"
@@ -677,13 +679,27 @@ def _run(
     return proc
 
 
+def _isolated_python_env() -> dict[str, str]:
+    """Return the inherited environment without Python import-path overrides."""
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() not in {"PYTHONHOME", "PYTHONPATH"}
+    }
+
+
 def _runtime_env(root: Path) -> dict[str, str]:
-    env = {key: value for key, value in os.environ.items() if not key.startswith("HEADROOM_")}
+    env = {
+        key: value
+        for key, value in _isolated_python_env().items()
+        if not key.upper().startswith("HEADROOM_")
+    }
     env.update(
         {
             "HEADROOM_WORKSPACE_DIR": str(_workspace_dir(root)),
             "HEADROOM_TELEMETRY": "off",
             "HEADROOM_DISABLE_UPDATE_CHECK": "1",
+            "HEADROOM_DISABLE_KOMPRESS": "1",
             "HEADROOM_CCR_BACKEND": DEFAULT_CCR_BACKEND,
             "HEADROOM_CCR_TTL_SECONDS": str(DEFAULT_CCR_TTL_SECONDS),
         }
@@ -1176,6 +1192,85 @@ def _upstream_status_evidence(
     return result
 
 
+def _selected_python_version(python: str) -> tuple[int, int, int]:
+    proc = _run(
+        [
+            python,
+            "-I",
+            "-c",
+            "import json,sys; print(json.dumps(list(sys.version_info[:3])))",
+        ],
+        timeout=30,
+        log=None,
+        env=os.environ.copy(),
+    )
+    if proc.returncode != 0:
+        raise RuntimeError("selected runtime Python could not be executed")
+    try:
+        value = json.loads(proc.stdout.splitlines()[-1])
+        version = tuple(int(item) for item in value)
+    except (IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError("selected runtime Python returned no verifiable version") from exc
+    if len(version) != 3:
+        raise RuntimeError("selected runtime Python returned an invalid version")
+    return version
+
+
+def _validate_certified_python(
+    python: str,
+    litellm_spec: str,
+    *,
+    allow_unsupported: bool = False,
+) -> dict[str, Any]:
+    version = _selected_python_version(python)
+    compatible = (
+        CERTIFIED_LITELLM_PYTHON_MIN
+        <= version
+        < CERTIFIED_LITELLM_PYTHON_MAX_EXCLUSIVE
+    )
+    if not compatible:
+        rendered = ".".join(str(item) for item in version)
+        if litellm_spec == DEFAULT_LITELLM_SPEC:
+            raise RuntimeError(
+                f"selected runtime Python {rendered} is incompatible with certified "
+                f"{DEFAULT_LITELLM_SPEC}; requires Python >=3.11,<3.15"
+            )
+        if not allow_unsupported:
+            raise RuntimeError(
+                f"selected runtime Python {rendered} is outside the manager-certified "
+                "range >=3.11,<3.15; an explicit LiteLLM override does not bypass "
+                "this gate. Pass --allow-unsupported-python only for an "
+                "operator-owned target-host canary"
+            )
+        return {
+            "checked": False,
+            "python_range_checked": True,
+            "allowed_unsupported": True,
+            "version": rendered,
+            "requires": ">=3.11,<3.15",
+            "litellm_spec": litellm_spec,
+            "reason": "explicit unsupported-Python override; compatibility is operator-owned canary evidence",
+        }
+    if litellm_spec != DEFAULT_LITELLM_SPEC:
+        return {
+            "checked": False,
+            "python_range_checked": True,
+            "allowed_unsupported": False,
+            "version": ".".join(str(item) for item in version),
+            "requires": ">=3.11,<3.15",
+            "litellm_spec": litellm_spec,
+            "reason": "explicit LiteLLM override; package compatibility is operator-owned canary evidence",
+        }
+    return {
+        "checked": True,
+        "python_range_checked": True,
+        "allowed_unsupported": False,
+        "version": ".".join(str(item) for item in version),
+        "requires": ">=3.11,<3.15",
+        "litellm_spec": litellm_spec,
+    }
+
+
 def _ensure_runtime(
     root: Path,
     *,
@@ -1191,7 +1286,7 @@ def _ensure_runtime(
             [python, "-m", "venv", str(venv_dir)],
             timeout=timeout,
             log=root / "install.log",
-            env=os.environ.copy(),
+            env=_isolated_python_env(),
         )
         if created.returncode != 0:
             raise RuntimeError(f"runtime venv creation failed; see {root / 'install.log'}")
@@ -1213,7 +1308,7 @@ def _ensure_runtime(
         ],
         timeout=timeout,
         log=log,
-        env=os.environ.copy(),
+        env=_isolated_python_env(),
     )
     if install.returncode != 0:
         raise RuntimeError(f"official runtime installation failed; see {log}")
@@ -1228,6 +1323,7 @@ def _ensure_runtime(
         ],
         timeout=30,
         log=log,
+        env=_isolated_python_env(),
     )
     versions = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
     if probe.returncode != 0 or len(versions) < 2:
@@ -1250,6 +1346,7 @@ def _safe_apply_payload(*, root: Path, profile: str, port: int, preset: str) -> 
             "HEADROOM_CCR_BACKEND": DEFAULT_CCR_BACKEND,
             "HEADROOM_CCR_TTL_SECONDS": str(DEFAULT_CCR_TTL_SECONDS),
             "HEADROOM_DISABLE_UPDATE_CHECK": "1",
+            "HEADROOM_DISABLE_KOMPRESS": "1",
         },
     }
 
@@ -1496,6 +1593,7 @@ def _manifest_contract(
         "HEADROOM_CCR_BACKEND": DEFAULT_CCR_BACKEND,
         "HEADROOM_CCR_TTL_SECONDS": str(DEFAULT_CCR_TTL_SECONDS),
         "HEADROOM_DISABLE_UPDATE_CHECK": "1",
+        "HEADROOM_DISABLE_KOMPRESS": "1",
     }
     expected_proxy_args = [
         "--host", DEFAULT_HOST,
@@ -1657,6 +1755,14 @@ def setup(args: argparse.Namespace) -> int:
         "provider_mutations": False,
         "telemetry": "off",
     }
+    # Dry-run is the operator preflight, so it must reject a runtime that real
+    # setup would reject. The probe is read-only and still precedes lock/root
+    # creation.
+    plan["python_compatibility"] = _validate_certified_python(
+        args.python,
+        args.litellm_spec,
+        allow_unsupported=getattr(args, "allow_unsupported_python", False),
+    )
     if args.dry_run:
         plan["upstream_api"] = [
             "_build_deployment_manifest",
@@ -2838,6 +2944,14 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--python", default=sys.executable)
     setup_parser.add_argument("--headroom-spec", default=os.environ.get("HEADROOM_AI_SPEC", DEFAULT_HEADROOM_SPEC))
     setup_parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", DEFAULT_LITELLM_SPEC))
+    setup_parser.add_argument(
+        "--allow-unsupported-python",
+        action="store_true",
+        help=(
+            "allow a selected Python outside >=3.11,<3.15 only with an explicit "
+            "non-default LiteLLM canary; never part of the certified release path"
+        ),
+    )
     setup_parser.add_argument("--install-timeout", type=int, default=600)
     setup_parser.add_argument("--ready-timeout", type=int, default=45)
     setup_parser.add_argument("--dry-run", action="store_true")
