@@ -1552,6 +1552,7 @@ def _manifest_contract(
     port: int,
     preset: str,
     require_windows_task_contract: bool = True,
+    allow_v060_base_env: bool = False,
 ) -> dict[str, Any]:
     path = _manifest_path(root, profile)
     result: dict[str, Any] = {"ok": False, "path": str(path), "available": path.is_file()}
@@ -1595,6 +1596,17 @@ def _manifest_contract(
         "HEADROOM_DISABLE_UPDATE_CHECK": "1",
         "HEADROOM_DISABLE_KOMPRESS": "1",
     }
+    # v0.6.0 created the same manager-owned deployment identity before
+    # HEADROOM_DISABLE_KOMPRESS became a required fail-closed runtime pin.
+    # Accept that one exact historical environment only for uninstall so the
+    # manager can delegate symmetric removal through the deployment's own
+    # pinned Headroom CLI. Status, setup, and reconciliation still require the
+    # complete current environment contract.
+    v060_env = {
+        key: value
+        for key, value in expected_env.items()
+        if key != "HEADROOM_DISABLE_KOMPRESS"
+    }
     expected_proxy_args = [
         "--host", DEFAULT_HOST,
         "--port", str(port),
@@ -1614,16 +1626,23 @@ def _manifest_contract(
         mismatches.append("tool_envs")
     actual_env = data.get("base_env")
     environment_exact = False
+    v060_environment_exact = False
     if isinstance(actual_env, dict):
         actual_non_path_env = {
             key: value
             for key, value in actual_env.items()
             if key != "HEADROOM_WORKSPACE_DIR"
         }
-        environment_exact = actual_non_path_env == expected_env and _path_identity_equal(
+        workspace_exact = _path_identity_equal(
             actual_env.get("HEADROOM_WORKSPACE_DIR", ""), _workspace_dir(root)
         )
-    if not environment_exact:
+        environment_exact = actual_non_path_env == expected_env and workspace_exact
+        v060_environment_exact = (
+            allow_v060_base_env
+            and actual_non_path_env == v060_env
+            and workspace_exact
+        )
+    if not (environment_exact or v060_environment_exact):
         mismatches.append("base_env")
     if data.get("proxy_args") != expected_proxy_args:
         mismatches.append("proxy_args")
@@ -1648,6 +1667,7 @@ def _manifest_contract(
             "targets_empty": data.get("targets") == [],
             "mutations_empty": data.get("mutations") == [],
             "environment_exact": environment_exact,
+            "v060_environment_exact": v060_environment_exact,
             "proxy_args_exact": data.get("proxy_args") == expected_proxy_args,
             "windows_task_contract": windows_task_contract,
             "mismatches": mismatches,
@@ -2795,6 +2815,7 @@ def uninstall(args: argparse.Namespace) -> int:
             port=state.port,
             preset=state.preset,
             require_windows_task_contract=False,
+            allow_v060_base_env=True,
         )
         if not manifest_contract.get("ok"):
             partial_without_manifest = (

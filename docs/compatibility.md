@@ -7,6 +7,8 @@ This page separates **published certified releases** from withdrawn releases and
 - Published `v0.5.1`: `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3`, managed through `headroom-runtime`.
 - Published `v0.5.2`: the same certified runtime pair, with the YAML remote-proxy opt-in correction from issue #20.
 - Published prerelease `v0.6.0rc1`: the same managed pair plus optional P1–P3 context lifecycle, validated locally and on the blocking multi-OS lifecycle matrix.
+- Published `v0.6.1`: Python `>=3.11,<3.15`, `headroom-ai[proxy]==0.32.1`, and `litellm==1.94.0rc3`, with blocking Python 3.11/3.14 unit, dependency, and lifecycle lanes on Linux, macOS, and Windows.
+- Published `v0.6.2`: the same certified pair and Python range, plus exact v0.6.0 managed-manifest compatibility for safe uninstall during upgrade.
 
 ## Python 3.14 production compatibility
 
@@ -76,19 +78,19 @@ Some native Windows hosts report Microsoft Defender quarantining the base depend
 
 ## Experimental future runtimes
 
-Python 3.13, non-Windows Python 3.14, future `headroom-ai` ranges, and newer LiteLLM releases are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. Native Windows Python 3.14 is additionally present in the blocking Issue #24 candidate lifecycle matrix. The latest-LiteLLM lane holds Headroom at `0.32.1`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
+Python 3.13 and 3.14 are inside the published `>=3.11,<3.15` range beginning with v0.6.1. Future `headroom-ai` ranges, newer LiteLLM releases, and supplementary interpreter lanes are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. The latest-LiteLLM lane holds Headroom at `0.32.1`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
 
 That workflow is intentionally **non-blocking**:
 
 - it may pass or fail without changing certified support;
 - failures are early drift signals, not regressions in supported 3.11/3.12 paths;
-- the published certified `litellm==1.91.3` path remains historical release evidence; the `1.94.0rc3` candidate needs its own blocking admission evidence;
+- the published certified `litellm==1.91.3` path remains historical release evidence; `1.94.0rc3` completed blocking admission in v0.6.1;
 - promotion requires a normal blocking lifecycle matrix, release gate, and docs/changelog update.
 
 | Runtime | Current posture | Promotion gate |
 |---|---|---|
-| Python 3.13 | experimental monitor | lifecycle PASS on Ubuntu/macOS/Windows and no known upstream native dependency failures |
-| Python 3.14 | blocking Windows candidate; experimental elsewhere | Windows CI + target-host `RUNTIME_FULL_DURABLE`; full multi-OS lifecycle required for global certification |
+| Python 3.13 | published in `>=3.11,<3.15`; supplementary monitor | retain compatibility while exact boundary lanes remain blocking |
+| Python 3.14 | published since v0.6.1 | retain blocking Linux/macOS/Windows dependency and lifecycle lanes |
 | Upstream `headroom-ai[proxy]` latest | experimental monitor | blocking dependency + manager lifecycle PASS before changing the exact pin |
 | LiteLLM latest allowed `<2.0` | experimental monthly monitor | repeated multi-OS PASS, advisory review, and blocking release-candidate gate |
 

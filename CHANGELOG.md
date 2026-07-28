@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.6.2 — 2026-07-28
+
+- Restore a safe in-place upgrade path from the exact v0.6.0 managed manifest: `uninstall` alone may accept the known v0.6.0 `base_env` variant that predates `HEADROOM_DISABLE_KOMPRESS=1`, while status, setup, reconciliation, altered environments, provider targets, and mutations remain fail-closed.
+- Document the managed upgrade order and keep the Python 3.11–3.14 compatibility record aligned with the published blocking evidence.
+
 ## v0.6.1 — 2026-07-28
 
 - Certify the managed runtime on Python `>=3.11,<3.15` with `litellm==1.94.0rc3`, validate compatibility during dry-run and before any lock/runtime-root mutation, require an explicit `--allow-unsupported-python` flag for out-of-range custom-LiteLLM canaries, pin pytest `9.1.1`, and add blocking Python 3.11/3.14 boundary unit plus lifecycle coverage on native Linux, macOS, and Windows.

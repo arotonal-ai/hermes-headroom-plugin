@@ -1260,6 +1260,72 @@ class RuntimeManagerTest(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[1:3], ["install", "remove"])
 
+    def test_uninstall_accepts_exact_v060_base_env_for_rollback(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            manager._write_state(root, state)
+            manifest = self._write_manifest(root)
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data["base_env"].pop("HEADROOM_DISABLE_KOMPRESS")
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            cli = self._fake_cli(state)
+            completed = subprocess.CompletedProcess([str(cli)], 0, "Removed deployment\n")
+            with (
+                patch.object(manager, "_run", return_value=completed) as run,
+                patch.object(manager, "_wait_stopped", return_value={"ok": False, "status": None}),
+            ):
+                code, output = self._run_main(
+                    ["uninstall", "--runtime-root", str(root), "--json"]
+                )
+            root_exists = root.exists()
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output)["decision"], "UNINSTALLED")
+        self.assertFalse(root_exists)
+        command = run.call_args.args[0]
+        self.assertEqual(command[1:3], ["install", "remove"])
+
+    def test_status_contract_rejects_v060_base_env(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manifest = self._write_manifest(root)
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data["base_env"].pop("HEADROOM_DISABLE_KOMPRESS")
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            contract = manager._manifest_contract(
+                root,
+                profile="hermes-test",
+                port=57881,
+                preset="persistent-service",
+            )
+        self.assertFalse(contract["ok"])
+        self.assertFalse(contract["environment_exact"])
+        self.assertFalse(contract["v060_environment_exact"])
+        self.assertIn("base_env", contract["mismatches"])
+
+    def test_uninstall_rejects_v060_base_env_with_extra_variable(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "runtime"
+            manager._ensure_marker(root)
+            state = self._state(root)
+            manager._write_state(root, state)
+            manifest = self._write_manifest(root)
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+            data["base_env"].pop("HEADROOM_DISABLE_KOMPRESS")
+            data["base_env"]["UNMANAGED_EXTRA"] = "blocked"
+            manifest.write_text(json.dumps(data), encoding="utf-8")
+            self._fake_cli(state)
+            with patch.object(manager, "_run") as run:
+                code, output = self._run_main(
+                    ["uninstall", "--runtime-root", str(root), "--json"]
+                )
+        payload = json.loads(output)
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["decision"], "UNINSTALL_BLOCKED")
+        self.assertIn("base_env", payload["manifest_contract"]["mismatches"])
+        run.assert_not_called()
+
     def test_uninstall_preserves_files_if_listener_remains_ready(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "runtime"

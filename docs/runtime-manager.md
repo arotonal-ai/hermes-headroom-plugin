@@ -63,7 +63,7 @@ The base wheel is sufficient: `setup` creates the isolated official runtime itse
 
 ```bash
 python3 -m pip install \
-  https://github.com/arotonal-ai/hermes-headroom-plugin/releases/download/v0.6.1/hermes_headroom_plugin-0.6.1-py3-none-any.whl
+  https://github.com/arotonal-ai/hermes-headroom-plugin/releases/download/v0.6.2/hermes_headroom_plugin-0.6.2-py3-none-any.whl
 headroom-runtime setup
 ```
 
@@ -94,6 +94,21 @@ headroom-runtime setup --port 18787 --json
 ```
 
 A successful `doctor` returns exit code `0` and decision `RUNTIME_FULL_DURABLE`. Exit code `0` from upstream `install status` is necessary but insufficient: its lifecycle and identity fields are parsed and cross-checked before the durable decision is emitted.
+
+### Upgrade an existing v0.6.0 managed runtime
+
+Record the current loopback port from `status`, update the plugin, then use the new manager to remove the exact manager-owned v0.6.0 deployment before creating the v0.6.2 runtime with the same port:
+
+```bash
+PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
+python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" status --json
+hermes plugins update headroom_retrieve
+python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" uninstall --json
+python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" setup --port <RECORDED_PORT> --json
+python3 "$PLUGIN_DIR/scripts/headroom-runtime.py" doctor --json
+```
+
+The compatibility allowance is mutation-scoped: only `uninstall` accepts the exact v0.6.0 `base_env` variant that is missing `HEADROOM_DISABLE_KOMPRESS=1`. Status, setup, reconciliation, any additional/missing environment field, identity drift, provider target, or recorded mutation remains blocked. Do not edit the manifest to force adoption. If the old checkout must be used for incident recovery, pin it to the published `v0.6.0` tag, run its doctor and uninstall, then return to the current published tag before setup.
 
 ## Platform lifecycle
 
