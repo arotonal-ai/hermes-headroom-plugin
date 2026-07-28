@@ -26,7 +26,7 @@ Repository = "https://github.com/arotonal-ai/hermes-headroom-plugin"
 # --spec/HEADROOM_AI_SPEC for an explicit canary or incident rollback.
 proxy = [
   "headroom-ai[proxy]==0.32.1",
-  "litellm==1.91.3",
+  "litellm==1.94.0rc3",
 ]
 test = ["pytest>=8,<10"]
 release = ["build>=1,<2"]

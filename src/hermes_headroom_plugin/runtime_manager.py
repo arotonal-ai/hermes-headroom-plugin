@@ -27,7 +27,7 @@ from typing import Any, Sequence
 from .proxy import readyz, smoke
 
 RUNTIME_VERSION = "0.32.1"
-LITELLM_VERSION = "1.91.3"
+LITELLM_VERSION = "1.94.0rc3"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={RUNTIME_VERSION}"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_VERSION}"
 PYPI_INDEX_URL = "https://pypi.org/simple"
@@ -677,8 +677,20 @@ def _run(
     return proc
 
 
+def _isolated_python_env() -> dict[str, str]:
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key.upper() not in {"PYTHONHOME", "PYTHONPATH"}
+    }
+
+
 def _runtime_env(root: Path) -> dict[str, str]:
-    env = {key: value for key, value in os.environ.items() if not key.startswith("HEADROOM_")}
+    env = {
+        key: value
+        for key, value in _isolated_python_env().items()
+        if not key.upper().startswith("HEADROOM_")
+    }
     env.update(
         {
             "HEADROOM_WORKSPACE_DIR": str(_workspace_dir(root)),
@@ -1191,7 +1203,7 @@ def _ensure_runtime(
             [python, "-m", "venv", str(venv_dir)],
             timeout=timeout,
             log=root / "install.log",
-            env=os.environ.copy(),
+            env=_isolated_python_env(),
         )
         if created.returncode != 0:
             raise RuntimeError(f"runtime venv creation failed; see {root / 'install.log'}")
@@ -1213,7 +1225,7 @@ def _ensure_runtime(
         ],
         timeout=timeout,
         log=log,
-        env=os.environ.copy(),
+        env=_isolated_python_env(),
     )
     if install.returncode != 0:
         raise RuntimeError(f"official runtime installation failed; see {log}")
@@ -1228,6 +1240,7 @@ def _ensure_runtime(
         ],
         timeout=30,
         log=log,
+        env=_isolated_python_env(),
     )
     versions = [line.strip() for line in probe.stdout.splitlines() if line.strip()]
     if probe.returncode != 0 or len(versions) < 2:

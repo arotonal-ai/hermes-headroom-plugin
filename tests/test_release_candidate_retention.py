@@ -56,9 +56,9 @@ class SymlinkPrivilegeHandlingTest(unittest.TestCase):
 def test_release_candidate_default_runtime_is_pinned() -> None:
     assert MODULE.HEADROOM_RUNTIME_VERSION == "0.32.1"
     assert MODULE.DEFAULT_HEADROOM_SPEC == "headroom-ai[proxy]==0.32.1"
-    assert MODULE.LITELLM_RUNTIME_VERSION == "1.91.3"
-    assert MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
-    assert RUNTIME_SMOKE_MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.91.3"
+    assert MODULE.LITELLM_RUNTIME_VERSION == "1.94.0rc3"
+    assert MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.94.0rc3"
+    assert RUNTIME_SMOKE_MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.94.0rc3"
 
 
 def test_package_proxy_extra_matches_certified_runtime() -> None:
@@ -124,7 +124,7 @@ def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> N
 
     for workflow in (runtime_smoke, release_candidate):
         assert 'default: "headroom-ai[proxy]==0.32.1"' in workflow
-        assert 'default: "litellm==1.91.3"' in workflow
+        assert 'default: "litellm==1.94.0rc3"' in workflow
         assert "HEADROOM_AI_SPEC:" in workflow
         assert "HEADROOM_LITELLM_SPEC:" in workflow
 

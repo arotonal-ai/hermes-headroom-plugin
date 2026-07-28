@@ -222,7 +222,7 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertNotIn("command", payload)
         self.assertIn("install_supervisor", payload["upstream_api"])
         self.assertEqual(payload["headroom_spec"], "headroom-ai[proxy]==0.32.1")
-        self.assertEqual(payload["litellm_spec"], "litellm==1.91.3")
+        self.assertEqual(payload["litellm_spec"], "litellm==1.94.0rc3")
 
     def test_default_preset_is_user_service_except_windows_task(self):
         with patch.object(manager.sys, "platform", "win32"):
@@ -333,7 +333,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.94.0rc3"}),
                 ),
                 patch.object(manager, "_safe_apply", side_effect=apply_and_write_manifest) as safe_apply,
                 patch.object(manager, "_wait_ready", return_value={"ok": True, "status": 200}),
@@ -390,7 +390,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.94.0rc3"}),
                 ),
                 patch.object(manager, "_safe_apply", return_value=unsafe),
             ):
@@ -414,7 +414,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.94.0rc3"}),
                 ),
                 patch.object(manager, "_safe_apply", return_value=completed),
             ):
@@ -685,7 +685,7 @@ class RuntimeManagerTest(unittest.TestCase):
                 patch.object(
                     manager,
                     "_ensure_runtime",
-                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.91.3"}),
+                    return_value=(cli, {"headroom": "0.32.1", "litellm": "1.94.0rc3"}),
                 ),
                 patch.object(manager, "_safe_apply", side_effect=apply_and_write_manifest),
                 patch.object(manager, "_wait_ready", return_value={"ok": True, "status": 200}),
@@ -808,7 +808,7 @@ class RuntimeManagerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             manager._validate_package_spec("headroom-ai[proxy]=>0.32.1", package="headroom-ai")
         with self.assertRaises(ValueError):
-            manager._validate_package_spec("litellm!!1.91.3", package="litellm")
+            manager._validate_package_spec("litellm!!1.94.0rc3", package="litellm")
 
     def test_lifecycle_script_rejects_secret_spec_before_writes_or_logs(self):
         repo = Path(__file__).resolve().parents[1]
@@ -836,7 +836,10 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertFalse(root.exists())
 
     def test_runtime_install_uses_isolated_official_pypi(self):
-        with tempfile.TemporaryDirectory() as td:
+        with tempfile.TemporaryDirectory() as td, patch.dict(
+            "os.environ",
+            {"PYTHONPATH": "/foreign/site-packages", "PYTHONHOME": "/foreign/python"},
+        ):
             root = Path(td) / "runtime"
             venv = manager._venv_dir(root)
             python_exe = manager._exe(venv, "python")
@@ -846,7 +849,7 @@ class RuntimeManagerTest(unittest.TestCase):
             pip.write_text("fake", encoding="utf-8")
             completed = [
                 subprocess.CompletedProcess([str(pip)], 0, "installed\n"),
-                subprocess.CompletedProcess([str(python_exe)], 0, "0.32.1\n1.91.3\n"),
+                subprocess.CompletedProcess([str(python_exe)], 0, "0.32.1\n1.94.0rc3\n"),
             ]
             with patch.object(manager, "_run", side_effect=completed) as run:
                 manager._ensure_runtime(
@@ -860,6 +863,10 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertEqual(install_command[:3], [str(pip), "--isolated", "install"])
         self.assertIn(manager.PYPI_INDEX_URL, install_command)
         self.assertIn("--no-input", install_command)
+        for call in run.call_args_list:
+            call_env = call.kwargs.get("env") or {}
+            self.assertNotIn("PYTHONPATH", call_env)
+            self.assertNotIn("PYTHONHOME", call_env)
 
     def test_setup_blocks_foreign_manifest_before_install(self):
         with tempfile.TemporaryDirectory() as td:
@@ -1068,13 +1075,31 @@ class RuntimeManagerTest(unittest.TestCase):
     def test_runtime_env_drops_uncontrolled_headroom_variables(self):
         with tempfile.TemporaryDirectory() as td, patch.dict(
             "os.environ",
-            {"HEADROOM_PORT": "9999", "HEADROOM_CONFIG_DIR": "/unsafe", "KEEP_ME": "yes"},
+            {
+                "HEADROOM_PORT": "9999",
+                "HEADROOM_CONFIG_DIR": "/unsafe",
+                "PYTHONPATH": "/foreign/site-packages",
+                "PYTHONHOME": "/foreign/python",
+                "KEEP_ME": "yes",
+            },
         ):
             env = manager._runtime_env(Path(td) / "runtime")
         self.assertNotIn("HEADROOM_PORT", env)
         self.assertNotIn("HEADROOM_CONFIG_DIR", env)
+        self.assertNotIn("PYTHONPATH", env)
+        self.assertNotIn("PYTHONHOME", env)
         self.assertEqual(env["KEEP_ME"], "yes")
         self.assertEqual(env["HEADROOM_TELEMETRY"], "off")
+
+    def test_isolated_python_env_drops_pythonpath_and_pythonhome_only(self):
+        with patch.dict(
+            "os.environ",
+            {"PYTHONPATH": "/foreign/site-packages", "PYTHONHOME": "/foreign/python", "KEEP_ME": "yes"},
+        ):
+            env = manager._isolated_python_env()
+        self.assertNotIn("PYTHONPATH", env)
+        self.assertNotIn("PYTHONHOME", env)
+        self.assertEqual(env["KEEP_ME"], "yes")
 
     def test_setup_requires_uninstall_before_managed_identity_change(self):
         with tempfile.TemporaryDirectory() as td:

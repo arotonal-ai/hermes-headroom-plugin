@@ -246,7 +246,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manager-command", default="headroom-runtime")
     parser.add_argument("--runtime-root", default="")
     parser.add_argument("--headroom-spec", default=os.environ.get("HEADROOM_AI_SPEC", "headroom-ai[proxy]==0.32.1"))
-    parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", "litellm==1.91.3"))
+    parser.add_argument("--litellm-spec", default=os.environ.get("HEADROOM_LITELLM_SPEC", "litellm==1.94.0rc3"))
     parser.add_argument("--install-timeout", type=int, default=600)
     parser.add_argument("--ready-timeout", type=int, default=120)
     parser.add_argument("--report", default="")

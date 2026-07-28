@@ -18,7 +18,7 @@ on:
       litellm_spec:
         description: "certified LiteLLM constraint"
         required: false
-        default: "litellm==1.91.3"
+        default: "litellm==1.94.0rc3"
   schedule:
     - cron: "17 9 * * 1"
 
@@ -45,7 +45,7 @@ jobs:
       - name: Setup, status, doctor, manifest and uninstall canary
         env:
           HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.32.1' }}
-          HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.91.3' }}
+          HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.94.0rc3' }}
         run: >-
           python scripts/test-runtime-manager-lifecycle.py
           --manager-command headroom-runtime
