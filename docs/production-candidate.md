@@ -1,6 +1,6 @@
-# v0.6.0 capability decisions
+# v0.6.0 capability decisions (historical)
 
-Status: stable promotion candidate; publication still requires complete local and remote release gates.
+Status: published historical baseline. Current release contracts live in the changelog, compatibility guide, runtime-manager guide, and release-candidate gate.
 
 ## Stable core
 
