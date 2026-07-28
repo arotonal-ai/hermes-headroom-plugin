@@ -64,7 +64,7 @@ def test_release_candidate_default_runtime_is_pinned() -> None:
 def test_package_proxy_extra_matches_certified_runtime() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
-    assert project["version"] == "0.6.1"
+    assert project["version"] == "0.6.2"
     assert project["requires-python"] == ">=3.11,<3.15"
     assert project["optional-dependencies"]["proxy"] == [
         MODULE.DEFAULT_HEADROOM_SPEC,
