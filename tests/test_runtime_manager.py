@@ -1818,8 +1818,9 @@ class RuntimeManagerTest(unittest.TestCase):
         self.assertIs(payload["writes_performed"], True)
         self.assertEqual(payload["write_scope"], ["transaction_lock_only"])
         self.assertEqual(payload["preflight"], changed)
-        acquire.assert_called_once_with(root)
-        release.assert_called_once_with(root, 42)
+        canonical_root = root.resolve()
+        acquire.assert_called_once_with(canonical_root)
+        release.assert_called_once_with(canonical_root, 42)
         apply.assert_not_called()
 
     def test_reconcile_does_not_claim_current_contract_when_runtime_identity_is_missing(self):
