@@ -62,9 +62,12 @@ py -3 "$PluginDir\scripts\headroom-runtime.py" setup
 The base wheel is sufficient: `setup` creates the isolated official runtime itself.
 
 ```bash
-python3 -m pip install hermes-headroom-plugin
+python3 -m pip install \
+  https://github.com/arotonal-ai/hermes-headroom-plugin/releases/download/v0.6.1/hermes_headroom_plugin-0.6.1-py3-none-any.whl
 headroom-runtime setup
 ```
+
+The package is distributed through this repository's public GitHub Release; it is not published on PyPI. Prefer the native Hermes Git install for automatic repository integration.
 
 The optional `[proxy]` extra remains useful for developers who intentionally want the runtime packages in the same environment, but it is not required by the managed path.
 
