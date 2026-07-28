@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import ntpath
 import os
 import re
 import shutil
@@ -657,7 +658,7 @@ def _run(
     command: Sequence[str],
     *,
     timeout: int,
-    log: Path,
+    log: Path | None,
     env: dict[str, str] | None = None,
     input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
@@ -671,7 +672,8 @@ def _run(
         env=env,
         input=input_text,
     )
-    _append_log(log, command, proc.stdout)
+    if log is not None:
+        _append_log(log, command, proc.stdout)
     return proc
 
 
@@ -833,7 +835,11 @@ def _windows_arguments_match(value: str, launcher: Path) -> bool:
 
 
 def _parse_windows_task_xml(
-    xml_text: str | bytes, *, launcher: Path, trigger_kind: str
+    xml_text: str | bytes,
+    *,
+    launcher: Path,
+    trigger_kind: str,
+    legacy_launcher: Path | None = None,
 ) -> dict[str, Any]:
     reasons: list[str] = []
     candidates: list[str] = []
@@ -891,6 +897,14 @@ def _parse_windows_task_xml(
     command_name = re.split(r"[\\/]", command.strip().strip('"'))[-1].casefold()
     action_command_exact = action_structure_exact and command_name == "wscript.exe"
     action_arguments_exact = action_structure_exact and _windows_arguments_match(arguments, launcher)
+    legacy_action_command_exact = bool(
+        legacy_launcher is not None
+        and action_structure_exact
+        and _path_identity_equal(command.strip().strip('"'), legacy_launcher)
+    )
+    legacy_action_arguments_exact = bool(
+        legacy_action_command_exact and not arguments.strip()
+    )
     if not action_structure_exact:
         reasons.append("action_structure")
     if not action_command_exact:
@@ -934,6 +948,12 @@ def _parse_windows_task_xml(
         "enabled": enabled,
         "action_command_exact": action_command_exact,
         "action_arguments_exact": action_arguments_exact,
+        "legacy_action_command_exact": legacy_action_command_exact,
+        "legacy_action_arguments_exact": legacy_action_arguments_exact,
+        "managed_action_identity": bool(
+            (action_command_exact and action_arguments_exact)
+            or (legacy_action_command_exact and legacy_action_arguments_exact)
+        ),
         "trigger_exact": trigger_exact,
         "reasons": reasons,
     }
@@ -1013,6 +1033,7 @@ def _supervisor_contract(root: Path, *, profile: str, preset: str) -> dict[str, 
         data = {}
     manifest_contract = _windows_manifest_task_contract(root, profile=profile, data=data)
     launcher = _windows_launcher_path(root, profile)
+    legacy_launcher = _windows_ensure_command_path(root, profile)
     service = f"headroom-{profile}"
     tasks: dict[str, Any] = {}
     evidence: list[str] = []
@@ -1032,7 +1053,10 @@ def _supervisor_contract(root: Path, *, profile: str, preset: str) -> dict[str, 
             if not isinstance(xml_payload, (str, bytes)):
                 xml_payload = b""
             parsed = _parse_windows_task_xml(
-                xml_payload, launcher=launcher, trigger_kind=kind
+                xml_payload,
+                launcher=launcher,
+                trigger_kind=kind,
+                legacy_launcher=legacy_launcher,
             )
         tasks[kind] = parsed
         reasons.extend(f"{kind}:{reason}" for reason in parsed.get("reasons", []))
@@ -1113,6 +1137,7 @@ def _upstream_status_evidence(
     preset: str,
     port: int,
     timeout: int,
+    write_log: bool = True,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "available": headroom.is_file(),
@@ -1128,11 +1153,14 @@ def _upstream_status_evidence(
     }
     if not headroom.is_file():
         return result
+    runtime_env = _runtime_env(root)
+    if not write_log:
+        runtime_env["PYTHONDONTWRITEBYTECODE"] = "1"
     proc = _run(
         [str(headroom), "install", "status", "--profile", profile],
         timeout=timeout,
-        log=root / "manager.log",
-        env=_runtime_env(root),
+        log=root / "manager.log" if write_log else None,
+        env=runtime_env,
     )
     semantic = _parse_upstream_status(
         proc.stdout, profile=profile, preset=preset, port=port
@@ -1257,6 +1285,163 @@ def _tcp_port_open(port: int) -> bool:
             return True
     except OSError:
         return False
+
+
+_WINDOWS_LISTENER_INVENTORY_PS = "\n".join(  # noqa: FLY002
+    (
+        "$ErrorActionPreference = 'Stop'",
+        "$items = @(Get-NetTCPConnection -State Listen -ErrorAction Stop |",
+        "    Where-Object { $_.LocalPort -eq __PORT__ } |",
+        "    Select-Object LocalAddress, LocalPort, OwningProcess)",
+        "$rows = @()",
+        "foreach ($item in $items) {",
+        '    $proc = Get-CimInstance Win32_Process -Filter ("ProcessId = {0}" -f $item.OwningProcess) -ErrorAction Stop',
+        "    $rows += [PSCustomObject]@{",
+        "        local_address = $item.LocalAddress",
+        "        local_port = [int]$item.LocalPort",
+        "        pid = [int]$item.OwningProcess",
+        "        executable_path = [string]$proc.ExecutablePath",
+        "        command_line = [string]$proc.CommandLine",
+        "    }",
+        "}",
+        "@($rows) | ConvertTo-Json -Compress -Depth 4",
+    )
+)
+
+
+def _windows_command_image(command_line: str) -> str:
+    value = command_line.lstrip()
+    if not value:
+        return ""
+    if value.startswith('"'):
+        end = value.find('"', 1)
+        if end < 0:
+            return ""
+        value = value[1:end]
+    else:
+        value = value.split(maxsplit=1)[0]
+    return value.replace("/", "\\").casefold()
+
+
+def _windows_venv_base_executables(venv_dir: Path) -> tuple[Path, ...]:
+    try:
+        lines = (venv_dir / "pyvenv.cfg").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ()
+    for line in lines:
+        key, separator, value = line.partition("=")
+        candidate = value.strip()
+        if (
+            separator
+            and key.strip().casefold() == "executable"
+            and ntpath.isabs(candidate)
+            and ntpath.basename(candidate).casefold() == "python.exe"
+        ):
+            return (Path(candidate),)
+    return ()
+
+
+def _windows_listener_inventory(
+    *,
+    port: int,
+    expected_executables: Sequence[Path] | None,
+    expected_venv_base_executables: Sequence[Path] = (),
+    timeout: int,
+) -> dict[str, Any]:
+    """Inventory a Windows listener without connecting to the application."""
+
+    selected_port = _validate_port(port)
+    result: dict[str, Any] = {
+        "method": "windows_os_socket_process_inventory",
+        "probe_port": selected_port,
+        "http_probe": "not_probed_read_only",
+        "inventory_ok": False,
+        "present": None,
+        "records": [],
+        "identity": {
+            "proven": False,
+            "expected_executables": (
+                [str(path) for path in expected_executables]
+                if expected_executables is not None
+                else []
+            ),
+            "expected_venv_base_executables": [
+                str(path) for path in expected_venv_base_executables
+            ],
+        },
+    }
+    powershell = shutil.which("powershell.exe") or shutil.which("powershell")
+    if powershell is None:
+        result["reason"] = "powershell_unavailable"
+        return result
+    script = _WINDOWS_LISTENER_INVENTORY_PS.replace("__PORT__", str(selected_port))
+    proc = _run(
+        [powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+        timeout=min(max(timeout, 1), 30),
+        log=None,
+        env=os.environ.copy(),
+    )
+    if proc.returncode != 0:
+        result.update({"reason": "windows_socket_inventory_failed", "exit_code": proc.returncode})
+        return result
+    try:
+        decoded = json.loads(proc.stdout.strip() or "[]")
+    except json.JSONDecodeError:
+        result["reason"] = "windows_socket_inventory_invalid_json"
+        return result
+    records = decoded if isinstance(decoded, list) else [decoded]
+    raw_records = [record for record in records if isinstance(record, dict)]
+    normalized: list[dict[str, Any]] = []
+    command_lines: list[str] = []
+    for record in raw_records:
+        sanitized = dict(record)
+        command_lines.append(str(sanitized.pop("command_line", "") or ""))
+        normalized.append(sanitized)
+    result.update({"inventory_ok": True, "present": bool(normalized), "records": normalized})
+    if expected_executables is None:
+        return result
+    expected = {
+        str(path).replace("/", "\\").casefold() for path in expected_executables
+    }
+    expected_venv_bases = {
+        str(path).replace("/", "\\").casefold()
+        for path in expected_venv_base_executables
+    }
+    matching: list[dict[str, Any]] = []
+    match_basis: list[str] = []
+    for index, record in enumerate(normalized):
+        executable = str(record.get("executable_path") or "").replace("/", "\\").casefold()
+        command_image = _windows_command_image(command_lines[index])
+        basis = ""
+        if executable in expected:
+            basis = "managed_os_image"
+        elif executable in expected_venv_bases and command_image in expected:
+            basis = "venv_redirector_chain"
+        if (
+            str(record.get("local_address") or "") == DEFAULT_HOST
+            and basis
+        ):
+            matching.append(record)
+            match_basis.append(basis)
+    pids: set[int] = {
+        int(record["pid"]) for record in normalized if isinstance(record.get("pid"), int)
+    }
+    result["identity"] = {
+        "proven": len(normalized) == 1 and len(pids) == 1 and len(matching) == 1,
+        "expected_executables": [str(path) for path in expected_executables],
+        "expected_venv_base_executables": [
+            str(path) for path in expected_venv_base_executables
+        ],
+        "loopback_only": all(
+            str(record.get("local_address") or "") == DEFAULT_HOST for record in normalized
+        ),
+        "matching_pids": sorted(
+            int(record["pid"]) for record in matching if isinstance(record.get("pid"), int)
+        ),
+        "match_basis": match_basis,
+        "observed_pids": sorted(pids),
+    }
+    return result
 
 
 def _manifest_path(root: Path, profile: str) -> Path:
@@ -1849,11 +2034,417 @@ def doctor(args: argparse.Namespace) -> int:
             "migration_required": _windows_migration_required(manifest_contract),
             "upstream_status": upstream,
             "supervisor": supervisor,
-            "next": None if full else "inspect manager.log/install.log or run headroom-runtime uninstall",
+            "next": (
+                None
+                if full
+                else "run headroom-runtime reconcile --dry-run --json"
+                if _is_windows() and state.preset == "persistent-task"
+                else "inspect manager.log/install.log or run headroom-runtime uninstall"
+            ),
         },
         as_json=args.json,
     )
     return 0 if full else 2
+
+
+def _read_only_reconcile_plan(
+    root: Path, *, timeout: int, probe_port: int | None = None
+) -> tuple[dict[str, Any], int]:
+    """Build a zero-write ownership and migration plan for an existing runtime."""
+    state = _load_state(root)
+    if state is None:
+        selected_probe_port = (
+            DEFAULT_PORT if probe_port is None else _validate_port(probe_port)
+        )
+        listener = _windows_listener_inventory(
+            port=selected_probe_port, expected_executables=None, timeout=timeout
+        )
+        if listener.get("present") is not False:
+            listener_reason = (
+                "os_listener_without_manager_identity"
+                if listener.get("present") is True
+                else "listener_inventory_unavailable"
+            )
+            return (
+                {
+                    "schema": "headroom-reconcile-plan-v1",
+                    "decision": "OWNERSHIP_AMBIGUOUS",
+                    "classification": "foreign_or_unmanaged",
+                    "writes_performed": False,
+                    "inventory": {
+                        "manager_state": {"present": False, "valid": False},
+                        "purge_marker": {"valid": False},
+                        "runtime": {"ok": False, "reason": "manager_state_missing"},
+                        "manifest": {"ok": False, "available": False},
+                        "listener": listener,
+                        "supervisor": {"ok": False, "present": None, "reason": "profile_unknown"},
+                        "upstream_status": {"ok": False, "reason": "managed_cli_unknown"},
+                    },
+                    "ownership": {
+                        "proven": False,
+                        "evidence": (
+                            ["os_listener_present"] if listener.get("present") is True else []
+                        ),
+                        "missing": [
+                            "manager_state_identity",
+                            "purge_marker",
+                            "manifest_identity",
+                            "runtime_identity",
+                            "supervisor_identity",
+                        ],
+                    },
+                    "adoption": {
+                        "eligible": False,
+                        "reasons": [listener_reason],
+                    },
+                    "next_steps": [
+                        "preserve the listener and inspect its owning process, manifest, supervisor and runtime independently",
+                        "use a different profile and loopback port unless exact manager ownership can be proven",
+                    ],
+                    "rollback": ["no mutation was attempted"],
+                },
+                2,
+            )
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": "RUNTIME_ABSENT",
+                "classification": "absent",
+                "writes_performed": False,
+                "inventory": {
+                    "manager_state": {"present": False, "valid": False},
+                    "listener": listener,
+                },
+                "ownership": {"proven": False, "evidence": [], "missing": ["manager_state_identity"]},
+                "adoption": {"eligible": False, "reasons": ["runtime_absent"]},
+                "next_steps": ["run headroom-runtime setup --dry-run --json"],
+                "rollback": ["no mutation was attempted"],
+            },
+            2,
+        )
+
+    marker_valid = _safe_to_purge(root)
+    runtime_python = _exe(Path(state.venv_dir), "python")
+    headroom_cli = _exe(Path(state.venv_dir), "headroom")
+    runtime_identity = {
+        "ok": bool(
+            runtime_python.is_file()
+            and headroom_cli.is_file()
+            and state.runtime_version == RUNTIME_VERSION
+            and state.litellm_version == LITELLM_VERSION
+            and state.headroom_spec == DEFAULT_HEADROOM_SPEC
+            and state.litellm_spec == DEFAULT_LITELLM_SPEC
+        ),
+        "python_present": runtime_python.is_file(),
+        "headroom_cli_present": headroom_cli.is_file(),
+        "runtime_version": state.runtime_version,
+        "litellm_version": state.litellm_version,
+        "specs_exact": (
+            state.headroom_spec == DEFAULT_HEADROOM_SPEC
+            and state.litellm_spec == DEFAULT_LITELLM_SPEC
+        ),
+    }
+    manifest_contract = _manifest_contract(
+        root, profile=state.profile, port=state.port, preset=state.preset
+    )
+    listener = _windows_listener_inventory(
+        port=state.port,
+        expected_executables=(runtime_python, headroom_cli),
+        expected_venv_base_executables=_windows_venv_base_executables(
+            Path(state.venv_dir)
+        ),
+        timeout=timeout,
+    )
+    upstream = {
+        "status": "not_probed_read_only",
+        "ok": None,
+        "reason": "application_level_status_can_write_runtime_logs",
+    }
+    supervisor = _supervisor_contract(root, profile=state.profile, preset=state.preset)
+    expected_service = f"headroom-{state.profile}"
+    supervisor_identity = bool(
+        supervisor.get("present") is True
+        and supervisor.get("service_name") == expected_service
+    )
+    supervisor_tasks = supervisor.get("tasks", {})
+    managed_task_action_identity = bool(
+        isinstance(supervisor_tasks, dict)
+        and all(
+            isinstance(supervisor_tasks.get(kind), dict)
+            and supervisor_tasks[kind].get("exists") is True
+            and supervisor_tasks[kind].get("enabled") is True
+            and supervisor_tasks[kind].get("managed_action_identity") is True
+            for kind in ("startup", "health")
+        )
+    )
+    mismatches = list(manifest_contract.get("mismatches") or [])
+    mismatch_set = set(mismatches)
+    migration_only = bool(mismatch_set) and mismatch_set <= {
+        "mutations",
+        "windows_task_contract",
+    }
+    manifest_base_identity = bool(
+        manifest_contract.get("available")
+        and (manifest_contract.get("ok") or migration_only)
+    )
+    deployment_evidence_checks = {
+        "manager_state_identity": True,
+        "purge_marker": marker_valid,
+        "manifest_base_identity": manifest_base_identity,
+        "runtime_identity": runtime_identity["ok"],
+        "supervisor_name_identity": supervisor_identity,
+    }
+    listener_binding_proven = listener.get("identity", {}).get("proven") is True
+    evidence_checks = {
+        **deployment_evidence_checks,
+        "listener_process_identity": listener_binding_proven,
+    }
+    deployment_identity_proven = all(deployment_evidence_checks.values())
+    ownership_proven = all(evidence_checks.values())
+    inventory = {
+        "manager_state": {
+            "present": True,
+            "valid": True,
+            "profile": state.profile,
+            "preset": state.preset,
+            "port": state.port,
+        },
+        "purge_marker": {"valid": marker_valid},
+        "runtime": runtime_identity,
+        "manifest": manifest_contract,
+        "listener": listener,
+        "supervisor": supervisor,
+        "upstream_status": upstream,
+    }
+    ownership = {
+        "proven": ownership_proven,
+        "evidence": [key for key, value in evidence_checks.items() if value],
+        "missing": [key for key, value in evidence_checks.items() if not value],
+        "deployment": {
+            "proven": deployment_identity_proven,
+            "evidence": [
+                key for key, value in deployment_evidence_checks.items() if value
+            ],
+            "missing": [
+                key for key, value in deployment_evidence_checks.items() if not value
+            ],
+        },
+        "listener_binding": {
+            "proven": listener_binding_proven,
+            "evidence": (
+                ["listener_process_identity"] if listener_binding_proven else []
+            ),
+            "missing": (
+                [] if listener_binding_proven else ["listener_process_identity"]
+            ),
+        },
+    }
+
+    if state.preset != "persistent-task":
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": "RECONCILIATION_NOT_APPLICABLE",
+                "classification": "non_windows_task_preset",
+                "writes_performed": False,
+                "inventory": inventory,
+                "ownership": ownership,
+                "adoption": {"eligible": False, "reasons": ["persistent_task_preset_required"]},
+                "next_steps": ["use status and doctor for this native lifecycle"],
+                "rollback": ["no mutation was attempted"],
+            },
+            0,
+        )
+
+    if (
+        manifest_contract.get("ok")
+        and supervisor.get("ok")
+        and deployment_identity_proven
+    ):
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": "RECONCILIATION_NOT_REQUIRED",
+                "classification": "current_manager_contract",
+                "writes_performed": False,
+                "inventory": inventory,
+                "ownership": ownership,
+                "adoption": {"eligible": False, "reasons": ["already_manager_owned"]},
+                "next_steps": ["run headroom-runtime doctor --json"],
+                "rollback": ["no mutation was attempted"],
+            },
+            0,
+        )
+
+    if "mutations" in mismatch_set:
+        decision = (
+            "REINSTALL_REQUIRED"
+            if deployment_identity_proven
+            else "OWNERSHIP_AMBIGUOUS"
+        )
+        classification = (
+            "manager_owned_legacy_mutations"
+            if deployment_identity_proven
+            else "legacy_mutations_ownership_unproven"
+        )
+        if deployment_identity_proven:
+            next_steps = [
+                "preserve manager state, manifest, supervisor task exports and mutation-target backups",
+                "obtain an explicit target-host mutation gate before changing the existing deployment",
+                "before any operation that may stop or replace the listener, establish listener binding independently",
+                "if listener binding cannot be established, preserve this deployment and use a separate clean runtime root, profile and loopback port",
+                "only after listener binding and the target-host gate, use the pinned upstream manifest removal path to replay recorded mutation rollback; verify listener and supervisor absence; then run setup",
+            ]
+            rollback = [
+                "do not delete or edit mutation records in the manifest",
+                "stop and restore target backups if any recorded mutation cannot be reversed exactly",
+                "retain the current runtime until the removal and clean setup gates are both available",
+            ]
+        else:
+            next_steps = [
+                "do not run reconcile --apply, uninstall or upstream removal while deployment identity is unproven",
+                "preserve the deployment and resolve every missing deployment identity check and manifest mismatch independently",
+                "use a separate clean runtime root, profile and loopback port if exact deployment identity cannot be established",
+            ]
+            rollback = ["no mutation was attempted; preserve the existing deployment unchanged"]
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": decision,
+                "classification": classification,
+                "writes_performed": False,
+                "inventory": inventory,
+                "ownership": ownership,
+                "mutation_authority": {
+                    "eligible": False,
+                    "scope": None,
+                    "resources": [],
+                    "reasons": [
+                        "mutation_history_requires_symmetric_rollback",
+                        "explicit_target_host_mutation_gate_required",
+                        *(
+                            []
+                            if listener_binding_proven
+                            else ["listener_binding_unproven"]
+                        ),
+                    ],
+                },
+                "adoption": {
+                    "eligible": False,
+                    "reasons": [
+                        "mutation_history_requires_symmetric_rollback",
+                        "listener_process_identity_does_not_replace_manager_identity",
+                    ],
+                },
+                "next_steps": next_steps,
+                "rollback": rollback,
+            },
+            1 if deployment_identity_proven else 2,
+        )
+
+    if mismatch_set == {"windows_task_contract"} and deployment_identity_proven:
+        if not managed_task_action_identity:
+            return (
+                {
+                    "schema": "headroom-reconcile-plan-v1",
+                    "decision": "RECONCILE_BLOCKED",
+                    "classification": "manager_deployment_unproven_task_actions",
+                    "writes_performed": False,
+                    "apply_required": False,
+                    "inventory": inventory,
+                    "ownership": ownership,
+                    "mutation_authority": {
+                        "eligible": False,
+                        "scope": None,
+                        "resources": [],
+                        "evidence": [],
+                        "reasons": ["managed_task_action_identity_missing"],
+                    },
+                    "adoption": {
+                        "eligible": False,
+                        "reasons": ["manager_owned_reconciliation_not_adoption"],
+                    },
+                    "next_steps": [
+                        "preserve both task XML exports and inspect their actions before any mutation"
+                    ],
+                    "rollback": ["no mutation was attempted"],
+                },
+                2,
+            )
+        return (
+            {
+                "schema": "headroom-reconcile-plan-v1",
+                "decision": "MIGRATION_REQUIRED",
+                "classification": "manager_owned_windows_task_contract",
+                "writes_performed": False,
+                "apply_required": True,
+                "inventory": inventory,
+                "ownership": ownership,
+                "mutation_authority": {
+                    "eligible": True,
+                    "scope": "windows_task_contract",
+                    "resources": [
+                        "managed_windows_launcher",
+                        "managed_windows_scheduled_tasks",
+                        "manifest_artifacts",
+                    ],
+                    "evidence": ["managed_task_action_identity"],
+                    "reasons": [],
+                },
+                "adoption": {
+                    "eligible": False,
+                    "reasons": ["manager_owned_reconciliation_not_adoption"],
+                },
+                "next": "run headroom-runtime reconcile --apply --json",
+                "next_steps": [
+                    "review the inventory, then run headroom-runtime reconcile --apply --json"
+                ],
+                "rollback": [
+                    "apply snapshots both managed tasks and launcher before the first mutation"
+                ],
+            },
+            1,
+        )
+
+    return (
+        {
+            "schema": "headroom-reconcile-plan-v1",
+            "decision": "RECONCILE_BLOCKED",
+            "classification": "ownership_or_identity_mismatch",
+            "writes_performed": False,
+            "inventory": inventory,
+            "ownership": ownership,
+            "mutation_authority": {
+                "eligible": False,
+                "scope": None,
+                "resources": [],
+                "reasons": ["complete_positive_deployment_identity_missing"],
+            },
+            "adoption": {"eligible": False, "reasons": ["complete_positive_identity_missing"]},
+            "next_steps": ["preserve the runtime and inspect every reported mismatch before any mutation"],
+            "rollback": ["no mutation was attempted"],
+        },
+        2,
+    )
+
+
+def _task_reconcile_apply_authorized(plan: dict[str, Any]) -> bool:
+    authority = plan.get("mutation_authority") or {}
+    ownership = plan.get("ownership") or {}
+    deployment = ownership.get("deployment") or {}
+    return bool(
+        plan.get("decision") == "MIGRATION_REQUIRED"
+        and deployment.get("proven") is True
+        and authority.get("eligible") is True
+        and authority.get("scope") == "windows_task_contract"
+        and authority.get("evidence") == ["managed_task_action_identity"]
+        and authority.get("resources")
+        == [
+            "managed_windows_launcher",
+            "managed_windows_scheduled_tasks",
+            "manifest_artifacts",
+        ]
+    )
 
 
 def reconcile(args: argparse.Namespace) -> int:
@@ -1867,8 +2458,52 @@ def reconcile(args: argparse.Namespace) -> int:
             as_json=args.json,
         )
         return 0
+    if not args.apply:
+        plan, code = _read_only_reconcile_plan(
+            root, timeout=args.timeout, probe_port=args.probe_port
+        )
+        _emit(plan, as_json=args.json)
+        return code
+    if args.probe_port is not None:
+        _emit(
+            {
+                "decision": "RECONCILE_BLOCKED",
+                "detail": "--probe-port is a read-only discovery option and cannot be combined with --apply",
+            },
+            as_json=args.json,
+        )
+        return 2
+    preflight, _ = _read_only_reconcile_plan(
+        root, timeout=args.timeout, probe_port=None
+    )
+    if not _task_reconcile_apply_authorized(preflight):
+        _emit(
+            {
+                "decision": "RECONCILE_BLOCKED",
+                "detail": "read-only preflight did not grant windows_task_contract mutation authority",
+                "writes_performed": False,
+                "preflight": preflight,
+            },
+            as_json=args.json,
+        )
+        return 2
     lock_fd = _acquire_lock(root)
     try:
+        locked_preflight, _ = _read_only_reconcile_plan(
+            root, timeout=args.timeout, probe_port=None
+        )
+        if not _task_reconcile_apply_authorized(locked_preflight):
+            _emit(
+                {
+                    "decision": "RECONCILE_BLOCKED",
+                    "detail": "windows_task_contract mutation authority changed after lock acquisition",
+                    "writes_performed": True,
+                    "write_scope": ["transaction_lock_only"],
+                    "preflight": locked_preflight,
+                },
+                as_json=args.json,
+            )
+            return 2
         state = _load_state(root)
         if state is None:
             _emit(
@@ -2223,6 +2858,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_common(reconcile_parser)
     reconcile_parser.add_argument("--timeout", type=int, default=60)
+    reconcile_parser.add_argument(
+        "--probe-port",
+        type=int,
+        default=None,
+        help="loopback listener port to inspect when manager state is absent (default: 8787)",
+    )
     reconcile_mode = reconcile_parser.add_mutually_exclusive_group()
     reconcile_mode.add_argument(
         "--dry-run", action="store_true", help="print the no-write plan (default)"

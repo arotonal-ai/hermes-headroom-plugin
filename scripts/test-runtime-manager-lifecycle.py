@@ -434,6 +434,18 @@ def main(argv: list[str] | None = None) -> int:
             reconcile_dry_proc
             and reconcile_dry_proc.returncode == 1
             and reconcile_dry_json.get("decision") == "MIGRATION_REQUIRED"
+            and reconcile_dry_json.get("ownership", {}).get("deployment", {}).get("proven") is True
+            and reconcile_dry_json.get("ownership", {}).get("listener_binding", {}).get("proven") is False
+            and reconcile_dry_json.get("mutation_authority", {}).get("eligible") is True
+            and reconcile_dry_json.get("mutation_authority", {}).get("scope") == "windows_task_contract"
+            and reconcile_dry_json.get("mutation_authority", {}).get("evidence")
+            == ["managed_task_action_identity"]
+            and reconcile_dry_json.get("mutation_authority", {}).get("resources")
+            == [
+                "managed_windows_launcher",
+                "managed_windows_scheduled_tasks",
+                "manifest_artifacts",
+            ]
             and reconcile_dry_immutable
             and reconcile_apply_proc
             and reconcile_apply_proc.returncode == 0

@@ -125,11 +125,12 @@ Verify or roll back:
 headroom-runtime status --json
 headroom-runtime doctor --json
 headroom-runtime reconcile --dry-run --json # Windows plan; no writes
+headroom-runtime reconcile --probe-port 18787 --dry-run --json # known non-default listener, no scan
 headroom-runtime reconcile --apply --json  # explicit manager-owned migration
 headroom-runtime uninstall --json
 ```
 
-The native Git launcher accepts the same subcommands. A successful doctor reports `RUNTIME_FULL_DURABLE` only when the pinned upstream status is semantically `running` and healthy for the expected profile/preset/port, the matching native supervisor contract is exact, readiness passes, and sentinel retrieval succeeds. Native Windows uses a manifest-owned no-console launcher and verifies both enabled Task Scheduler actions/triggers plus launcher hash. `reconcile` never writes without `--apply`. Exit code `0` alone is not lifecycle evidence. If setup or remove is incomplete, manager state and private logs are preserved for rollback. Full contract: [docs/runtime-manager.md](docs/runtime-manager.md).
+The native Git launcher accepts the same subcommands. A successful doctor reports `RUNTIME_FULL_DURABLE` only when the pinned upstream status is semantically `running` and healthy for the expected profile/preset/port, the matching native supervisor contract is exact, readiness passes, and sentinel retrieval succeeds. Native Windows uses a manifest-owned no-console launcher and verifies both enabled Task Scheduler actions/triggers plus launcher hash. `reconcile --dry-run` is a strict zero-write inventory: it uses Windows OS socket/process tables and does not call `/readyz` or upstream status, because application-level probes can append to runtime logs. It reports manager deployment identity and live-listener binding separately; an unproven listener is never adopted. Legacy environment-mutation history returns `REINSTALL_REQUIRED`; it is preserved for symmetric rollback and is never erased to force adoption. `--apply` repeats the read-only preflight before and after lock acquisition and remains limited to the exact manager-owned task-contract scope after both extant task actions match the current launcher or known legacy managed ensure command. Exit code `0` alone is not lifecycle evidence. If setup or remove is incomplete, manager state and private logs are preserved for rollback. Full contract and gated upgrade procedure: [docs/runtime-manager.md](docs/runtime-manager.md).
 
 The older `scripts/install-production-runtime.py` remains a compatibility path for v0.4 deployments and the optional `llm-monitor` companion. New installs should use the runtime manager.
 
