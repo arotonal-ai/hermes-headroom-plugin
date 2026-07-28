@@ -61,9 +61,9 @@ Decision: keep it opt-in rather than promote it to the default hot path. `tool_e
 
 ## Runtime compatibility
 
-- Managed/default runtime: `headroom-ai[proxy]==0.32.1` with `litellm==1.91.3`.
+- Managed/default runtime: `headroom-ai[proxy]==0.32.1` with `litellm==1.94.0rc3`.
 - Compatibility/rollback lane: Headroom `0.31.0`; it is not installed by the runtime manager by default.
-- Python 3.13/3.14 and newer dependency ranges remain experimental until remote matrix evidence is promoted.
+- Python 3.13 remains experimental. Native Windows Python 3.14 is a blocking Issue #24 candidate lane and remains uncertified until remote CI plus target-host durable lifecycle evidence pass.
 
 A local Linux compress → retrieve smoke for both 0.32.1 and 0.31.0 is required by the release gate. Cross-OS/Python certification remains a separate remote-CI release gate; local evidence must not be relabeled as multi-platform certification.
 

@@ -69,10 +69,10 @@ second provider and an injection/selection gate are implemented and tested.
 
 | Setting | Default |
 |---|---|
-| Plugin | `hermes-headroom-plugin==0.6.0` |
+| Plugin | `hermes-headroom-plugin==0.6.1` |
 | LLM request middleware | off; explicit `mode: tool_results` opt-in |
 | Headroom runtime | `headroom-ai[proxy]==0.32.1` |
-| LiteLLM transitive runtime | `litellm==1.91.3` (portable wheel constraint) |
+| LiteLLM transitive runtime | `litellm==1.94.0rc3` (portable wheel constraint) |
 | Runtime venv | `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1` |
 | Bind | `127.0.0.1:8787` |
 | CCR backend | `memory` |
@@ -126,7 +126,7 @@ Read-only plan:
 headroom-runtime setup --dry-run --json
 ```
 
-The v0.6.0 manager preserves the v0.5.2 pinned runtime/lifecycle contract: it installs the official runtime in a versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct 0.32.1 apply because that path writes persistent shell blocks, and claims `RUNTIME_FULL_DURABLE` only after upstream status, readiness, and real compress → retrieve smoke pass. It does not mutate provider routing.
+The managed runtime preserves the pinned Headroom 0.32.1 lifecycle contract while using the certified LiteLLM/Python pair from package metadata. It installs the official runtime in a versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct apply because that path writes persistent shell blocks, and claims `RUNTIME_FULL_DURABLE` only after upstream status, readiness, and real compress → retrieve smoke pass. It does not mutate provider routing.
 
 Optional legacy companion operations remain available through `scripts/install-production-runtime.py --companion-only`; that script is not the primary v0.5 runtime authority.
 

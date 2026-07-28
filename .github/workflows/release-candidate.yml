@@ -10,7 +10,7 @@ on:
       litellm_spec:
         description: "LiteLLM constraint to test; certified default remains portable across the matrix"
         required: false
-        default: "litellm==1.91.3"
+        default: "litellm==1.94.0rc3"
       compat_headroom_spec:
         description: "isolated plugin-compatibility/rollback Headroom spec"
         required: false
@@ -35,7 +35,7 @@ jobs:
       - name: Run local release-candidate gate
         env:
           HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.32.1' }}
-          HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.91.3' }}
+          HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.94.0rc3' }}
           HEADROOM_COMPAT_AI_SPEC: ${{ github.event.inputs.compat_headroom_spec || 'headroom-ai[proxy]==0.31.0' }}
         run: python scripts/release-candidate-local-gate.py --install-timeout 600
       - name: Upload release-candidate evidence

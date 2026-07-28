@@ -31,9 +31,9 @@ The manager:
 - requires `uninstall` before changing an existing managed profile, port, preset, or package spec;
 - strips inherited `HEADROOM_*` variables before adding the manager-controlled runtime environment;
 - refuses a ready port when no matching manager state exists;
-- accepts only package-name/version specs (no URL, path, marker, or credentials) and installs `headroom-ai[proxy]==0.32.1` plus `litellm==1.91.3` from official PyPI with pip isolated mode;
+- accepts only package-name/version specs (no URL, path, marker, or credentials) and installs `headroom-ai[proxy]==0.32.1` plus `litellm==1.94.0rc3` from official PyPI with pip isolated mode;
 - builds an upstream manifest with `provider_mode=manual`, **no provider targets**, and **no provider/shell mutations**;
-- disables telemetry and code-aware optional dependencies;
+- disables telemetry, code-aware optional dependencies, and Kompress via `HEADROOM_DISABLE_KOMPRESS=1` when no approved backend exists; enabling Kompress requires a separately reviewed manifest/runtime change;
 - uses the memory CCR backend with a 1,800-second TTL by default;
 - records no secrets in manager state;
 - rejects filesystem, home, Hermes-home, shared-temp, shallow, non-directory, and non-empty unowned runtime roots;
@@ -179,7 +179,7 @@ If state, the purge marker, or the saved manager-owned base manifest contract is
 
 ## Known limits
 
-- The manager requires Python 3.11+ and network access to official PyPI during first setup.
+- The certified manager requires Python `>=3.11,<3.15` and network access to official PyPI during first setup. A non-default `--litellm-spec` does not bypass that Python gate; an out-of-range target-host canary must additionally pass `--allow-unsupported-python` and cannot claim certified release support.
 - A host without a usable native user supervisor cannot claim durable lifecycle from dry-run or unit tests alone.
 - Headroom 0.32.1 does not expose JSON for `install status`, so the manager uses a version-pinned parser for its documented labels. Missing or duplicate fields, unknown lifecycle values, and identity mismatches fail closed to `RUNTIME_PARTIAL`; an upstream format change requires an explicit adapter update.
 - Memory CCR markers intentionally do not survive runtime restart.

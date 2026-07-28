@@ -117,7 +117,7 @@ Inspect the exact plan first without writes or downloads:
 headroom-runtime setup --dry-run --json
 ```
 
-The v0.5 manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs the official `headroom-ai[proxy]==0.32.1` package plus `litellm==1.91.3`, and reuses upstream manifests and native supervisors. It requires `provider_mode=manual`, `targets=[]`, and `mutations=[]`; unlike direct `headroom install apply` in 0.32.1, it does not write persistent shell/provider configuration. It disables telemetry, binds to `127.0.0.1:8787` by default, uses memory CCR with a 1,800-second TTL, checks upstream status/readiness, and runs real plugin compress → retrieve smoke. It never changes Hermes model/provider routing.
+The v0.5 manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs the official `headroom-ai[proxy]==0.32.1` package plus `litellm==1.94.0rc3`, and reuses upstream manifests and native supervisors. It requires `provider_mode=manual`, `targets=[]`, and `mutations=[]`; unlike direct `headroom install apply` in 0.32.1, it does not write persistent shell/provider configuration. It disables telemetry, binds to `127.0.0.1:8787` by default, uses memory CCR with a 1,800-second TTL, checks upstream status/readiness, and runs real plugin compress → retrieve smoke. It never changes Hermes model/provider routing.
 
 Verify or roll back:
 
@@ -263,7 +263,7 @@ The normal CI validates plugin load/tests. The separate Runtime Smoke workflow s
 | WSL2 | target evidence required | 🟡 expected | 🟡 expected |
 | Termux | target evidence required | 🟡 expected | 🟡 expected |
 
-Legend: ✅ verified in this repo/workflow, 🟡 expected but not certified here. Python 3.13/3.14 are tracked by the non-blocking Future Runtime Monitor and are not certified until promoted through Runtime Smoke. See [docs/compatibility.md](docs/compatibility.md).
+Legend: ✅ verified in the published repo/workflow, 🟡 expected but not certified here. Python 3.13 remains a non-blocking Future Runtime Monitor lane. Native Windows Python 3.14 is a blocking Issue #24 candidate lane, but is not certified until Runtime Smoke and the target-host durable canary pass. See [docs/compatibility.md](docs/compatibility.md).
 
 ## Agent quick contract
 
