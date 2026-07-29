@@ -113,7 +113,7 @@ DURABLE if:
 - the expected user-level supervisor artifact is present for the target platform;
 - `/headroom smoke` still returns PASS after the relevant restart/login lifecycle.
 
-Windows native runtime smoke is published-certified for Python 3.11/3.12. Python 3.13 remains experimental; Python 3.14 is a blocking Issue #24 candidate lane and still requires green CI plus target-host `RUNTIME_FULL_DURABLE` evidence. WSL2/Termux remain target-evidence lanes.
+Published v0.6.2 certifies the Python `>=3.11,<3.15` range through blocking 3.11/3.14 unit, dependency, and managed-lifecycle boundary jobs on Linux, macOS, and native Windows. Python 3.12/3.13 remain inside that package contract; every real host still needs target-host `RUNTIME_FULL_DURABLE` evidence. WSL2/Termux remain target-evidence lanes. Existing-deployment reconciliation is separately tracked and is not a clean-install Python support gate.
 
 FAIL if:
 
@@ -126,8 +126,11 @@ FAIL if:
 ```bash
 git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
 cd hermes-headroom-plugin
+python scripts/run-isolated-unit-tests.py
 scripts/audit-repo-readiness.sh
 ```
+
+The unit runner bootstraps pinned pytest/PyYAML in an ephemeral `uv` environment when the selected interpreter lacks pytest or can import a live Hermes host. It never installs pytest into the production/runtime venv.
 
 ## Temp-home test when allowed
 

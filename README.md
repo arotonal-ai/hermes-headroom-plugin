@@ -117,7 +117,7 @@ Inspect the exact plan first without writes or downloads:
 headroom-runtime setup --dry-run --json
 ```
 
-The v0.5 manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs the official `headroom-ai[proxy]==0.32.1` package plus `litellm==1.94.0rc3`, and reuses upstream manifests and native supervisors. It requires `provider_mode=manual`, `targets=[]`, and `mutations=[]`; unlike direct `headroom install apply` in 0.32.1, it does not write persistent shell/provider configuration. It disables telemetry, binds to `127.0.0.1:8787` by default, uses memory CCR with a 1,800-second TTL, checks upstream status/readiness, and runs real plugin compress → retrieve smoke. It never changes Hermes model/provider routing.
+The v0.5 manager creates `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1`, installs the official `headroom-ai[proxy]==0.32.1` package plus `litellm==1.94.0rc3`, and reuses upstream manifests and native supervisors. It requires `provider_mode=manual`, `targets=[]`, and `mutations=[]`; unlike direct `headroom install apply` in 0.32.1, it does not write persistent shell/provider configuration. It disables telemetry, binds to `127.0.0.1:8787` by default, uses memory CCR with a 1,800-second TTL, checks upstream status/readiness, and runs real plugin compress → retrieve smoke. It never changes Hermes model/provider routing. See [ports and native supervisor names](docs/ports-and-services.md) before assigning a same-host override.
 
 Verify or roll back:
 
@@ -250,20 +250,20 @@ This report is read-only: no config mutation, no cache purge, no provider/model 
 
 ## Certified runtime matrix
 
-The normal CI validates plugin load/tests. The separate Runtime Smoke workflow starts a real loopback Headroom proxy and validates compress → retrieve.
+The v0.6.2 blocking CI and Runtime Manager Lifecycle workflows validate the certified Python range at its 3.11 and 3.14 boundaries. The lifecycle workflow installs the base wheel, creates a real managed runtime, verifies status/doctor plus compress → retrieve, and uninstalls it.
 
-| OS | Python | Plugin CI | Runtime Smoke |
+| OS | Python boundary | Plugin CI | Managed lifecycle |
 |---|---:|---:|---:|
 | Ubuntu | 3.11 | ✅ | ✅ |
-| Ubuntu | 3.12 | — | ✅ |
+| Ubuntu | 3.14 | ✅ | ✅ |
 | macOS | 3.11 | ✅ | ✅ |
-| macOS | 3.12 | — | ✅ |
+| macOS | 3.14 | ✅ | ✅ |
 | Windows native | 3.11 | ✅ | ✅ |
-| Windows native | 3.12 | — | ✅ |
+| Windows native | 3.14 | ✅ | ✅ |
 | WSL2 | target evidence required | 🟡 expected | 🟡 expected |
 | Termux | target evidence required | 🟡 expected | 🟡 expected |
 
-Legend: ✅ verified in the published repo/workflow, 🟡 expected but not certified here. Python 3.13 remains a non-blocking Future Runtime Monitor lane. Native Windows Python 3.14 is a blocking Issue #24 candidate lane, but is not certified until Runtime Smoke and the target-host durable canary pass. See [docs/compatibility.md](docs/compatibility.md).
+Legend: ✅ verified in the published v0.6.2 workflows, 🟡 expected but not certified here. Python 3.12 and 3.13 are inside the published `>=3.11,<3.15` package contract; the blocking matrix exercises the lower and upper boundaries. Every target host still needs its own `RUNTIME_FULL_DURABLE` evidence. See [docs/compatibility.md](docs/compatibility.md).
 
 ## Agent quick contract
 
@@ -330,7 +330,7 @@ Default plugin proxy URL:
 http://127.0.0.1:8787
 ```
 
-Port `8787` is the upstream Headroom 0.31 loopback default and the portable default for this integration. Production commands still pass `--port 8787` explicitly so `/headroom status`, `tool_execution`, and `/headroom smoke` share one endpoint. For concurrent Hermes instances on the same host, assign each isolated run a different free loopback port and pass the same endpoint through `HEADROOM_PROXY_URL`; do not treat another user's healthy proxy as clean-instance evidence.
+Port `8787` is the portable default for this integration and the v0.6.2 runtime manager. Production commands pass it explicitly so `/headroom status`, `tool_execution`, and `/headroom smoke` share one endpoint. For concurrent Hermes instances on the same host, assign each isolated run a different free loopback port and pass the same endpoint through canonical Hermes config or `HEADROOM_PROXY_URL`; do not treat another user's healthy proxy as clean-instance evidence. `28787` is a retired integration-specific default, while ports such as `28789` have only instance-local meaning. See [ports and native supervisor names](docs/ports-and-services.md).
 
 Environment override:
 
@@ -423,12 +423,14 @@ If no evidence exists, the metrics page intentionally shows placeholders instead
 ## Development checks
 
 ```bash
-uv run --isolated --no-project --with pytest --with PyYAML -- python scripts/run-isolated-unit-tests.py
+python scripts/run-isolated-unit-tests.py
 python3 -m py_compile $(find src tests scripts -name '*.py' | sort)
 bash -n scripts/*.sh
 scripts/audit-repo-readiness.sh
 python scripts/test-headroom-runtime-smoke.py
 ```
+
+The unit runner uses a pinned ephemeral `uv` environment when the selected interpreter lacks pytest or can import a live Hermes host. It does not add pytest to the Hermes production/runtime venv or mutate the repository lock state.
 
 ## Documentation map
 
@@ -436,13 +438,14 @@ python scripts/test-headroom-runtime-smoke.py
 - [AGENTS.md](AGENTS.md) — repository-level instructions for AI/Hermes agents.
 - [docs/AGENT-INSTALL.md](docs/AGENT-INSTALL.md) — compact agent install brief.
 - [docs/compatibility.md](docs/compatibility.md) — certified vs experimental OS/Python/runtime support.
+- [docs/ports-and-services.md](docs/ports-and-services.md) — portable defaults, instance overrides, native supervisor names, and retired compatibility surfaces.
 - [SECURITY.md](SECURITY.md) — security reporting and secret-handling policy.
 - [PRIVACY.md](PRIVACY.md) — privacy and telemetry posture.
 - [CHANGELOG.md](CHANGELOG.md) — release notes.
 - [docs/metrics/weekly-savings.md](docs/metrics/weekly-savings.md) — evidence-backed savings rollups.
 - `scripts/test-headroom-runtime-smoke.py` — real loopback proxy + plugin compress/retrieve smoke.
 - `.github/workflows/runtime-smoke.yml` — manual/weekly real proxy runtime certification across OS/Python matrix.
-- `.github/workflows/future-runtime-monitor.yml` — non-blocking Python 3.13/3.14 drift monitor.
+- `.github/workflows/future-runtime-monitor.yml` — non-blocking future Headroom/LiteLLM dependency drift monitor.
 
 ## Non-goals in this repo stage
 

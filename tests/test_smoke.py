@@ -23,6 +23,9 @@ class SmokeTest(unittest.TestCase):
     def tearDown(self):
         self._auto_compression_env.stop()
 
+    def test_proxy_client_does_not_claim_native_supervisor_name(self):
+        self.assertFalse(hasattr(proxy, "DEFAULT_SERVICE"))
+
     def test_smoke_compress_retrieve_pass(self):
         retained = {"content": ""}
 

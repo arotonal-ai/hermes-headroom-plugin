@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Make `python scripts/run-isolated-unit-tests.py` the canonical developer/operator test entrypoint. When the selected interpreter lacks pytest or can import a live Hermes host, it re-executes in a pinned ephemeral `uv --isolated --no-project` environment instead of installing test dependencies into the production/runtime venv.
+- Strip inherited `PYTHONPATH`, `PYTHONHOME`, and `HEADROOM_*` state from unit-test subprocesses case-insensitively and retain the upstream Hermes threshold-resolver compatibility fixture.
+- Reconcile public port/service documentation: `8787` is the portable default, profile `hermes-plugin` derives the native supervisor names, `28787` is retired, and ports such as `28789` are instance-specific overrides only.
+- Remove the unused legacy service-unit constant from the proxy client; native supervisor naming belongs to the runtime manager, while the plugin remains a listener-free client.
+- Correct the published compatibility summary to the actual v0.6.2 blocking Python 3.11/3.14 matrix on Linux, macOS, and Windows.
+- Expose the temporal memory-CCR authority contract in `/headroom cache`, docs, and regressions: default TTL 1,800 seconds, no restart survival, no plugin-local exact fallback, and markers may outlive source payloads.
+
 ## v0.6.2 — 2026-07-28
 
 - Restore a safe in-place upgrade path from the exact v0.6.0 managed manifest: `uninstall` alone may accept the known v0.6.0 `base_env` variant that predates `HEADROOM_DISABLE_KOMPRESS=1`, while status, setup, reconciliation, altered environments, provider targets, and mutations remain fail-closed.

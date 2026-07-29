@@ -166,6 +166,43 @@ def test_release_gate_certifies_wheel_runtime_manager_lifecycle() -> None:
     assert '"uninstall"' in lifecycle_script
 
 
+def test_release_gate_does_not_false_green_missing_hermes_cli() -> None:
+    gate_script = SCRIPT.read_text(encoding="utf-8")
+    release_workflow = (REPO / ".github" / "workflows" / "release-candidate.yml").read_text(encoding="utf-8")
+    release_doc = (REPO / "docs" / "release-candidate.md").read_text(encoding="utf-8")
+
+    assert '"--allow-hermes-install-deferred"' in gate_script
+    assert "--allow-hermes-install-deferred" in release_workflow
+    assert "target-host Hermes install deferred" in release_workflow
+    assert "`verified: true`" in release_doc
+    assert "`deferred: false`" in release_doc
+
+    with patch.object(MODULE.shutil, "which", return_value=None):
+        command, gate = MODULE.clean_temp_hermes_install_gate(allow_deferred=False)
+        assert command["returncode"] == 127
+        assert gate == {"pass": False, "verified": False, "deferred": True}
+
+        deferred_command, deferred_gate = MODULE.clean_temp_hermes_install_gate(
+            allow_deferred=True
+        )
+        assert deferred_command["returncode"] == 0
+        assert deferred_gate == {"pass": True, "verified": False, "deferred": True}
+
+
+def test_release_gate_verifies_clean_install_when_hermes_cli_is_present() -> None:
+    result = {"returncode": 0, "stdout": "PASS", "duration_s": 1}
+    with patch.object(MODULE.shutil, "which", return_value="/usr/bin/hermes"), patch.object(
+        MODULE, "run", return_value=result
+    ) as run_mock:
+        command, gate = MODULE.clean_temp_hermes_install_gate(allow_deferred=False)
+
+    assert command == result
+    assert gate == {"pass": True, "verified": True, "deferred": False}
+    run_mock.assert_called_once_with(
+        ["bash", "scripts/test-clean-hermes-install.sh", "--local"], timeout=300
+    )
+
+
 def test_cleanup_ephemeral_envs_removes_only_allowlisted_dirs(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
     run_dir.mkdir()

@@ -8,6 +8,8 @@ README = REPO / "README.md"
 INSTALL = REPO / "INSTALL.md"
 SKILL = REPO / "src" / "hermes_headroom_plugin" / "skills" / "headroom-token-cost-evaluation" / "SKILL.md"
 RUNTIME_MANAGER = REPO / "docs" / "runtime-manager.md"
+PORTS_AND_SERVICES = REPO / "docs" / "ports-and-services.md"
+AGENT_INSTALL = REPO / "docs" / "AGENT-INSTALL.md"
 AFTER_INSTALL = REPO / "after-install.md"
 
 
@@ -78,6 +80,48 @@ class MarkdownDocsTest(unittest.TestCase):
         ]
         for needle in required:
             self.assertIn(needle, text)
+
+    def test_ports_and_services_separate_defaults_overrides_and_legacy(self):
+        text = PORTS_AND_SERVICES.read_text(encoding="utf-8")
+        required = [
+            "The Hermes plugin does not open a listener",
+            "http://127.0.0.1:8787",
+            "headroom-hermes-plugin.service",
+            "com.headroom.hermes-plugin",
+            "headroom-hermes-plugin-startup",
+            "headroom-hermes-plugin-health",
+            "127.0.0.1:28787",
+            "Retired integration-specific default",
+            "hermes-context-reduction.service",
+            "Instance-specific override only",
+            "hermes config get context_reduction.proxy_url",
+        ]
+        for needle in required:
+            self.assertIn(needle, text)
+
+    def test_operator_test_runner_and_certification_docs_are_current(self):
+        docs = [
+            README,
+            INSTALL,
+            REPO / "AGENTS.md",
+            REPO / "SECURITY.md",
+            REPO / "docs" / "portable-core.md",
+            SKILL,
+        ]
+        canonical = "python scripts/run-isolated-unit-tests.py"
+        stale = "uv run --isolated --no-project --with pytest --with PyYAML -- python scripts/run-isolated-unit-tests.py"
+        for path in docs:
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(canonical, text, str(path))
+            self.assertNotIn(stale, text, str(path))
+
+        readme = README.read_text(encoding="utf-8")
+        agent_install = AGENT_INSTALL.read_text(encoding="utf-8")
+        self.assertIn("| Ubuntu | 3.14 | ✅ | ✅ |", readme)
+        self.assertIn("| Windows native | 3.14 | ✅ | ✅ |", readme)
+        self.assertIn("3.11/3.14", agent_install)
+        self.assertNotIn("blocking Issue #24 candidate lane", readme)
+        self.assertNotIn("blocking Issue #24 candidate lane", agent_install)
 
     def test_install_guide_is_not_overlong(self):
         lines = INSTALL.read_text(encoding="utf-8").splitlines()
