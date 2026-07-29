@@ -297,8 +297,10 @@ def _render_cache_status() -> str:
     if not stats.get("success"):
         return f"Headroom cache · proxy={proxy_url} · cache_check={cache_status} · store=FAIL · plugin_cache=none · error={_safe_cell(stats.get('error'), limit=180)}"
 
-    store = stats.get("store") if isinstance(stats.get("store"), dict) else {}
-    backend = store.get("backend") if isinstance(store.get("backend"), dict) else {}
+    store_raw = stats.get("store")
+    store: dict[str, Any] = store_raw if isinstance(store_raw, dict) else {}
+    backend_raw = store.get("backend")
+    backend: dict[str, Any] = backend_raw if isinstance(backend_raw, dict) else {}
     entries = store.get("entry_count")
     max_entries = store.get("max_entries")
     usage_pct = None
@@ -309,6 +311,8 @@ def _render_cache_status() -> str:
         usage_pct = None
     ttl_s = store.get("default_ttl_seconds")
     recent = stats.get("recent_retrievals") if isinstance(stats.get("recent_retrievals"), list) else []
+    backend_type = str(backend.get("backend_type") or "unknown")
+    memory_backend = backend_type == "memory"
     fields = {
         "cache_check": cache_status,
         "enabled": cache_enabled,
@@ -317,14 +321,18 @@ def _render_cache_status() -> str:
         "usage_pct": usage_pct,
         "ttl_s": ttl_s,
         "ttl": _format_seconds(ttl_s),
-        "backend": backend.get("backend_type"),
+        "backend": backend_type,
         "bytes": backend.get("bytes_used"),
         "retrievals": store.get("total_retrievals"),
         "events": store.get("event_count"),
         "recent": len(recent),
+        "source_authority": "temporal" if memory_backend else "backend_specific_unverified",
+        "restart_survival": "no" if memory_backend else "unverified",
+        "local_exact_fallback": "none",
+        "marker_outlives_source": "possible",
     }
     rendered = " ".join(f"{key}={_safe_cell(value, limit=80)}" for key, value in fields.items() if value is not None)
-    return f"Headroom cache · proxy={proxy_url} · store=PASS · {rendered} · plugin_cache=none · note=CCR markers may expire with runtime TTL; retain exact sidecars/reports for audit"
+    return f"Headroom cache · proxy={proxy_url} · store=PASS · {rendered} · plugin_cache=none · note=RUNTIME_FULL_DURABLE covers supervised runtime lifecycle, not durable CCR payload recovery"
 
 def _render_usage(parts: list[str]) -> str:
     events, path = _read_headroom_events()

@@ -65,6 +65,20 @@ class MarkdownDocsTest(unittest.TestCase):
         for needle in required:
             self.assertIn(needle, loop_doc)
 
+    def test_runtime_manager_documents_temporal_ccr_source_authority(self):
+        text = RUNTIME_MANAGER.read_text(encoding="utf-8")
+        required = [
+            "CCR source authority is temporal",
+            "memory backend",
+            "1,800-second TTL",
+            "does not survive a runtime restart",
+            "Markers can outlive their exact source",
+            "no plugin-local exact fallback",
+            "does not authorize SQLite",
+        ]
+        for needle in required:
+            self.assertIn(needle, text)
+
     def test_install_guide_is_not_overlong(self):
         lines = INSTALL.read_text(encoding="utf-8").splitlines()
         self.assertLessEqual(len(lines), 260)
