@@ -28,6 +28,7 @@ CORRUPT = "corrupt"
 DISABLED = "disabled"
 NOT_ALLOWED = "not_allowed"
 ERROR = "error"
+_WINDOWS_MODE_BITS = os.name == "nt"
 ALLOWED_DATA_CLASSES = frozenset(
     {
         "browser_debug_trace",
@@ -87,6 +88,22 @@ def _root(home: Path | None = None, *, create: bool = False) -> Path:
     return root
 
 
+def _private_file(path: Path) -> bool:
+    """Reject links everywhere and group/other-readable files on POSIX.
+
+    Windows ``st_mode`` exposes DOS compatibility bits rather than the NT ACL;
+    files under the active profile inherit that profile's user-scoped ACL.
+    """
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        if _WINDOWS_MODE_BITS:
+            return True
+        return not bool(path.stat().st_mode & 0o077)
+    except OSError:
+        return False
+
+
 def _manifest_path(root: Path, digest: str) -> Path:
     return root / f"{digest}.manifest.json"
 
@@ -123,7 +140,7 @@ def _atomic_bytes(path: Path, payload: bytes) -> None:
 
 def _read_json(path: Path) -> dict[str, Any] | None:
     try:
-        if path.is_symlink() or (path.stat().st_mode & 0o077):
+        if not _private_file(path):
             return None
         value = json.loads(path.read_text(encoding="utf-8"))
         return dict(value) if isinstance(value, dict) else None
@@ -318,8 +335,7 @@ def retrieve_local_source_result(hash_key: str, *, home: Path | None = None, now
 
     blob = _blob_path(root, digest)
     try:
-        stat = blob.stat()
-        if blob.is_symlink() or (stat.st_mode & 0o077):
+        if not _private_file(blob):
             raise OSError("blob permissions are not 0600")
         payload = blob.read_bytes()
     except OSError as exc:

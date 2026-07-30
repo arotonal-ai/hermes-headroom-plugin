@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 import tempfile
 import unittest
@@ -15,6 +16,7 @@ from hermes_headroom_plugin.local_exact_store import (
     EXPIRED,
     MISSING,
     REDACTED,
+    _private_file,
     retain_local_source,
     retrieve_local_source_result,
 )
@@ -140,6 +142,17 @@ class SemanticAdmissionTest(unittest.TestCase):
 
 
 class LocalExactRecoveryTest(unittest.TestCase):
+    def test_private_file_mode_uses_windows_acl_authority_instead_of_posix_bits(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "manifest.json"
+            path.write_text("{}", encoding="utf-8")
+            path.chmod(0o666)
+            with patch("hermes_headroom_plugin.local_exact_store._WINDOWS_MODE_BITS", True):
+                self.assertTrue(_private_file(path))
+            if os.name != "nt":
+                with patch("hermes_headroom_plugin.local_exact_store._WINDOWS_MODE_BITS", False):
+                    self.assertFalse(_private_file(path))
+
     @staticmethod
     def _config() -> EffectiveConfig:
         return EffectiveConfig(
@@ -164,9 +177,10 @@ class LocalExactRecoveryTest(unittest.TestCase):
             )
             self.assertEqual(retained.state, EXACT)
             self.assertTrue(retained.sha256)
-            self.assertEqual(stat.S_IMODE(Path(retained.manifest_path).stat().st_mode), 0o600)
             blob = Path(retained.manifest_path).with_name(f"{retained.sha256}.payload")
-            self.assertEqual(stat.S_IMODE(blob.stat().st_mode), 0o600)
+            if os.name != "nt":
+                self.assertEqual(stat.S_IMODE(Path(retained.manifest_path).stat().st_mode), 0o600)
+                self.assertEqual(stat.S_IMODE(blob.stat().st_mode), 0o600)
 
             recovered = retrieve_local_source_result("marker-123", home=home_one, now=1030)
             self.assertTrue(recovered.exact)

@@ -137,7 +137,7 @@ Cache boundary:
 
 The plugin has no independent CCR cache. The runtime/proxy owns CCR TTL, limits, backend, and eviction; `/headroom cache` is read-only and reports runtime plus local-fallback posture without paths or content.
 
-The optional profile-local exact fallback retains only allowlisted, non-sensitive compressed intermediates. It is content-addressed, TTL/quota bounded, profile-isolated, `0700`/`0600`, and default-off for new writes; existing entries remain readable until expiry, while protected payloads create only `redacted` tombstones.
+The optional profile-local exact fallback retains only allowlisted, non-sensitive compressed intermediates. It is content-addressed, TTL/quota bounded, profile-isolated, and default-off for new writes; files use `0700`/`0600` on POSIX and the active user's inherited profile ACL on Windows. Existing entries remain readable until expiry, while protected payloads create only `redacted` tombstones.
 
 Config: `context_reduction.local_exact_store: {enabled: false, ttl_seconds: 1800, max_entries: 256, max_bytes: 67108864}`.
 

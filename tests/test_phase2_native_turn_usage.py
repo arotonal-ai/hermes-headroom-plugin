@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -63,7 +64,8 @@ class NativeTurnUsageTest(unittest.TestCase):
             raw = event_path.read_text(encoding="utf-8")
             events = [json.loads(line) for line in raw.splitlines()]
             self.assertNotIn(sentinel, raw)
-            self.assertEqual(event_path.stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(event_path.stat().st_mode & 0o777, 0o600)
             self.assertEqual([event["type"] for event in events], ["headroom_turn_usage", "headroom_turn_result"])
             usage_event, turn_event = events
             self.assertEqual(usage_event["usage_scope"], "completed_turn_aggregate")
