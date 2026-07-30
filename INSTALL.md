@@ -107,9 +107,11 @@ Analyze without installing:
 ```bash
 git clone https://github.com/arotonal-ai/hermes-headroom-plugin.git
 cd hermes-headroom-plugin
-uv run --isolated --no-project --with pytest --with PyYAML -- python scripts/run-isolated-unit-tests.py
+python scripts/run-isolated-unit-tests.py
 scripts/audit-repo-readiness.sh
 ```
+
+The runner bootstraps pinned pytest/PyYAML through an ephemeral `uv --isolated --no-project` environment when the selected interpreter lacks pytest or can import a live Hermes host. It does not install test dependencies into the Hermes production/runtime venv.
 
 Validate upstream Headroom dependency in a temporary Python venv:
 
@@ -145,7 +147,7 @@ http://127.0.0.1:8787
 
 The `[HR✓]` / `[HR!]` final-answer marker is disabled by default. Enable it with `context_reduction.visible_status_marker: true` or `HEADROOM_VISIBLE_STATUS_MARKER=1`. It reports runtime readiness only, not per-message compression.
 
-This integration uses upstream Headroom's default loopback port, `8787`, and passes it explicitly for reproducibility. Start production runtime with `headroom-runtime setup` or the native Git launcher. For concurrent same-host instances, allocate a distinct free loopback port and set `HEADROOM_PROXY_URL` to that exact endpoint; a ready proxy owned by another instance is not clean-install evidence.
+This integration uses the portable loopback default `8787` and passes it explicitly for reproducibility. Start production runtime with `headroom-runtime setup` or the native Git launcher. For concurrent same-host instances, allocate a distinct free loopback port and set `context_reduction.proxy_url` (preferred) or `HEADROOM_PROXY_URL` to that exact endpoint; a ready proxy owned by another instance is not clean-install evidence. `28787` is a retired pre-v0.4 integration default, and any port such as `28789` is only an instance-specific override. See [ports and native supervisor names](docs/ports-and-services.md).
 
 To point Hermes at another local/controlled endpoint:
 

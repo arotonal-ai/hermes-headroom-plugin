@@ -247,7 +247,10 @@ def test_engine_builds_fallback_with_preserved_policy(monkeypatch):
     monkeypatch.setitem(
         sys.modules,
         "agent.context_compressor",
-        SimpleNamespace(ContextCompressor=FakeCompressor),
+        SimpleNamespace(
+            ContextCompressor=FakeCompressor,
+            resolve_model_threshold=lambda model, model_thresholds, default: default,
+        ),
     )
     engine = HeadroomCompositeEngine(
         effective_config=enabled(),

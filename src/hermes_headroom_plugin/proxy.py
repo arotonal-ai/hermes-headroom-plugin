@@ -20,7 +20,6 @@ from .config import (
 )
 from .contracts import normalize_ccr_hash
 
-DEFAULT_SERVICE = "hermes-context-reduction.service"
 SMOKE_SENTINEL = "SYNTHETIC_SENTINEL_HEADROOM_PLUGIN"
 _MARKER_RE = re.compile(r"<<ccr:([^,>]+)")
 

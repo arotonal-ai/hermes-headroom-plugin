@@ -23,6 +23,9 @@ class SmokeTest(unittest.TestCase):
     def tearDown(self):
         self._auto_compression_env.stop()
 
+    def test_proxy_client_does_not_claim_native_supervisor_name(self):
+        self.assertFalse(hasattr(proxy, "DEFAULT_SERVICE"))
+
     def test_smoke_compress_retrieve_pass(self):
         retained = {"content": ""}
 
@@ -130,8 +133,37 @@ class SmokeTest(unittest.TestCase):
         self.assertIn('ttl_s=1800', text)
         self.assertIn('ttl=30m', text)
         self.assertIn('plugin_cache=none', text)
-        self.assertIn('CCR markers may expire', text)
+        self.assertIn('source_authority=backend_specific_unverified', text)
+        self.assertIn('RUNTIME_FULL_DURABLE covers supervised runtime lifecycle', text)
         self.assertNotIn('/sensitive/local/ccr_store.db', text)
+
+    def test_memory_ccr_contract_declares_restart_loss_and_marker_outliving_source(self):
+        with patch('hermes_headroom_plugin.commands.readyz', return_value={
+            "ok": True,
+            "proxy_url": "http://127.0.0.1:28789",
+            "status": 200,
+            "body": {"ready": True, "checks": {"cache": {"enabled": True, "status": "healthy"}}},
+        }), patch(
+            'hermes_headroom_plugin.commands.retrieve_stats',
+            return_value={
+                "success": True,
+                "store": {
+                    "entry_count": 7,
+                    "max_entries": 1000,
+                    "default_ttl_seconds": 1800,
+                    "backend": {"backend_type": "memory"},
+                },
+                "recent_retrievals": [],
+            },
+        ):
+            text = handle_headroom_command('cache')
+        self.assertIn('proxy=http://127.0.0.1:28789', text)
+        self.assertIn('backend=memory', text)
+        self.assertIn('ttl_s=1800', text)
+        self.assertIn('source_authority=temporal', text)
+        self.assertIn('restart_survival=no', text)
+        self.assertIn('local_exact_fallback=none', text)
+        self.assertIn('marker_outlives_source=possible', text)
 
     def test_command_on_reports_active_without_mutating_runtime(self):
         with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):

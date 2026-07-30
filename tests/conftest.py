@@ -22,7 +22,10 @@ def pytest_configure(config) -> None:
     hermes_home = home / ".hermes"
     hermes_home.mkdir()
     clean_env = {
-        key: value for key, value in original.items() if not key.startswith("HEADROOM_")
+        key: value
+        for key, value in original.items()
+        if not key.upper().startswith("HEADROOM_")
+        and key.upper() not in {"PYTHONHOME", "PYTHONPATH", "VIRTUAL_ENV"}
     }
     clean_env.update(
         {
@@ -53,7 +56,7 @@ def pytest_unconfigure(config) -> None:
 def isolate_live_headroom_host(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     """Give each direct pytest test a clean environment under the session sandbox."""
     for key in tuple(os.environ):
-        if key.startswith("HEADROOM_"):
+        if key.upper().startswith("HEADROOM_"):
             monkeypatch.delenv(key, raising=False)
     home = tmp_path / "isolated-host-home"
     home.mkdir()

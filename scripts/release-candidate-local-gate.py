@@ -740,6 +740,40 @@ def write_report(run_dir: Path, summary: dict[str, Any]) -> None:
     (run_dir / "RELEASE_CANDIDATE_LOCAL_GATE_REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def clean_temp_hermes_install_gate(*, allow_deferred: bool) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run or explicitly defer the clean-Hermes install subgate.
+
+    Package/runtime CI may defer this when the Hermes CLI is absent. A final
+    target-host release candidate may not.
+    """
+    hermes_cli = shutil.which("hermes")
+    if hermes_cli:
+        command = run(["bash", "scripts/test-clean-hermes-install.sh", "--local"], timeout=300)
+        gate = {
+            "pass": command["returncode"] == 0,
+            "verified": command["returncode"] == 0,
+            "deferred": False,
+        }
+        return command, gate
+
+    gate_pass = bool(allow_deferred)
+    command = {
+        "cmd": ["bash", "scripts/test-clean-hermes-install.sh", "--local"],
+        "returncode": 0 if gate_pass else 127,
+        "stdout": (
+            "DEFERRED: Hermes CLI is not available; generic CI may validate package/runtime "
+            "portability but does not certify clean Hermes installation."
+            if gate_pass
+            else "FAIL: Hermes CLI is required for the clean-temp-Hermes install release gate."
+        ),
+        "duration_s": 0,
+        "skipped": True,
+        "skip_reason": "hermes_cli_not_available",
+    }
+    gate = {"pass": gate_pass, "verified": False, "deferred": True}
+    return command, gate
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run local release-candidate gate for Hermes Headroom plugin.")
     parser.add_argument("--run-root", default=str(REPO / "release-candidate-runs"), help="directory for gate evidence")
@@ -752,6 +786,14 @@ def main(argv: list[str] | None = None) -> int:
         "--run-durable-lifecycle",
         action="store_true",
         help="exercise the real native user supervisor; omitted locally unless explicitly authorized",
+    )
+    parser.add_argument(
+        "--allow-hermes-install-deferred",
+        action="store_true",
+        help=(
+            "allow a generic package/runtime CI runner without the Hermes CLI to defer "
+            "the clean-temp-Hermes install subgate; never use this for the final target-host RC"
+        ),
     )
     parser.add_argument(
         "--keep-ephemeral-envs",
@@ -856,21 +898,12 @@ def main(argv: list[str] | None = None) -> int:
         "evidence": lifecycle_evidence,
     }
 
-    if shutil.which("hermes"):
-        clean = run(["bash", "scripts/test-clean-hermes-install.sh", "--local"], timeout=300)
-        clean_pass = clean["returncode"] == 0
-    else:
-        clean = {
-            "cmd": ["bash", "scripts/test-clean-hermes-install.sh", "--local"],
-            "returncode": 0,
-            "stdout": "SKIP: hermes CLI not available in this runner; wheel install/entrypoint gate still validates package portability.",
-            "duration_s": 0,
-            "skipped": True,
-            "skip_reason": "hermes_cli_not_available",
-        }
-        clean_pass = True
+    clean, clean_gate = clean_temp_hermes_install_gate(
+        allow_deferred=args.allow_hermes_install_deferred
+    )
     write_json(run_dir / "commands" / "clean-temp-hermes-install.json", clean)
-    gates["clean_temp_hermes_install"] = {"pass": clean_pass, "evidence": str(run_dir / "commands" / "clean-temp-hermes-install.json")}
+    clean_gate["evidence"] = str(run_dir / "commands" / "clean-temp-hermes-install.json")
+    gates["clean_temp_hermes_install"] = clean_gate
 
     runtime = run([sys.executable, "scripts/test-headroom-runtime-smoke.py", "--spec", args.headroom_spec, "--litellm-spec", args.litellm_spec, "--install-timeout", str(args.install_timeout)], timeout=args.install_timeout + 240)
     write_json(run_dir / "commands" / "runtime-smoke.json", runtime)

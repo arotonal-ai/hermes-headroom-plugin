@@ -32,12 +32,12 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - name: Run local release-candidate gate
+      - name: Run package/runtime release-candidate gate (target-host Hermes install deferred)
         env:
           HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.32.1' }}
           HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.94.0rc3' }}
           HEADROOM_COMPAT_AI_SPEC: ${{ github.event.inputs.compat_headroom_spec || 'headroom-ai[proxy]==0.31.0' }}
-        run: python scripts/release-candidate-local-gate.py --install-timeout 600
+        run: python scripts/release-candidate-local-gate.py --install-timeout 600 --allow-hermes-install-deferred
       - name: Upload release-candidate evidence
         if: always()
         uses: actions/upload-artifact@v7

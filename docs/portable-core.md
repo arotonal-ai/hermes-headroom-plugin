@@ -135,7 +135,7 @@ Explicit SQLite remains outside the v0.5 manager default. Operators requiring pe
 ## Verification
 
 ```bash
-uv run --isolated --no-project --with pytest --with PyYAML -- python scripts/run-isolated-unit-tests.py
+python scripts/run-isolated-unit-tests.py
 python -m compileall -q src tests scripts
 bash -n scripts/*.sh
 bash scripts/audit-repo-readiness.sh

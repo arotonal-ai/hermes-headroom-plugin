@@ -43,6 +43,14 @@ The manager:
 
 It does **not** change Hermes model/provider routing, write persistent shell environment blocks, install API keys, enable a paid provider, or run from `register()`.
 
+### CCR source authority is temporal
+
+`RUNTIME_FULL_DURABLE` describes the supervised runtime lifecycle; it does not mean that compressed CCR payloads are durable. The default **memory backend** retains exact source for a **1,800-second TTL**, subject to the 1,000-entry capacity, and does not survive a runtime restart. Markers can outlive their exact source when chat, reports, or other artifacts retain the marker past TTL or restart.
+
+The plugin has no plugin-local exact fallback: `retrieve_local_source()` intentionally returns `None`, and redacted observability sidecars are not guaranteed copies of the original payload. A `404`/`410` or explicit expired/not-found response therefore means exact recovery is unavailable; callers must not fabricate or infer the missing source.
+
+For authority that must outlive the temporal store, keep the result exact or retain a separately governed exact artifact. This contract does not authorize SQLite, unredacted automatic sidecars, a longer TTL, or any other persistent backend; each requires a separate privacy, deletion, permissions, pruning, and rollback gate.
+
 ## Native Git install
 
 ```bash
