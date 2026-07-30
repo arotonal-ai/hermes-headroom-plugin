@@ -71,7 +71,7 @@ The base wheel is sufficient: `setup` creates the isolated official runtime itse
 
 ```bash
 python3 -m pip install \
-  https://github.com/arotonal-ai/hermes-headroom-plugin/releases/download/v0.6.2/hermes_headroom_plugin-0.6.2-py3-none-any.whl
+  https://github.com/arotonal-ai/hermes-headroom-plugin/releases/download/v0.6.3/hermes_headroom_plugin-0.6.3-py3-none-any.whl
 headroom-runtime setup
 ```
 
@@ -105,7 +105,7 @@ A successful `doctor` returns exit code `0` and decision `RUNTIME_FULL_DURABLE`.
 
 ### Upgrade an existing v0.6.0 managed runtime
 
-Record the current loopback port from `status`, update the plugin, then use the new manager to remove the exact manager-owned v0.6.0 deployment before creating the v0.6.2 runtime with the same port:
+Record the current loopback port from `status`, update the plugin, then use the new manager to remove the exact manager-owned v0.6.0 deployment before creating the v0.6.3 runtime with the same port:
 
 ```bash
 PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
