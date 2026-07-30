@@ -10,10 +10,11 @@ This page separates **published certified releases** from withdrawn releases and
 - Published `v0.6.1`: Python `>=3.11,<3.15`, `headroom-ai[proxy]==0.32.1`, and `litellm==1.94.0rc3`, with blocking Python 3.11/3.14 unit, dependency, and lifecycle lanes on Linux, macOS, and Windows.
 - Published `v0.6.2`: the same certified pair and Python range, plus exact v0.6.0 managed-manifest compatibility for safe uninstall during upgrade.
 - Published `v0.6.3`: portable pytest isolation, reconciled port/service authority, listener-free plugin semantics, and explicit temporal in-memory CCR authority, with the same certified runtime pair and Python range.
+- Current `v0.6.4` source candidate: promotes `headroom-ai[proxy]==0.33.0` after isolated dependency/runtime, local release-candidate, integrated Hermes tool-loop, exact retrieval, security and rollback gates; publication remains separate from a tagged cross-OS release.
 
-## Python 3.14 production compatibility
+## Python 3.14 compatibility contract
 
-The production portable lane keeps `headroom-ai[proxy]==0.32.1` and uses `litellm==1.94.0rc3`, whose package metadata supports Python `>=3.10,<3.15` and whose resolved dependency set provides the required CPython 3.14 wheels. The plugin's certified lane is narrower (`>=3.11,<3.15`) and rejects an incompatible selected interpreter before lock/runtime-root creation. Managed venv creation, package installation, version probes, and runtime subprocesses strip inherited `PYTHONPATH` and `PYTHONHOME`. Python 3.11 and 3.14 boundary unit/dependency/lifecycle jobs on native Linux, macOS, and Windows are blocking release gates.
+The v0.6.4 source candidate pins `headroom-ai[proxy]==0.33.0` with `litellm==1.94.0rc3`. The plugin retains the published `>=3.11,<3.15` range and rejects an incompatible selected interpreter before lock/runtime-root creation; managed venv creation, installation, version probes, and runtime subprocesses strip inherited `PYTHONPATH` and `PYTHONHOME`. Local Linux admission does not relabel the new runtime pin as cross-OS certified: Python 3.11 and 3.14 dependency/lifecycle jobs on native Linux, macOS, and Windows remain blocking for a tagged release.
 
 A durable deployment claim still requires a usable native supervisor, real target-host dependency install, `RUNTIME_FULL_DURABLE`, sentinel recovery, rollback, and unchanged protected deployment evidence. Package portability and host-level durable deployment are separate gates.
 
@@ -79,7 +80,7 @@ Some native Windows hosts report Microsoft Defender quarantining the base depend
 
 ## Experimental future runtimes
 
-Python 3.13 and 3.14 are inside the published `>=3.11,<3.15` range beginning with v0.6.1. Future `headroom-ai` ranges, newer LiteLLM releases, and supplementary interpreter lanes are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. The latest-LiteLLM lane holds Headroom at `0.32.1`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
+Python 3.13 and 3.14 are inside the published `>=3.11,<3.15` range beginning with v0.6.1. Future `headroom-ai` ranges, newer LiteLLM releases, and supplementary interpreter lanes are monitored separately by the **Future Runtime Monitor** workflow at `.github/workflows/future-runtime-monitor.yml`. The latest-LiteLLM lane holds Headroom at `0.33.0`, uses Python 3.12, and varies only the allowed LiteLLM range across Ubuntu, macOS, and Windows.
 
 That workflow is intentionally **non-blocking**:
 
@@ -98,7 +99,7 @@ That workflow is intentionally **non-blocking**:
 ## Runtime-version policy
 
 1. Keep plugin install/load independent from the separate proxy runtime; active compression requires a healthy loopback proxy.
-2. Keep runtime versions exact in release paths. The current production pair is `headroom-ai[proxy]==0.32.1` plus `litellm==1.94.0rc3`; the prior v0.5.2/v0.6.0 pair used `litellm==1.91.3`.
+2. Keep runtime versions exact in release paths. The current v0.6.4 source/owner-local production pair is `headroom-ai[proxy]==0.33.0` plus `litellm==1.94.0rc3`; the prior v0.5.2/v0.6.0 pair used `litellm==1.91.3`.
 3. Treat `--headroom-spec` / `HEADROOM_AI_SPEC` and `--litellm-spec` / `HEADROOM_LITELLM_SPEC` overrides as explicit incident, target-host diagnostic, or non-blocking canary controls. A LiteLLM override alone does not bypass the certified Python range; outside `>=3.11,<3.15`, setup also requires `--allow-unsupported-python` and the result remains operator-owned canary evidence.
 4. Promote or demote support only from dependency, real lifecycle, readiness, sentinel-recovery, and rollback evidence.
 5. Document target-host drift honestly, especially on native Windows where Python aliases and Task Scheduler policy may differ from CI.

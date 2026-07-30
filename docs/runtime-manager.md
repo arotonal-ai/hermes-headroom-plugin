@@ -6,13 +6,13 @@ It installs the **official** `headroom-ai` distribution into an isolated venv, r
 
 ## Decision: wrap upstream lifecycle, not `headroom deploy` or direct `install apply`
 
-The v0.5 design was rechecked against the official PyPI `headroom-ai==0.32.1` sdist (`sha256:329dda3328f0fb45ec7128353f7fc9108f08e9676c9dc1873b4841c5c00c94bd`). `headroom/cli/install.py` is byte-identical (`sha256:ae59cdbc74de060b0d79eda1cf4725318615800487c72a51de6a79a18378843f`) to the previously reviewed upstream `v0.32.0` source at commit `438138832db97c4712d3c08197797f6bb64e68d9`; the other wrapped lifecycle functions are AST-equivalent.
+The v0.6.4 design was rechecked against the official PyPI `headroom-ai==0.33.0` sdist (`sha256:97d817e5923903d72bed24f75e0424e9cb7f86b3ddde0fc1acec4f3f85deeb5a`). The wrapped `_build_deployment_manifest`, `_remove_deployment`, `_start_deployment`, `save_manifest`, and `install_supervisor` signatures and ASTs are unchanged from 0.32.1. `load_manifest` keeps its signature and adds only the upstream deprecated-image migration before constructing the manifest; the release gate exercises the full managed lifecycle and rollback.
 
 | Upstream surface | Finding | Plugin decision |
 |---|---|---|
 | `headroom deploy` | Turnkey UX, but defaults to `providers=auto`; it may discover and mutate Codex, Claude, OpenClaw, or other provider configuration. Its Docker default also referenced a stale image namespace in 0.32.0. | Do not call it. |
 | `headroom install apply` | `--providers manual` with no target yields an empty provider target set, but a real 0.32.0 user-scope canary still wrote persistent `HEADROOM_*` blocks to `.bashrc`, `.zshrc`, and `.profile`. | Do not call it directly. |
-| Pinned 0.32.1 lifecycle APIs | `_build_deployment_manifest`, `install_supervisor`, `save_manifest`, and `_start_deployment` preserve upstream manifests and native supervisors without calling mutation activation. | Wrap narrowly; require `provider_mode=manual`, `targets=[]`, and `mutations=[]`, and fail closed if the pinned contract changes. |
+| Pinned 0.33.0 lifecycle APIs | `_build_deployment_manifest`, `install_supervisor`, `save_manifest`, and `_start_deployment` preserve upstream manifests and native supervisors without calling mutation activation. | Wrap narrowly; require `provider_mode=manual`, `targets=[]`, and `mutations=[]`, and fail closed if the pinned contract changes. |
 | `headroom install status/remove` | Owns manifest and supervisor lifecycle across systemd, launchd, Windows Service/Task Scheduler, and crontab adapters. | Delegate status and rollback; do not create a second supervisor implementation. |
 | Headroom proxy | Owns `/readyz`, `/v1/compress`, `/v1/retrieve`, and CCR storage. | Verify through the plugin's real smoke. |
 
@@ -31,7 +31,7 @@ The manager:
 - requires `uninstall` before changing an existing managed profile, port, preset, or package spec;
 - strips inherited `HEADROOM_*` variables before adding the manager-controlled runtime environment;
 - refuses a ready port when no matching manager state exists;
-- accepts only package-name/version specs (no URL, path, marker, or credentials) and installs `headroom-ai[proxy]==0.32.1` plus `litellm==1.94.0rc3` from official PyPI with pip isolated mode;
+- accepts only package-name/version specs (no URL, path, marker, or credentials) and installs `headroom-ai[proxy]==0.33.0` plus `litellm==1.94.0rc3` from official PyPI with pip isolated mode;
 - builds an upstream manifest with `provider_mode=manual`, **no provider targets**, and **no provider/shell mutations**;
 - disables telemetry, code-aware optional dependencies, and Kompress via `HEADROOM_DISABLE_KOMPRESS=1` when no approved backend exists; enabling Kompress requires a separately reviewed manifest/runtime change;
 - uses the memory CCR backend with a 1,800-second TTL by default;
@@ -47,7 +47,7 @@ It does **not** change Hermes model/provider routing, write persistent shell env
 
 `RUNTIME_FULL_DURABLE` describes the supervised runtime lifecycle; it does not mean that compressed CCR payloads are durable. The default **memory backend** retains exact source for a **1,800-second TTL**, subject to the 1,000-entry capacity, and does not survive a runtime restart. Markers can outlive their exact source when chat, reports, or other artifacts retain the marker past TTL or restart.
 
-The plugin has no plugin-local exact fallback: `retrieve_local_source()` intentionally returns `None`, and redacted observability sidecars are not guaranteed copies of the original payload. A `404`/`410` or explicit expired/not-found response therefore means exact recovery is unavailable; callers must not fabricate or infer the missing source.
+The optional profile-local exact fallback is default-off for writes and retains only allowlisted, non-sensitive compressed intermediates under bounded TTL/quota and private permissions. When enabled, it may synthesize a content-addressed `local_…` recovery alias if Headroom 0.33.0 produces useful compression without a durable provider marker. A missing, expired, redacted, corrupt, or rejected local entry still fails open to the exact tool result; callers must never fabricate unavailable source.
 
 For authority that must outlive the temporal store, keep the result exact or retain a separately governed exact artifact. This contract does not authorize SQLite, unredacted automatic sidecars, a longer TTL, or any other persistent backend; each requires a separate privacy, deletion, permissions, pruning, and rollback gate.
 
@@ -70,8 +70,7 @@ py -3 "$PluginDir\scripts\headroom-runtime.py" setup
 The base wheel is sufficient: `setup` creates the isolated official runtime itself.
 
 ```bash
-python3 -m pip install \
-  https://github.com/arotonal-ai/hermes-headroom-plugin/releases/download/v0.6.3/hermes_headroom_plugin-0.6.3-py3-none-any.whl
+hermes plugins install arotonal-ai/hermes-headroom-plugin --enable
 headroom-runtime setup
 ```
 
@@ -105,7 +104,7 @@ A successful `doctor` returns exit code `0` and decision `RUNTIME_FULL_DURABLE`.
 
 ### Upgrade an existing v0.6.0 managed runtime
 
-Record the current loopback port from `status`, update the plugin, then use the new manager to remove the exact manager-owned v0.6.0 deployment before creating the v0.6.3 runtime with the same port:
+Record the current loopback port from `status`, update the plugin, then use the new manager to remove the exact manager-owned v0.6.0 deployment before creating the v0.6.4 runtime with the same port:
 
 ```bash
 PLUGIN_DIR="${HERMES_HOME:-$HOME/.hermes}/plugins/headroom_retrieve"
@@ -180,7 +179,7 @@ Key files:
 | `manager-state.json` | non-secret manager state and exact specs |
 | `install.log` | private pip/safe upstream lifecycle evidence |
 | `manager.log` | private status/remove evidence |
-| `venv-0.32.1/` | isolated official runtime |
+| `venv-0.33.0/` | isolated official runtime |
 | `workspace/` | upstream deployment manifest/workspace |
 
 On Windows, `workspace/deploy/<profile>/ensure-headroom-hidden.vbs` is an upstream-profile artifact governed by the manifest. It is removed with the profile; it is not a separate global launcher.
@@ -207,9 +206,9 @@ If state, the purge marker, or the saved manager-owned base manifest contract is
 
 - The certified manager requires Python `>=3.11,<3.15` and network access to official PyPI during first setup. A non-default `--litellm-spec` does not bypass that Python gate; an out-of-range target-host canary must additionally pass `--allow-unsupported-python` and cannot claim certified release support.
 - A host without a usable native user supervisor cannot claim durable lifecycle from dry-run or unit tests alone.
-- Headroom 0.32.1 does not expose JSON for `install status`, so the manager uses a version-pinned parser for its documented labels. Missing or duplicate fields, unknown lifecycle values, and identity mismatches fail closed to `RUNTIME_PARTIAL`; an upstream format change requires an explicit adapter update.
+- Headroom 0.33.0 does not expose JSON for `install status`, so the manager uses a version-pinned parser for its documented labels. Missing or duplicate fields, unknown lifecycle values, and identity mismatches fail closed to `RUNTIME_PARTIAL`; an upstream format change requires an explicit adapter update.
 - Memory CCR markers intentionally do not survive runtime restart.
 - WSL2 and Termux require target-host evidence; they are not implied by Linux CI.
 - Provider-proxy routing remains outside this manager and outside the portable-core claim.
-- Headroom 0.32.1 does not expose a public no-mutations apply flag. The manager therefore uses a narrow set of pinned private lifecycle APIs; version drift must fail closed in tests/canaries rather than silently falling back to direct `install apply`.
+- Headroom 0.33.0 does not expose a public no-mutations apply flag. The manager therefore uses a narrow set of pinned private lifecycle APIs; version drift must fail closed in tests/canaries rather than silently falling back to direct `install apply`.
 - Some Windows Defender signatures quarantine the base `ast-grep-cli` dependency on affected target hosts. The manager does not create exclusions or bypass detections; such an installation remains partial and rolls back fail-closed.

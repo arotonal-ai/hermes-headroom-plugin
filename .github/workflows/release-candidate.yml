@@ -6,7 +6,7 @@ on:
       headroom_spec:
         description: "headroom-ai package spec to test"
         required: false
-        default: "headroom-ai[proxy]==0.32.1"
+        default: "headroom-ai[proxy]==0.33.0"
       litellm_spec:
         description: "LiteLLM constraint to test; certified default remains portable across the matrix"
         required: false
@@ -34,7 +34,7 @@ jobs:
           python-version: "3.11"
       - name: Run package/runtime release-candidate gate (target-host Hermes install deferred)
         env:
-          HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.32.1' }}
+          HEADROOM_AI_SPEC: ${{ github.event.inputs.headroom_spec || 'headroom-ai[proxy]==0.33.0' }}
           HEADROOM_LITELLM_SPEC: ${{ github.event.inputs.litellm_spec || 'litellm==1.94.0rc3' }}
           HEADROOM_COMPAT_AI_SPEC: ${{ github.event.inputs.compat_headroom_spec || 'headroom-ai[proxy]==0.31.0' }}
         run: python scripts/release-candidate-local-gate.py --install-timeout 600 --allow-hermes-install-deferred

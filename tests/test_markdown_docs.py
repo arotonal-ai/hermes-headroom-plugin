@@ -40,7 +40,7 @@ class MarkdownDocsTest(unittest.TestCase):
             "headroom-runtime status --json",
             "headroom-runtime doctor --json",
             "headroom-runtime uninstall --json",
-            "headroom-ai[proxy]==0.32.1",
+            "headroom-ai[proxy]==0.33.0",
             "manual provider selection",
             "/headroom smoke",
         ]
@@ -75,7 +75,8 @@ class MarkdownDocsTest(unittest.TestCase):
             "1,800-second TTL",
             "does not survive a runtime restart",
             "Markers can outlive their exact source",
-            "no plugin-local exact fallback",
+            "optional profile-local exact fallback",
+            "default-off for writes",
             "does not authorize SQLite",
         ]
         for needle in required:

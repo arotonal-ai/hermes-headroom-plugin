@@ -69,11 +69,11 @@ second provider and an injection/selection gate are implemented and tested.
 
 | Setting | Default |
 |---|---|
-| Plugin | `hermes-headroom-plugin==0.6.3` |
+| Plugin | `hermes-headroom-plugin==0.6.4` |
 | LLM request middleware | off; explicit `mode: tool_results` opt-in |
-| Headroom runtime | `headroom-ai[proxy]==0.32.1` |
+| Headroom runtime | `headroom-ai[proxy]==0.33.0` |
 | LiteLLM transitive runtime | `litellm==1.94.0rc3` (portable wheel constraint) |
-| Runtime venv | `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.32.1` |
+| Runtime venv | `${HERMES_HOME:-$HOME/.hermes}/runtimes/headroom/venv-0.33.0` |
 | Bind | `127.0.0.1:8787` |
 | CCR backend | `memory` |
 | CCR TTL | `1800` seconds |
@@ -126,7 +126,7 @@ Read-only plan:
 headroom-runtime setup --dry-run --json
 ```
 
-The managed runtime preserves the pinned Headroom 0.32.1 lifecycle contract while using the certified LiteLLM/Python pair from package metadata. It installs the official runtime in a versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct apply because that path writes persistent shell blocks, and claims `RUNTIME_FULL_DURABLE` only after upstream status, readiness, and real compress → retrieve smoke pass. It does not mutate provider routing.
+The managed runtime preserves the pinned Headroom 0.33.0 lifecycle contract while using the certified LiteLLM/Python pair from package metadata. It installs the official runtime in a versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct apply because that path writes persistent shell blocks, and claims `RUNTIME_FULL_DURABLE` only after upstream status, readiness, and real compress → retrieve smoke pass. It does not mutate provider routing.
 
 Optional legacy companion operations remain available through `scripts/install-production-runtime.py --companion-only`; that script is not the primary v0.5 runtime authority.
 
@@ -139,7 +139,7 @@ python scripts/run-isolated-unit-tests.py
 python -m compileall -q src tests scripts
 bash -n scripts/*.sh
 bash scripts/audit-repo-readiness.sh
-python scripts/test-headroom-runtime-smoke.py --spec 'headroom-ai[proxy]==0.32.1'
+python scripts/test-headroom-runtime-smoke.py --spec 'headroom-ai[proxy]==0.33.0'
 ```
 
 Portable lifecycle verification:

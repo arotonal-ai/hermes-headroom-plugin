@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import tempfile
 import tomllib
@@ -54,8 +55,8 @@ class SymlinkPrivilegeHandlingTest(unittest.TestCase):
 
 
 def test_release_candidate_default_runtime_is_pinned() -> None:
-    assert MODULE.HEADROOM_RUNTIME_VERSION == "0.32.1"
-    assert MODULE.DEFAULT_HEADROOM_SPEC == "headroom-ai[proxy]==0.32.1"
+    assert MODULE.HEADROOM_RUNTIME_VERSION == "0.33.0"
+    assert MODULE.DEFAULT_HEADROOM_SPEC == "headroom-ai[proxy]==0.33.0"
     assert MODULE.LITELLM_RUNTIME_VERSION == "1.94.0rc3"
     assert MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.94.0rc3"
     assert RUNTIME_SMOKE_MODULE.DEFAULT_LITELLM_SPEC == "litellm==1.94.0rc3"
@@ -64,7 +65,7 @@ def test_release_candidate_default_runtime_is_pinned() -> None:
 def test_package_proxy_extra_matches_certified_runtime() -> None:
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
 
-    assert project["version"] == "0.6.3"
+    assert project["version"] == "0.6.4"
     assert project["requires-python"] == ">=3.11,<3.15"
     assert project["optional-dependencies"]["proxy"] == [
         MODULE.DEFAULT_HEADROOM_SPEC,
@@ -76,6 +77,35 @@ def test_package_proxy_extra_matches_certified_runtime() -> None:
     packaged_docs = config["tool"]["setuptools"]["data-files"]["share/doc/hermes-headroom-plugin"]
     assert "docs/portable-core.md" in packaged_docs
     assert f"hermes-headroom-plugin=={project['version']}" in portable_core
+
+
+def test_headroom_033_wrapped_api_evidence_matches_release_docs() -> None:
+    evidence = json.loads(
+        (REPO / "docs" / "evidence" / "headroom-033-api-compatibility.json").read_text(encoding="utf-8")
+    )
+    assert evidence["candidate"] == {
+        "package": "headroom-ai",
+        "version": "0.33.0",
+        "sdist_sha256": "97d817e5923903d72bed24f75e0424e9cb7f86b3ddde0fc1acec4f3f85deeb5a",
+    }
+    assert evidence["baseline"]["version"] == "0.32.1"
+    assert evidence["decision"] == "STATIC_COMPATIBILITY_PASS_REQUIRES_RUNTIME_LIFECYCLE_GATE"
+    unchanged = set(evidence["wrapped_api_review"]["ast_and_signature_identical"])
+    assert unchanged == {
+        "headroom.cli.install._build_deployment_manifest",
+        "headroom.cli.install._remove_deployment",
+        "headroom.cli.install._start_deployment",
+        "headroom.install.state.save_manifest",
+        "headroom.install.supervisors.install_supervisor",
+    }
+    reviewed = evidence["wrapped_api_review"]["compatible_reviewed_change"]
+    assert reviewed["symbol"] == "headroom.install.state.load_manifest"
+    assert reviewed["signature_unchanged"] is True
+    runtime_doc = (REPO / "docs" / "runtime-manager.md").read_text(encoding="utf-8")
+    release_doc = (REPO / "docs" / "releases" / "v0.6.4.md").read_text(encoding="utf-8")
+    for document in (runtime_doc, release_doc):
+        assert evidence["candidate"]["sdist_sha256"] in document
+        assert "load_manifest" in document
 
 
 def test_production_candidate_documents_real_config_keys_without_test_aliases() -> None:
@@ -124,14 +154,14 @@ def test_workflows_keep_certified_pin_separate_from_latest_litellm_canary() -> N
     runtime_script = RUNTIME_SMOKE_SCRIPT.read_text(encoding="utf-8")
 
     for workflow in (runtime_smoke, release_candidate):
-        assert 'default: "headroom-ai[proxy]==0.32.1"' in workflow
+        assert 'default: "headroom-ai[proxy]==0.33.0"' in workflow
         assert 'default: "litellm==1.94.0rc3"' in workflow
         assert "HEADROOM_AI_SPEC:" in workflow
         assert "HEADROOM_LITELLM_SPEC:" in workflow
 
     assert "latest-litellm-monitor:" in future_monitor
     assert 'default: "litellm>=1.86.2,<2.0"' in future_monitor
-    assert 'HEADROOM_SPEC: "headroom-ai[proxy]==0.32.1"' in future_monitor
+    assert 'HEADROOM_SPEC: "headroom-ai[proxy]==0.33.0"' in future_monitor
     assert 'python-version: "3.12"' in future_monitor
     assert "continue-on-error: true" in future_monitor
     assert '--litellm-spec "$LITELLM_SPEC"' in future_monitor

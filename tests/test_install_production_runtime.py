@@ -321,7 +321,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
             self.assertIn("RUNTIME_FULL_DURABLE", text, rel)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertRegex(readme, re.compile(r"127\.0\.0\.1:8787", re.I))
-        self.assertIn("headroom-ai[proxy]==0.32.1", readme)
+        self.assertIn("headroom-ai[proxy]==0.33.0", readme)
 
     def test_native_git_install_has_actionable_after_install(self):
         text = AFTER_INSTALL.read_text(encoding="utf-8")
@@ -331,7 +331,7 @@ class InstallProductionRuntimeScriptTest(unittest.TestCase):
         self.assertIn("headroom-runtime uninstall", text)
         self.assertIn("RUNTIME_PARTIAL", text)
         self.assertIn("RUNTIME_FULL_DURABLE", text)
-        self.assertIn("headroom-ai[proxy]==0.32.1", text)
+        self.assertIn("headroom-ai[proxy]==0.33.0", text)
         self.assertIn("does **not** change global model/provider routing", text)
 
     def test_sdist_manifest_includes_runtime_launchers_and_install_docs(self):

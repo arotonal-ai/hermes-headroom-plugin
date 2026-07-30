@@ -612,6 +612,35 @@ def compress_tool_result_for_context(
     before = compressed.get("tokens_before")
     after = compressed.get("tokens_after")
     saved = compressed.get("tokens_saved")
+    local_source = None
+    marker_origin = "provider" if marker else ""
+    provider_savings_useful = (
+        isinstance(saved, int)
+        and saved > 500
+        and isinstance(after, int)
+        and isinstance(before, int)
+        and after < before
+    )
+    if not markers and provider_savings_useful:
+        # Headroom can produce a materially smaller worker/log result without a
+        # provider CCR handle. When the operator explicitly enabled the bounded
+        # local exact store, mint a profile-local alias before replacing the
+        # model-facing result. If retention is disabled, rejected, or fails,
+        # preserve the existing fail-open exact behavior.
+        local_marker = f"local_{hashlib.sha256(result.encode('utf-8', errors='strict')).hexdigest()}"
+        retained = retain_local_source(
+            local_marker,
+            result,
+            data_class=str(header_data.get("data_class") or ""),
+            tool_name=tool_name,
+            args=args,
+            config=effective_config,
+        )
+        if retained.exact:
+            local_source = retained
+            marker = local_marker
+            markers = [local_marker]
+            marker_origin = "local_exact_synthesized"
     report_path = report_dir / f"auto-tool-{stamp}-{safe_tool}.json"
     report = {
         "ts": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -636,6 +665,7 @@ def compress_tool_result_for_context(
         "compressed_path": str(compressed_path),
         "marker": marker,
         "marker_count": len(markers),
+        "marker_origin": marker_origin,
         "original_chars": len(result),
         "redacted_chars": len(redacted),
         "compression_input_shape": compression_input_shape,
@@ -696,15 +726,19 @@ def compress_tool_result_for_context(
         _negative_outcome_cache_put(negative_outcome_key)
         return None
 
-    local_source = retain_local_source(
-        str(marker),
-        result,
-        data_class=str(header_data.get("data_class") or ""),
-        tool_name=tool_name,
-        args=args,
-        config=effective_config,
-    )
-    exact_authority = "local_exact_manifest+ccr_temporal" if local_source.exact else "ccr_temporal"
+    if local_source is None:
+        local_source = retain_local_source(
+            str(marker),
+            result,
+            data_class=str(header_data.get("data_class") or ""),
+            tool_name=tool_name,
+            args=args,
+            config=effective_config,
+        )
+    if marker_origin == "local_exact_synthesized":
+        exact_authority = "local_exact_manifest"
+    else:
+        exact_authority = "local_exact_manifest+ccr_temporal" if local_source.exact else "ccr_temporal"
     source_bytes = len(result.encode("utf-8", errors="strict"))
     source_sha256 = local_source.sha256 or hashlib.sha256(result.encode("utf-8", errors="strict")).hexdigest()
     report["local_exact"] = local_source.as_dict(include_content=False, include_internal=True)
@@ -784,6 +818,7 @@ def compress_tool_result_for_context(
         measurement_scope=measurement_scope,
         compression_latency_ms=compression_latency_ms,
         marker=marker,
+        marker_origin=marker_origin,
         report_path=report_path,
         source_path=source_path,
         compressed_path=compressed_path,

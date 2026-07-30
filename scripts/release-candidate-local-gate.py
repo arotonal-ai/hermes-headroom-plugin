@@ -31,7 +31,7 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[1]
 PROJECT_VERSION = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
 EXPECTED_PLUGIN_SPEC = f"hermes-headroom-plugin=={PROJECT_VERSION}"
-HEADROOM_RUNTIME_VERSION = "0.32.1"
+HEADROOM_RUNTIME_VERSION = "0.33.0"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={HEADROOM_RUNTIME_VERSION}"
 LITELLM_RUNTIME_VERSION = "1.94.0rc3"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_RUNTIME_VERSION}"

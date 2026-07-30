@@ -44,7 +44,7 @@ Wheel environments use the packaged entry point:
 headroom-runtime setup
 ```
 
-Before mutation, an agent may run `setup --dry-run --json`. The manager installs official `headroom-ai[proxy]==0.32.1` plus `litellm==1.94.0rc3` in an isolated versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct 0.32.1 apply because that path writes persistent shell blocks, then verifies `/readyz` and real compress → retrieve smoke. No provider API key or global routing change is required.
+Before mutation, an agent may run `setup --dry-run --json`. The manager installs official `headroom-ai[proxy]==0.33.0` plus `litellm==1.94.0rc3` in an isolated versioned venv and reuses upstream manifests/native supervisors with `provider_mode=manual`, `targets=[]`, and `mutations=[]`. It skips direct upstream apply because a prior 0.32.1 canary wrote persistent shell blocks, then verifies `/readyz` and real compress → retrieve smoke. No provider API key or global routing change is required.
 
 Status, full verification, and rollback:
 
@@ -113,7 +113,7 @@ DURABLE if:
 - the expected user-level supervisor artifact is present for the target platform;
 - `/headroom smoke` still returns PASS after the relevant restart/login lifecycle.
 
-Published v0.6.3 certifies the Python `>=3.11,<3.15` range through blocking 3.11/3.14 unit, dependency, and managed-lifecycle boundary jobs on Linux, macOS, and native Windows. Python 3.12/3.13 remain inside that package contract; every real host still needs target-host `RUNTIME_FULL_DURABLE` evidence. WSL2/Termux remain target-evidence lanes. Existing-deployment reconciliation is separately tracked and is not a clean-install Python support gate.
+Published v0.6.3 certifies the plugin Python `>=3.11,<3.15` range through blocking 3.11/3.14 unit, dependency, and managed-lifecycle boundary jobs on Linux, macOS, and native Windows; the v0.6.4 Headroom 0.33 pin requires a fresh blocking run before a tagged release. Python 3.12/3.13 remain inside that package contract; every real host still needs target-host `RUNTIME_FULL_DURABLE` evidence. WSL2/Termux remain target-evidence lanes. Existing-deployment reconciliation is separately tracked and is not a clean-install Python support gate.
 
 FAIL if:
 

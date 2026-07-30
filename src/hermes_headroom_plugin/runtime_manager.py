@@ -26,7 +26,7 @@ from typing import Any, Sequence
 
 from .proxy import readyz, smoke
 
-RUNTIME_VERSION = "0.32.1"
+RUNTIME_VERSION = "0.33.0"
 LITELLM_VERSION = "1.94.0rc3"
 DEFAULT_HEADROOM_SPEC = f"headroom-ai[proxy]=={RUNTIME_VERSION}"
 DEFAULT_LITELLM_SPEC = f"litellm=={LITELLM_VERSION}"
@@ -1097,7 +1097,7 @@ def _supervisor_contract(root: Path, *, profile: str, preset: str) -> dict[str, 
 def _parse_upstream_status(
     output: str, *, profile: str, preset: str, port: int
 ) -> dict[str, Any]:
-    """Parse Headroom 0.32.1 human status output into fail-closed evidence."""
+    """Parse Headroom 0.33.0 human status output into fail-closed evidence."""
 
     fields: dict[str, str] = {}
     duplicates: list[str] = []

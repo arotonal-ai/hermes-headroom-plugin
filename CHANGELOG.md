@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v0.6.4 — 2026-07-30
+
+- Promote the owner-local/default runtime pin to `headroom-ai[proxy]==0.33.0` only after isolated dependency/runtime, static wrapped-API, integrated Hermes deferred-tool retrieval, release-candidate, security, and rollback gates.
+- Synthesize a bounded content-addressed local recovery alias when 0.33.0 returns useful compression without a durable provider marker and the default-off local exact store is explicitly enabled; otherwise preserve exact fail-open behavior.
 - Enforce fail-open multipart marker integrity across middleware, lifecycle, smoke and worker wrappers; ambiguous or missing marker sets never claim one fragment as complete authority.
 - Centralize semantic admission as `compress_now`, `hot_exact_then_cold_compact`, or `always_exact`, keeping instructions, edits/recovery, memory, interaction/research sources and immediate readbacks exact.
 - Add a default-off, profile-isolated, content-addressed local exact fallback with TTL/quota, `0700`/`0600` permissions, checksum verification and explicit exact/redacted/expired states.

@@ -289,6 +289,161 @@ class LocalExactRecoveryTest(unittest.TestCase):
             self.assertNotIn("manifest_path", payload)
 
 
+    def test_missing_provider_marker_synthesizes_retrievable_local_alias_when_enabled(self):
+        source = "\n".join(
+            f"diagnostic line={index} status=ok" + (" sentinel=LOCAL-ALIAS-EXACT" if index == 50 else "")
+            for index in range(1200)
+        )
+        compressed = {
+            "ok": True,
+            "tokens_before": 12000,
+            "tokens_after": 200,
+            "tokens_saved": 11800,
+            "messages": [{"role": "tool", "content": "bounded summary without provider marker"}],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            (home / "config.yaml").write_text(
+                "context_reduction:\n"
+                "  local_exact_store:\n"
+                "    enabled: true\n"
+                "    ttl_seconds: 600\n"
+                "    max_entries: 8\n"
+                "    max_bytes: 1048576\n",
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"HERMES_HOME": str(home)}), patch(
+                "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}
+            ), patch(
+                "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+            ):
+                reduced = compress_tool_result_for_context(tool_name="terminal", args={}, result=source)
+                self.assertIsInstance(reduced, str)
+                reduced_text = str(reduced)
+                self.assertIn("headroom_retrieve(hash='local_", reduced_text)
+                marker = reduced_text.split("headroom_retrieve(hash='", 1)[1].split("'", 1)[0]
+                self.assertEqual(len(marker), len("local_") + 64)
+                with patch("hermes_headroom_plugin.tools.retrieve") as remote:
+                    rendered = handle_headroom_retrieve({"hash": marker})
+                remote.assert_not_called()
+
+            payload = json.loads(rendered)
+            self.assertTrue(payload["success"])
+            self.assertTrue(payload["exact"])
+            self.assertEqual(payload["content"], source)
+            events_path = home / "control-plane" / "headroom" / "events" / "headroom-events.jsonl"
+            events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+            compression = [item for item in events if item.get("type") == "headroom_tool_result"][-1]
+            self.assertEqual(compression["action"], "compressed")
+            self.assertEqual(compression["marker_origin"], "local_exact_synthesized")
+
+
+    def test_missing_provider_marker_keeps_exact_when_local_alias_write_fails(self):
+        source = "\n".join(f"diagnostic line={index} status=ok" for index in range(1200))
+        compressed = {
+            "ok": True,
+            "tokens_before": 12000,
+            "tokens_after": 200,
+            "tokens_saved": 11800,
+            "messages": [{"role": "tool", "content": "bounded summary without provider marker"}],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            (home / "config.yaml").write_text(
+                "context_reduction:\n"
+                "  local_exact_store:\n"
+                "    enabled: true\n"
+                "    ttl_seconds: 600\n"
+                "    max_entries: 8\n"
+                "    max_bytes: 1048576\n",
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"HERMES_HOME": str(home)}), patch(
+                "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}
+            ), patch(
+                "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+            ), patch(
+                "hermes_headroom_plugin.local_exact_store._atomic_bytes", side_effect=OSError("read-only store")
+            ):
+                reduced = compress_tool_result_for_context(tool_name="terminal", args={}, result=source)
+
+            self.assertIsNone(reduced)
+            events_path = home / "control-plane" / "headroom" / "events" / "headroom-events.jsonl"
+            events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+            compression = [item for item in events if item.get("type") == "headroom_tool_result"][-1]
+            self.assertEqual(compression["action"], "skipped")
+            self.assertEqual(compression["reason"], "missing_durable_marker")
+
+
+    def test_missing_provider_marker_keeps_exact_when_local_alias_exceeds_quota(self):
+        source = "\n".join(f"diagnostic line={index} status=ok payload={'x' * 100}" for index in range(1200))
+        compressed = {
+            "ok": True,
+            "tokens_before": 30000,
+            "tokens_after": 200,
+            "tokens_saved": 29800,
+            "messages": [{"role": "tool", "content": "bounded summary without provider marker"}],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            (home / "config.yaml").write_text(
+                "context_reduction:\n"
+                "  local_exact_store:\n"
+                "    enabled: true\n"
+                "    ttl_seconds: 600\n"
+                "    max_entries: 8\n"
+                "    max_bytes: 1\n",
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"HERMES_HOME": str(home)}), patch(
+                "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}
+            ), patch(
+                "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+            ):
+                reduced = compress_tool_result_for_context(tool_name="terminal", args={}, result=source)
+
+            self.assertIsNone(reduced)
+            events_path = home / "control-plane" / "headroom" / "events" / "headroom-events.jsonl"
+            events = [json.loads(line) for line in events_path.read_text(encoding="utf-8").splitlines()]
+            compression = [item for item in events if item.get("type") == "headroom_tool_result"][-1]
+            self.assertEqual(compression["action"], "skipped")
+            self.assertEqual(compression["reason"], "missing_durable_marker")
+            self.assertFalse(list((home / "control-plane" / "headroom" / "exact-sources").glob("*.payload")))
+
+    def test_missing_provider_marker_keeps_exact_when_local_store_redacts_source(self):
+        source = "\n".join(f"protected-fixture line={index} status=ok" for index in range(1200))
+        compressed = {
+            "ok": True,
+            "tokens_before": 12000,
+            "tokens_after": 200,
+            "tokens_saved": 11800,
+            "messages": [{"role": "tool", "content": "bounded summary without provider marker"}],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td)
+            (home / "config.yaml").write_text(
+                "context_reduction:\n"
+                "  local_exact_store:\n"
+                "    enabled: true\n"
+                "    ttl_seconds: 600\n"
+                "    max_entries: 8\n"
+                "    max_bytes: 1048576\n",
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"HERMES_HOME": str(home)}), patch(
+                "hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}
+            ), patch(
+                "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
+            ) as compress, patch(
+                "hermes_headroom_plugin.local_exact_store._contains_protected_control", return_value=True
+            ):
+                reduced = compress_tool_result_for_context(tool_name="terminal", args={}, result=source)
+
+            self.assertIsNone(reduced)
+            compress.assert_called_once()
+            self.assertFalse(list((home / "control-plane" / "headroom" / "exact-sources").glob("*.payload")))
+
+
 class NetLedgerTest(unittest.TestCase):
     def test_retrieval_event_dedupe_identity_ignores_render_size(self):
         captured: list[dict] = []

@@ -1,0 +1,29 @@
+{
+  "schema": "hermes-headroom.upstream-api-compatibility.v1",
+  "candidate": {
+    "package": "headroom-ai",
+    "version": "0.33.0",
+    "sdist_sha256": "97d817e5923903d72bed24f75e0424e9cb7f86b3ddde0fc1acec4f3f85deeb5a"
+  },
+  "baseline": {
+    "package": "headroom-ai",
+    "version": "0.32.1",
+    "sdist_sha256": "329dda3328f0fb45ec7128353f7fc9108f08e9676c9dc1873b4841c5c00c94bd"
+  },
+  "wrapped_api_review": {
+    "ast_and_signature_identical": [
+      "headroom.cli.install._build_deployment_manifest",
+      "headroom.cli.install._remove_deployment",
+      "headroom.cli.install._start_deployment",
+      "headroom.install.state.save_manifest",
+      "headroom.install.supervisors.install_supervisor"
+    ],
+    "compatible_reviewed_change": {
+      "symbol": "headroom.install.state.load_manifest",
+      "signature_unchanged": true,
+      "change": "applies the upstream deprecated-image migration before DeploymentManifest construction"
+    }
+  },
+  "decision": "STATIC_COMPATIBILITY_PASS_REQUIRES_RUNTIME_LIFECYCLE_GATE",
+  "generated_utc": "2026-07-30T15:39:35Z"
+}

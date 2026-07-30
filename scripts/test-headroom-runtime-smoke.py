@@ -23,7 +23,7 @@ import urllib.request
 import venv
 from pathlib import Path
 
-DEFAULT_SPEC = "headroom-ai[proxy]==0.32.1"
+DEFAULT_SPEC = "headroom-ai[proxy]==0.33.0"
 DEFAULT_LITELLM_SPEC = "litellm==1.94.0rc3"
 
 

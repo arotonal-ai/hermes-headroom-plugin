@@ -36,9 +36,9 @@ A default local pass means the checkout is ready for owner review and remote CI 
 | unit/contract tests | runs the package test suite in a temporary venv with `.[test]` |
 | build/archive inspection | builds wheel + sdist and scans archives for forbidden members, owner-local paths, and secrets |
 | wheel install/entrypoints | installs the built wheel in a fresh venv and verifies packaged console scripts |
-| package upgrade/rollback | builds published `v0.5.2`, then proves `0.5.2 → 0.6.3 → 0.5.2` in a fresh venv |
+| package upgrade/rollback | builds published `v0.5.2`, then proves `0.5.2 → 0.6.4 → 0.5.2` in a fresh venv |
 | clean temp Hermes install | installs the local checkout into a temporary `HERMES_HOME` without touching the real profile; it is required by default. Generic CI without Hermes may explicitly defer it with `--allow-hermes-install-deferred`, which preserves package/runtime evidence but does not certify clean Hermes installation. |
-| runtime compress/retrieve smoke | verifies the managed Headroom 0.32.1/LiteLLM 1.94.0rc3 pair |
+| runtime compress/retrieve smoke | verifies the managed Headroom 0.33.0/LiteLLM 1.94.0rc3 pair |
 | compatibility runtime smoke | separately verifies Headroom 0.31.0 as an isolated plugin-compatibility/rollback lane, not the managed default |
 | bulky workload matrix | verifies real plugin middleware over terminal/QA, delegate/subagent, browser/debug, and research-corpus lanes plus negative exact controls |
 | no new leftover proxy | snapshots pre-existing owner runtimes and verifies the gate leaks no additional Headroom proxy process |

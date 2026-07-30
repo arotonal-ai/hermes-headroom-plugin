@@ -56,7 +56,7 @@ Then reload Hermes and run:
 
 Expected durable state: `RUNTIME_FULL_DURABLE`.
 
-The managed runtime uses `headroom-ai[proxy]==0.32.1` with `litellm==1.94.0rc3` on certified Python `>=3.11,<3.15`. It installs the pair in an isolated venv, strips inherited Python import-path overrides, binds only to `127.0.0.1:8787` by default, disables telemetry and unbacked Kompress, uses manual provider selection with no targets, checks upstream lifecycle/readiness, and runs real compress → retrieve smoke.
+The managed runtime uses `headroom-ai[proxy]==0.33.0` with `litellm==1.94.0rc3` on certified Python `>=3.11,<3.15`. It installs the pair in an isolated venv, strips inherited Python import-path overrides, binds only to `127.0.0.1:8787` by default, disables telemetry and unbacked Kompress, uses manual provider selection with no targets, checks upstream lifecycle/readiness, and runs real compress → retrieve smoke.
 
 Setup does **not** change global model/provider routing and does not require provider API keys. If you skip it, the plugin remains `RUNTIME_PARTIAL`: status/audit work, but no compression savings occur.
 
