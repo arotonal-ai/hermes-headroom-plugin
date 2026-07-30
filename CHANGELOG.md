@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Enforce fail-open multipart marker integrity across middleware, lifecycle, smoke and worker wrappers; ambiguous or missing marker sets never claim one fragment as complete authority.
+- Centralize semantic admission as `compress_now`, `hot_exact_then_cold_compact`, or `always_exact`, keeping instructions, edits/recovery, memory, interaction/research sources and immediate readbacks exact.
+- Add a default-off, profile-isolated, content-addressed local exact fallback with TTL/quota, `0700`/`0600` permissions, checksum verification and explicit exact/redacted/expired states.
+- Add a deduplicated net ledger that separates exact middleware deltas from provider/cache/billing observations and subtracts retrieval, retry, extra-call and quality-correction overhead.
+
 ## v0.6.3 — 2026-07-30
 
 - Make `python scripts/run-isolated-unit-tests.py` the canonical developer/operator test entrypoint. When the selected interpreter lacks pytest or can import a live Hermes host, it re-executes in a pinned ephemeral `uv --isolated --no-project` environment instead of installing test dependencies into the production/runtime venv.

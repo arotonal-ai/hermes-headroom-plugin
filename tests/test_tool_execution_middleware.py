@@ -236,7 +236,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             len(json.dumps(out, ensure_ascii=False, default=str)),
         )
 
-    def test_large_read_file_is_compressible_with_exact_source_header(self):
+    def test_large_read_file_is_hot_exact(self):
         source = "".join(f"{i}|def function_{i}(): return {i}\n" for i in range(900))
         compressed = {
             "ok": True,
@@ -250,7 +250,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
             "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=compressed
-        ):
+        ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="read_file",
                 args={"path": "/tmp/source.py", "offset": 1, "limit": 900},
@@ -258,11 +258,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                 session_id="s-read",
             )
             events = self._events(td)
-        self.assertIn("classification: source_readback", out)
-        self.assertIn("path=/tmp/source.py", out)
-        self.assertIn("offset=1", out)
-        self.assertIn("marker=read123def456", out)
-        self.assertEqual(events[-1]["action"], "compressed")
+        self.assertEqual(out, source)
+        compress.assert_not_called()
+        self.assertEqual(events[-1]["action"], "exact")
         self.assertEqual(events[-1]["lane"], "file")
 
     def test_large_savings_without_durable_marker_fail_open_to_exact_result(self):
@@ -321,7 +319,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(events[-1]["reason"], "machine_consumer_contract")
         self.assertEqual(events[-1]["exact_authority"], "original_machine_result")
 
-    def test_fact_store_reads_compress_but_mutations_remain_exact(self):
+    def test_fact_store_reads_and_mutations_remain_exact(self):
         large = json.dumps({"results": [{"id": i, "content": "durable fact " + ("x" * 80)} for i in range(300)]})
         compressed = {
             "ok": True,
@@ -345,11 +343,11 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                 args={"action": "add", "content": "new durable fact"},
                 next_call=lambda args: large,
             )
-        self.assertIn("classification: source_readback", read_out)
+        self.assertEqual(read_out, large)
         self.assertEqual(mutation_out, large)
-        self.assertEqual(compress.call_count, 1)
+        compress.assert_not_called()
 
-    def test_readonly_mcp_is_compressible_and_mcp_write_is_exact(self):
+    def test_readonly_mcp_and_mcp_write_are_hot_exact(self):
         large = self._large_result(lines=500)
         compressed = {
             "ok": True,
@@ -373,9 +371,9 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
                 args={"project": "demo", "path": "index.html", "content": "replacement"},
                 next_call=lambda args: large,
             )
-        self.assertIn("classification: source_readback", read_out)
+        self.assertEqual(read_out, large)
         self.assertEqual(write_out, large)
-        self.assertEqual(compress.call_count, 1)
+        compress.assert_not_called()
 
     def test_mutating_tools_remain_exact_even_when_large(self):
         large = self._large_result()
@@ -601,7 +599,10 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         self.assertEqual(out, trace)
         compress.assert_not_called()
         self.assertEqual(events[-1]["action"], "exact")
-        self.assertEqual(events[-1]["reason"], "protected_recovery_integrity_trace")
+        self.assertEqual(
+            events[-1]["reason"],
+            "semantic_policy:always_exact:protected_recovery_integrity_trace",
+        )
 
 
     def test_small_delegate_result_remains_exact(self):
@@ -674,7 +675,7 @@ class ToolExecutionMiddlewareTest(unittest.TestCase):
         compress.assert_not_called()
         actions = [event["action"] for event in events]
         self.assertEqual(actions, ["exact", "blocked", "skipped"])
-        self.assertEqual(events[0]["reason"], "exact_tool:write_file")
+        self.assertEqual(events[0]["reason"], "semantic_policy:always_exact:exact_tool:write_file")
         self.assertEqual(events[1]["reason"], "protected_control_or_sensitive_material")
         self.assertEqual(events[1]["protected_hits"], 1)
         self.assertEqual(events[2]["reason"], "below_min_chars")

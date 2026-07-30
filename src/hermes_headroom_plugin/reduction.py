@@ -10,8 +10,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .config import resolve_effective_config
+from .local_exact_store import retain_local_source
 from .observability import ATTRIBUTION_SCHEMA_VERSION, TOKEN_ESTIMATOR, _emit_headroom_event, _report_dir, _rough_tokens_from_chars, _safe_event_text, _utc_stamp
-from .policy import READ_ONLY_MCP_HINTS, _build_exact_header_data, _build_trace, _compressed_excerpt, _contains_protected_control, _edge_excerpt, _exact_or_blocked_reason, _extract_markers, _format_exact_header, _lane_eligible, _redact_text, _safe_header_value, _safe_name, _shorten
+from .policy import READ_ONLY_MCP_HINTS, _build_exact_header_data, _build_trace, _compressed_excerpt, _contains_protected_control, _edge_excerpt, _extract_markers, _format_exact_header, _lane_eligible, _redact_text, _safe_header_value, _safe_name, _shorten, semantic_admission
 from .provider_headroom import HeadroomReductionProvider
 
 BELOW_MIN_AGGREGATE_CHARS = 28_000
@@ -88,11 +89,15 @@ def _provider_ready(proxy_url: str | None = None) -> dict[str, Any]:
 
 def _provider_compress(messages: list[dict[str, Any]], proxy_url: str | None = None) -> dict[str, Any]:
     result = HeadroomReductionProvider(proxy_url=proxy_url).compress(messages)
+    markers = list(result.markers)
+    for marker in _extract_markers(result.value):
+        if marker not in markers:
+            markers.append(marker)
     payload: dict[str, Any] = {
         "ok": result.ok,
         "success": result.ok,
         "messages": result.value if result.ok else None,
-        "markers": [result.marker] if result.marker else [],
+        "markers": markers,
         "error": result.error,
     }
     payload.update(result.metrics)
@@ -196,7 +201,7 @@ def _maybe_compress_terminal_below_min_aggregate(
     compression_latency_ms = round((time.perf_counter() - compression_started) * 1000, 3)
     compressed_path.write_text(json.dumps(compressed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     markers = _extract_markers(compressed.get("messages")) if compressed.get("ok") else []
-    marker = markers[0] if markers else None
+    marker = markers[0] if len(markers) == 1 else None
     before = compressed.get("tokens_before")
     after = compressed.get("tokens_after")
     saved = compressed.get("tokens_saved")
@@ -366,6 +371,7 @@ def compress_tool_result_for_context(
     measurement_scope_override: str = "",
     allow_below_min_aggregate: bool = True,
     logical_source_id: str = "",
+    policy_age: str = "hot",
 ) -> str | None:
     """Return a compressed replacement for an eligible tool result, else None."""
     event_measurement_scope = measurement_scope_override or "tool_result"
@@ -408,13 +414,20 @@ def compress_tool_result_for_context(
             exact_authority="original_tool_result",
         )
         return None
-    exact_reason = _exact_or_blocked_reason(tool_name, args, result)
-    if exact_reason:
+    admission = semantic_admission(
+        tool_name,
+        args,
+        result,
+        surface=event_surface,
+        age=policy_age,
+        excluded_tools=effective_config.excluded_tools,
+    )
+    if not admission.compress:
         _emit_headroom_event(
             action="exact",
             tool_name=tool_name,
             args=args,
-            reason=exact_reason,
+            reason=f"semantic_policy:{admission.outcome}:{admission.reason}",
             task_id=task_id,
             tool_call_id=tool_call_id,
             session_id=session_id,
@@ -422,6 +435,7 @@ def compress_tool_result_for_context(
             api_request_id=api_request_id,
             platform=platform,
             surface=event_surface,
+            data_class=admission.data_class,
             original_chars=len(result),
             measurement_scope=event_measurement_scope,
             exact_authority="original_tool_result",
@@ -495,12 +509,32 @@ def compress_tool_result_for_context(
         return None
 
     redacted = _redact_text(result)
+    if redacted != result:
+        _emit_headroom_event(
+            action="blocked",
+            tool_name=tool_name,
+            args=args,
+            reason="redaction_required_exact_passthrough",
+            task_id=task_id,
+            tool_call_id=tool_call_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            api_request_id=api_request_id,
+            platform=platform,
+            surface=event_surface,
+            data_class=admission.data_class,
+            original_chars=len(result),
+            measurement_scope=event_measurement_scope,
+            exact_authority="original_tool_result",
+        )
+        return None
     compression_body, compression_input_shape = _compression_body_for_tool_result(
         tool_name,
         redacted,
         min_tool_result_chars=effective_config.min_tool_result_chars,
     )
     header_data = _build_exact_header_data(tool_name, args, compression_body, reason)
+    header_data["data_class"] = admission.data_class
     if not header_data.get("header_ok"):
         _emit_headroom_event(
             action="blocked",
@@ -525,8 +559,9 @@ def compress_tool_result_for_context(
     report_dir = _report_dir()
     stamp = _utc_stamp()
     safe_tool = _safe_name(tool_name)
-    source_path = report_dir / f"auto-tool-{stamp}-{safe_tool}.redacted.log"
+    source_path = report_dir / f"auto-tool-{stamp}-{safe_tool}.exact.log"
     source_path.write_text(redacted, encoding="utf-8")
+    source_path.chmod(0o600)
 
     trace = (
         compression_body
@@ -565,8 +600,12 @@ def compress_tool_result_for_context(
         )
         return None
 
-    markers = _extract_markers(compressed.get("messages"))
-    marker = markers[0] if markers else None
+    markers: list[str] = []
+    for candidate in [*(compressed.get("markers") or []), *_extract_markers(compressed.get("messages"))]:
+        value = str(candidate or "").strip()
+        if value and value not in markers:
+            markers.append(value)
+    marker = markers[0] if len(markers) == 1 else None
     compressed_path = report_dir / f"auto-tool-{stamp}-{safe_tool}.compressed.json"
     compressed_path.write_text(json.dumps(compressed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -583,6 +622,7 @@ def compress_tool_result_for_context(
         "tool_call_id": tool_call_id,
         "eligibility_reason": reason,
         "data_class": header_data.get("data_class"),
+        "semantic_policy": admission.outcome,
         "header_action": header_data.get("action"),
         "header_required": header_data.get("header_required"),
         "exact_header": {
@@ -607,7 +647,7 @@ def compress_tool_result_for_context(
         "attribution_schema_version": ATTRIBUTION_SCHEMA_VERSION,
         "compression_latency_ms": compression_latency_ms,
         "compression_ratio": compressed.get("compression_ratio"),
-        "source_retention": "redacted_sidecar",
+        "source_retention": "exact_report_sidecar",
     }
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -620,7 +660,13 @@ def compress_tool_result_for_context(
         and after < before
     )
     if not useful:
-        skip_reason = "missing_durable_marker" if not marker else "compression_not_useful"
+        skip_reason = (
+            "multipart_marker_ambiguous"
+            if len(markers) > 1
+            else "missing_durable_marker"
+            if not marker
+            else "compression_not_useful"
+        )
         _emit_headroom_event(
             action="skipped",
             tool_name=tool_name,
@@ -650,6 +696,21 @@ def compress_tool_result_for_context(
         _negative_outcome_cache_put(negative_outcome_key)
         return None
 
+    local_source = retain_local_source(
+        str(marker),
+        result,
+        data_class=str(header_data.get("data_class") or ""),
+        tool_name=tool_name,
+        args=args,
+        config=effective_config,
+    )
+    exact_authority = "local_exact_manifest+ccr_temporal" if local_source.exact else "ccr_temporal"
+    source_bytes = len(result.encode("utf-8", errors="strict"))
+    source_sha256 = local_source.sha256 or hashlib.sha256(result.encode("utf-8", errors="strict")).hexdigest()
+    report["local_exact"] = local_source.as_dict(include_content=False, include_internal=True)
+    report["source_sha256"] = source_sha256
+    report["source_bytes"] = source_bytes
+
     exact_header = _format_exact_header(
         header_data,
         tool_name=tool_name,
@@ -657,12 +718,16 @@ def compress_tool_result_for_context(
         report_path=report_path,
         source_path=source_path,
         marker=marker,
+        source_retention_state="local_exact_manifest" if local_source.exact else "exact_report_sidecar",
+        source_sha256=source_sha256,
+        source_bytes=source_bytes,
+        exact_authority=exact_authority,
     )
     payload = (
         f"[Headroom auto-compressed tool result · tool={tool_name} original_chars={len(result)} "
         f"tokens_before={before} tokens_after={after} saved={saved} marker={marker}]\n"
         f"{exact_header}\n"
-        f"Use headroom_retrieve(hash='{marker}') for the complete exact retained payload."
+        f"Use headroom_retrieve(hash='{marker}') for exact readback; authority={exact_authority} local_state={local_source.state}."
     )
     final_payload = _shorten(payload)
 
@@ -722,7 +787,7 @@ def compress_tool_result_for_context(
         report_path=report_path,
         source_path=source_path,
         compressed_path=compressed_path,
-        exact_authority="redacted_sidecar",
+        exact_authority=exact_authority,
         logical_source_id=logical_source_id,
     )
     return final_payload

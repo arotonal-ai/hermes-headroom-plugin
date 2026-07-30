@@ -201,7 +201,21 @@ def smoke(proxy_url: str | None = None, *, require_marker: bool = True) -> dict[
             "tokens_saved": compressed.get("tokens_saved"),
         }
 
-    marker = markers[0].split()[0]
+    unique_markers = list(dict.fromkeys(marker.split()[0] for marker in markers))
+    if len(unique_markers) != 1:
+        return {
+            "ok": False,
+            "phase": "marker_integrity",
+            "proxy_url": proxy_url,
+            "error": "compression produced an ambiguous multipart marker set",
+            "marker_count": len(unique_markers),
+            "markers": unique_markers,
+            "tokens_before": compressed.get("tokens_before"),
+            "tokens_after": compressed.get("tokens_after"),
+            "tokens_saved": compressed.get("tokens_saved"),
+        }
+
+    marker = unique_markers[0]
     retrieved = retrieve(marker, proxy_url=proxy_url)
     sentinel_found = sentinel in _result_text(retrieved)
     result = retrieved.get("result") if isinstance(retrieved.get("result"), dict) else retrieved

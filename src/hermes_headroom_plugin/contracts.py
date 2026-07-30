@@ -58,6 +58,7 @@ class CompressionResult:
     ok: bool
     value: Any = None
     marker: str = ""
+    markers: tuple[str, ...] = ()
     error: str = ""
     provider: str = ""
     metrics: Mapping[str, Any] = field(default_factory=dict)

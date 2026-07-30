@@ -106,21 +106,25 @@ class QualityParityHarnessTest(unittest.TestCase):
     def tearDown(self):
         self._auto_compression_env.stop()
 
-    def _reduced(self, *, tool_name: str, args: dict, result: str) -> str:
+    def _reduced(self, *, tool_name: str, args: dict, result: str, expect_compressed: bool = True) -> str:
         with tempfile.TemporaryDirectory() as td, patch(
             "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
         ), patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=_compressed_response()
-        ):
+        ) as compress:
             out = middleware.on_tool_execution(
                 tool_name=tool_name,
                 args=args,
                 next_call=lambda current_args: result,
             )
         self.assertIsInstance(out, str)
-        self.assertIn("Headroom auto-compressed tool result", out)
-        self.assertIn("[Headroom compressed intermediate]", out)
-        self.assertIn("exact_header:", out)
+        if expect_compressed:
+            self.assertIn("Headroom auto-compressed tool result", out)
+            self.assertIn("[Headroom compressed intermediate]", out)
+            self.assertIn("exact_header:", out)
+        else:
+            self.assertEqual(out, result)
+            compress.assert_not_called()
         return out
 
     def assertDecisionParity(self, consumer, exact: str, reduced: str) -> None:
@@ -146,8 +150,8 @@ class QualityParityHarnessTest(unittest.TestCase):
             tool_name="x_search",
             args={"data_class": "research_corpus"},
             result=exact,
+            expect_compressed=False,
         )
-        self.assertIn("classification: research_corpus", reduced)
         self.assertDecisionParity(_research_decision, exact, reduced)
 
     def test_interaction_quality_parity_preserves_action_target_decision(self):
@@ -158,8 +162,8 @@ class QualityParityHarnessTest(unittest.TestCase):
             tool_name="browser_cdp",
             args={"method": "DOM.getDocument"},
             result=exact,
+            expect_compressed=False,
         )
-        self.assertIn("classification: interaction_state", reduced)
         self.assertDecisionParity(_interaction_decision, exact, reduced)
 
     def test_orchestration_quality_parity_preserves_next_worker_action(self):

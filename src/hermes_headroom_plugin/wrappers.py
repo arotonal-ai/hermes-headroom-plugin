@@ -187,19 +187,25 @@ def compress_trace(proxy_url: str, lane: str, query: str, raw: str, out_dir: Pat
     if not data.get("ok"):
         result.update({"error": data.get("error") or data, "duration_s": round(time.perf_counter() - started, 3)})
         return result
-    data["markers"] = extract_markers(data.get("messages"))
+    data["markers"] = list(dict.fromkeys(extract_markers(data.get("messages"))))
     compressed_path = out_dir / "worker-raw-trace.compressed.json"
     compressed_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     before = int(data.get("tokens_before") or result["estimated_tokens_before"])
     after = int(data.get("tokens_after") or 0)
     saved = int(data.get("tokens_saved") or max(0, before - after))
-    status = "ok" if saved > 0 or data["markers"] else "no_material_savings"
+    marker_count = len(data["markers"])
+    if marker_count != 1:
+        status = "ambiguous_marker_set" if marker_count > 1 else "missing_durable_marker"
+        reason = f"marker_count={marker_count}; use exact sidecar/final packet"
+    else:
+        status = "ok" if saved > 0 else "no_material_savings"
+        reason = None if status == "ok" else "tokens_saved<=0; use exact sidecar/final packet"
     result.update({
         "status": status,
-        "reason": None if status == "ok" else "tokens_saved<=0 and marker_count=0; use exact sidecar/final packet",
+        "reason": reason,
         "compressed_path": str(compressed_path),
-        "marker": data["markers"][0] if data["markers"] else None,
-        "marker_count": len(data["markers"]),
+        "marker": data["markers"][0] if marker_count == 1 else None,
+        "marker_count": marker_count,
         "tokens_before": before,
         "tokens_after": after,
         "tokens_saved": saved,

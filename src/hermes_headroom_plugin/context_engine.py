@@ -112,10 +112,11 @@ class HeadroomCompositeEngine(_HermesContextEngine):  # type: ignore[reportGener
         *,
         aggregate: bool = False,
         tool_args: dict[str, Any] | None = None,
+        policy_age: str = "cold",
     ) -> str | None:
         return compress_tool_result_for_context(tool_name=tool, args=tool_args or {}, result=text,
             session_id=self._session_id, event_surface="context_engine", logical_source_id=digest,
-            allow_below_min_aggregate=False)
+            allow_below_min_aggregate=False, policy_age=policy_age)
 
     def __deepcopy__(self, memo):
         cfg = EffectiveConfig(lifecycle_enabled=self.lifecycle_enabled,

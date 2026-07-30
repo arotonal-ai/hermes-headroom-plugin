@@ -135,7 +135,13 @@ Portable plugin operation should favor compression and savings by default. For t
 
 Cache boundary:
 
-The plugin has no independent CCR cache. The Headroom runtime/proxy owns CCR store TTL, entry limits, backend, and eviction. After runtime install, `/headroom cache` is read-only; healthy output includes `store=PASS`, `entries`, `max`, `ttl_s`, `backend`, and `plugin_cache=none`. Expired/cleared runtime entries can make older CCR markers unretrievable, so keep canonical/source material exact and treat local reports/sidecars as audit fallback only. No purge/admin/debug cache mutation command is exposed.
+The plugin has no independent CCR cache. The runtime/proxy owns CCR TTL, limits, backend, and eviction; `/headroom cache` is read-only and reports runtime plus local-fallback posture without paths or content.
+
+The optional profile-local exact fallback retains only allowlisted, non-sensitive compressed intermediates. It is content-addressed, TTL/quota bounded, profile-isolated, `0700`/`0600`, and default-off for new writes; existing entries remain readable until expiry, while protected payloads create only `redacted` tombstones.
+
+Config: `context_reduction.local_exact_store: {enabled: false, ttl_seconds: 1800, max_entries: 256, max_bytes: 67108864}`.
+
+Expired runtime entries remain unretrievable without an exact manifest, so canonical, instruction, final-answer, edit/recovery, memory, and hot source-readback material stays exact. Hermes exposes no purge/admin cache mutation command.
 
 ## 6. Proxy endpoint configuration
 

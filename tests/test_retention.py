@@ -51,6 +51,21 @@ class ReportRetentionTest(unittest.TestCase):
             self.assertTrue(all(not path.exists() for path in oldest))
             self.assertTrue(all(path.exists() for path in newer + newest))
 
+    def test_exact_sidecar_is_grouped_with_its_report(self):
+        now = time.time()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            report = root / "auto-tool-old-worker.json"
+            exact = root / "auto-tool-old-worker.exact.log"
+            for path in (report, exact):
+                path.write_text("exact evidence\n", encoding="utf-8")
+                os.utime(path, (now - 20 * 86400, now - 20 * 86400))
+            result = prune_report_artifacts(root, retention_days=14, max_bytes=1024, now=now)
+            self.assertEqual(result["selected_groups"], 1)
+            self.assertEqual(result["deleted_files"], 2)
+            self.assertFalse(report.exists())
+            self.assertFalse(exact.exists())
+
     def test_dry_run_reports_without_deleting(self):
         now = time.time()
         with tempfile.TemporaryDirectory() as td:

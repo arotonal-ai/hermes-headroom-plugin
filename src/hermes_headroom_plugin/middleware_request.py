@@ -106,7 +106,7 @@ def _emit_request_cache_reuse(
         model_facing_chars_after=len(transformed),
         measurement_scope=f"llm_request_tool_result:{api_mode}",
         new_savings_event=False,
-        marker=markers[0] if markers else "",
+        marker=markers[0] if len(markers) == 1 else "",
         exact_authority="request_transform_cache",
         logical_source_id=logical_source_id,
     )

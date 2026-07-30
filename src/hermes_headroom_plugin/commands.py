@@ -10,6 +10,8 @@ from typing import Any
 from .health import audit
 from .hooks import headroom_status_marker, visible_status_marker_enabled
 from .config import hermes_home, resolve_effective_config
+from .local_exact_store import local_exact_status
+from .net_ledger import build_net_ledger
 from .proxy import readyz, retrieve_stats, smoke
 
 USAGE = "Usage: /headroom status|setup|smoke|audit|runtime|stats|cache|usage [turn [turn_id]]|lanes|tail [n]|decisions [turn [turn_id]]|why [turn [turn_id]]|opportunities (legacy: on)"
@@ -75,6 +77,35 @@ def _read_headroom_events(*, limit: int = 2000) -> tuple[list[dict[str, Any]], P
                 except json.JSONDecodeError:
                     continue
                 if isinstance(event, dict) and event.get("type") == "headroom_tool_result":
+                    events.append(event)
+    except OSError:
+        return [], path
+    return events, path
+
+
+def _read_net_ledger_events(*, limit: int = 10000) -> tuple[list[dict[str, Any]], Path]:
+    """Read only metadata event types consumed by the net ledger."""
+    path = _headroom_event_log_path()
+    if not path.exists():
+        return [], path
+    accepted = {
+        "headroom_tool_result",
+        "headroom_retrieval",
+        "provider_usage",
+        "headroom_provider_usage",
+        "headroom_retry",
+        "headroom_extra_call",
+        "headroom_task_result",
+    }
+    events: list[dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in deque(fh, maxlen=max(1, min(int(limit or 10000), 10000))):
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(event, dict) and event.get("type") in accepted:
                     events.append(event)
     except OSError:
         return [], path
@@ -280,8 +311,8 @@ def _render_cache_status() -> str:
     """Render runtime-owned CCR cache/store posture.
 
     The plugin has no independent CCR cache. This command is a read-only view of
-    the configured Headroom runtime's retrieve store using `/readyz` and
-    `/v1/retrieve/stats` only.
+    the runtime retrieve store plus the optional profile-local exact manifest
+    fallback; it never mutates either store.
     """
     health = readyz()
     proxy_url = health.get("proxy_url")
@@ -290,8 +321,15 @@ def _render_cache_status() -> str:
     cache_check = checks.get("cache") if isinstance(checks.get("cache"), dict) else {}
     cache_status = _safe_cell(cache_check.get("status") or ("ready" if health.get("ok") else "unavailable"), limit=40)
     cache_enabled = cache_check.get("enabled")
+    local = local_exact_status()
+    local_state = "enabled" if local.get("enabled") else "none"
+    local_suffix = (
+        f"local_exact_fallback={local_state} local_exact_entries={local.get('entries')} "
+        f"local_exact_bytes={local.get('exact_bytes')} local_exact_ttl_s={local.get('ttl_seconds')} "
+        f"local_exact_profile_isolated={'yes' if local.get('profile_isolated') else 'no'}"
+    )
     if not health.get("ok"):
-        return _render_status(health) + f" · cache=unavailable · plugin_cache=none · note=CCR store is runtime-owned"
+        return _render_status(health) + f" · cache=unavailable · plugin_cache=none · {local_suffix} · note=CCR store is runtime-owned"
 
     stats = retrieve_stats(proxy_url=proxy_url)
     if not stats.get("success"):
@@ -328,14 +366,21 @@ def _render_cache_status() -> str:
         "recent": len(recent),
         "source_authority": "temporal" if memory_backend else "backend_specific_unverified",
         "restart_survival": "no" if memory_backend else "unverified",
-        "local_exact_fallback": "none",
-        "marker_outlives_source": "possible",
+        "local_exact_fallback": local_state,
+        "local_exact_entries": local.get("entries"),
+        "local_exact_aliases": local.get("aliases"),
+        "local_exact_bytes": local.get("exact_bytes"),
+        "local_exact_ttl_s": local.get("ttl_seconds"),
+        "local_exact_max_entries": local.get("max_entries"),
+        "local_exact_profile_isolated": "yes" if local.get("profile_isolated") else "no",
+        "marker_outlives_source": "bounded_by_dual_ttl" if local.get("enabled") else "possible",
     }
     rendered = " ".join(f"{key}={_safe_cell(value, limit=80)}" for key, value in fields.items() if value is not None)
     return f"Headroom cache · proxy={proxy_url} · store=PASS · {rendered} · plugin_cache=none · note=RUNTIME_FULL_DURABLE covers supervised runtime lifecycle, not durable CCR payload recovery"
 
 def _render_usage(parts: list[str]) -> str:
     events, path = _read_headroom_events()
+    ledger_events, _ = _read_net_ledger_events()
     if len(parts) >= 2 and parts[1].lower() == "turn":
         if not events:
             return f"Headroom usage turn · no events yet · path={path}"
@@ -353,18 +398,36 @@ def _render_usage(parts: list[str]) -> str:
         if not scoped:
             return f"Headroom usage turn · {label} · events=0 · path={path}"
         summary = _summarize_events(scoped)
+        ledger_scope = (
+            [
+                event for event in ledger_events
+                if _safe_cell(event.get("turn_id"), limit=120) == turn_id
+                or _safe_cell(event.get("task_id"), limit=120) == turn_id
+            ]
+            if turn_id
+            else scoped
+        )
+        ledger = build_net_ledger(ledger_scope)
+        net = ledger["summary"]
         return (
             f"Headroom usage turn · {label} · events={len(scoped)} · "
             f"{_format_action_counts(summary['actions'])} · saved={summary['tokens_saved']} · "
+            f"gross_est={net['gross_est_tokens_saved']} retrieval_est={net['retrieval_reintroduced_est_tokens']} "
+            f"net_est={net['net_est_tokens_saved']} provider_requests={net['provider_request_count']} · "
             f"lanes={_format_top_lanes(summary['lanes'])} · platforms={_format_top_platforms(summary['platforms'])} · path={path}"
         )
 
     if not events:
         return f"Headroom usage · no events yet · path={path}"
     summary = _summarize_events(events)
+    ledger = build_net_ledger(ledger_events)
+    net = ledger["summary"]
     return (
         f"Headroom usage · events={len(events)} · {_format_action_counts(summary['actions'])} · "
-        f"saved={summary['tokens_saved']} · lanes={_format_top_lanes(summary['lanes'])} · platforms={_format_top_platforms(summary['platforms'])} · path={path}"
+        f"saved={summary['tokens_saved']} · gross_est={net['gross_est_tokens_saved']} "
+        f"retrieval_est={net['retrieval_reintroduced_est_tokens']} net_est={net['net_est_tokens_saved']} "
+        f"provider_requests={net['provider_request_count']} cache_read={net['provider_cache_read_tokens']} · "
+        f"lanes={_format_top_lanes(summary['lanes'])} · platforms={_format_top_platforms(summary['platforms'])} · path={path}"
     )
 
 

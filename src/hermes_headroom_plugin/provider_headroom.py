@@ -10,6 +10,7 @@ from .contracts import (
     RetrievalResult,
     normalize_ccr_hash,
 )
+from .policy import _extract_markers
 from .proxy import compress_messages, readyz, retrieve, retrieve_stats
 
 
@@ -44,18 +45,29 @@ class HeadroomReductionProvider:
             kwargs["proxy_url"] = self.proxy_url
         result = compress_messages(payload, **kwargs)
         ok = bool(result.get("ok") or result.get("success")) and not result.get("error")
-        markers = result.get("markers") if isinstance(result.get("markers"), list) else []
-        marker = str(markers[0]) if markers else ""
+        candidate_markers = result.get("markers")
+        raw_markers: list[Any] = candidate_markers if isinstance(candidate_markers, list) else []
+        raw_markers.extend(_extract_markers(result.get("messages")))
+        marker_values: list[str] = []
+        for item in raw_markers:
+            normalized = normalize_ccr_hash(item)
+            if normalized and normalized not in marker_values:
+                marker_values.append(normalized)
+        markers = tuple(marker_values)
+        marker = markers[0] if len(markers) == 1 else ""
         value = result.get("messages") if ok else None
         metrics = {
             key: result[key]
             for key in ("tokens_before", "tokens_after", "tokens_saved", "compression_ratio")
             if key in result
         }
+        metrics["marker_count"] = len(markers)
+        metrics["marker_integrity_ok"] = len(markers) == 1
         return CompressionResult(
             ok=ok,
             value=value,
             marker=marker,
+            markers=markers,
             error=str(result.get("error") or ""),
             provider=self.name,
             metrics=metrics,

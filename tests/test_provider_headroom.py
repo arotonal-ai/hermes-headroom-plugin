@@ -32,7 +32,16 @@ class HeadroomProviderAdapterTest(unittest.TestCase):
         result = provider.compress([{"role": "user", "content": "x"}], ReductionContext(model="gpt-test"))
         self.assertTrue(result.ok)
         self.assertEqual(result.marker, "abc123")
-        self.assertEqual(result.metrics, {"tokens_before": 100, "tokens_after": 20, "tokens_saved": 80})
+        self.assertEqual(
+            result.metrics,
+            {
+                "tokens_before": 100,
+                "tokens_after": 20,
+                "tokens_saved": 80,
+                "marker_count": 1,
+                "marker_integrity_ok": True,
+            },
+        )
         compress.assert_called_once_with(
             [{"role": "user", "content": "x"}], model="gpt-test", proxy_url="http://127.0.0.1:28787"
         )

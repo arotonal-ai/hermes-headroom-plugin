@@ -34,7 +34,7 @@ def retention_settings(config: dict[str, Any] | None = None) -> dict[str, int]:
 
 def _artifact_group(path: Path) -> str:
     name = path.name
-    for suffix in (".redacted.log", ".compressed.json", ".json", ".log", ".md", ".txt", ".keep", ".retain"):
+    for suffix in (".redacted.log", ".exact.log", ".compressed.json", ".json", ".log", ".md", ".txt", ".keep", ".retain"):
         if name.endswith(suffix):
             return name[: -len(suffix)]
     return name

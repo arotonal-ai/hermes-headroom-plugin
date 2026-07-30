@@ -165,6 +165,39 @@ class SmokeTest(unittest.TestCase):
         self.assertIn('local_exact_fallback=none', text)
         self.assertIn('marker_outlives_source=possible', text)
 
+    def test_cache_command_reports_profile_local_exact_fallback_without_paths(self):
+        with patch('hermes_headroom_plugin.commands.readyz', return_value={
+            "ok": True,
+            "proxy_url": "http://127.0.0.1:28789",
+            "status": 200,
+            "body": {"ready": True, "checks": {"cache": {"enabled": True, "status": "healthy"}}},
+        }), patch(
+            'hermes_headroom_plugin.commands.retrieve_stats',
+            return_value={
+                "success": True,
+                "store": {"entry_count": 7, "max_entries": 1000, "default_ttl_seconds": 1800, "backend": {"backend_type": "memory"}},
+                "recent_retrievals": [],
+            },
+        ), patch(
+            'hermes_headroom_plugin.commands.local_exact_status',
+            return_value={
+                "enabled": True,
+                "entries": 3,
+                "aliases": 4,
+                "exact_bytes": 8192,
+                "ttl_seconds": 600,
+                "max_entries": 8,
+                "profile_isolated": True,
+            },
+        ):
+            text = handle_headroom_command('cache')
+        self.assertIn('local_exact_fallback=enabled', text)
+        self.assertIn('local_exact_entries=3', text)
+        self.assertIn('local_exact_bytes=8192', text)
+        self.assertIn('local_exact_profile_isolated=yes', text)
+        self.assertIn('marker_outlives_source=bounded_by_dual_ttl', text)
+        self.assertNotIn('exact-sources', text)
+
     def test_command_on_reports_active_without_mutating_runtime(self):
         with patch('hermes_headroom_plugin.commands.readyz', return_value={"ok": True, "proxy_url": "http://127.0.0.1:28787", "status": 200, "body": {"ready": True}}):
             text = handle_headroom_command('on')
@@ -250,6 +283,9 @@ class SmokeTest(unittest.TestCase):
                 "platform": "telegram",
                 "tokens_saved": 1200,
                 "marker": "hash-a",
+                "logical_source_id": "source-a",
+                "model_facing_chars_before": 10000,
+                "model_facing_chars_after": 1000,
                 "reason": "eligible_tool",
             },
             {
@@ -273,6 +309,21 @@ class SmokeTest(unittest.TestCase):
                 "reason": "protected_control_or_sensitive_material",
             },
             {"type": "not_headroom", "action": "compressed", "tokens_saved": 999999},
+            {
+                "type": "headroom_retrieval",
+                "turn_id": "turn-a",
+                "marker": "hash-a",
+                "dedupe_key": "retrieve-a",
+                "model_facing_chars": 1000,
+            },
+            {
+                "type": "provider_usage",
+                "turn_id": "turn-a",
+                "logical_source_id": "source-a",
+                "api_request_id": "request-a",
+                "input_tokens": 2000,
+                "cache_read_tokens": 250,
+            },
         ]
         with tempfile.TemporaryDirectory() as td, patch('hermes_headroom_plugin.commands.hermes_home', return_value=Path(td)):
             event_path = self._write_events(td, events)
@@ -290,6 +341,11 @@ class SmokeTest(unittest.TestCase):
         self.assertIn('exact=1', usage)
         self.assertIn('blocked=1', usage)
         self.assertIn('saved=1200', usage)
+        self.assertIn('gross_est=2250', usage)
+        self.assertIn('retrieval_est=250', usage)
+        self.assertIn('net_est=2000', usage)
+        self.assertIn('provider_requests=1', usage)
+        self.assertIn('cache_read=250', usage)
         self.assertIn('turn_id=turn-a', turn)
         self.assertIn('events=2', turn)
         self.assertIn('exact=1', turn)

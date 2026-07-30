@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,27 @@ MAX_RETURN_CHARS = 12_000
 RAW_EDGE_CHARS = 1_200
 ELIGIBLE_TOOLS = {"delegate_task", "terminal", "execute_code", "process", "read_file", "search_files", "skill_view", "fact_store", "browser_console", "browser_snapshot", "browser_get_images", "web_search", "web_extract", "session_search"}
 ELIGIBLE_PREFIXES = ("browser_",)
-EXACT_TOOLS = {"patch", "write_file", "skill_manage", "headroom_retrieve", "memory", "mcp_open_design_write_file"}
+EXACT_TOOLS = {
+    "patch",
+    "write_file",
+    "skill_manage",
+    "skill_view",
+    "headroom_retrieve",
+    "memory",
+    "fact_store",
+    "mcp_open_design_write_file",
+}
+HOT_EXACT_TOOLS = {
+    "read_file",
+    "search_files",
+    "browser_snapshot",
+    "browser_get_images",
+    "web_extract",
+    "session_search",
+}
+ADMISSION_COMPRESS_NOW = "compress_now"
+ADMISSION_HOT_EXACT_COLD_COMPACT = "hot_exact_then_cold_compact"
+ADMISSION_ALWAYS_EXACT = "always_exact"
 MACHINE_CONSUMER_EXACT_TOOLS = {"read_file", "search_files", "skill_view", "fact_store"}
 READ_ONLY_ACTIONS = {"search", "probe", "related", "reason", "contradict", "list", "get", "read", "query"}
 READ_ONLY_MCP_HINTS = ("get", "read", "list", "search", "query", "extract", "snapshot", "inspect", "show")
@@ -36,11 +57,51 @@ PROTECTED_PATTERNS = [
     r"(?i)\b(?:Network\.getAllCookies|Storage\.getCookies)\b",
 ]
 SENSITIVE_ARG_KEY_RE = re.compile(r"(?i)(api[_-]?key|token|secret|password|authorization|client_secret|cookie)")
+TRACE_ARG_ALLOWLIST = {
+    "action",
+    "data_class",
+    "headroom_data_class",
+    "classification",
+    "file_glob",
+    "lane",
+    "limit",
+    "offset",
+    "path",
+    "pattern",
+    "profile",
+    "query",
+    "range",
+    "selector",
+    "target",
+    "url",
+}
 HEADER_REQUIRED_CLASSES = {"source_readback", "browser_debug_trace", "interaction_state", "research_corpus", "orchestration_fanin", "multimodal_intermediate_text", "long_comments_history", "raw_feed_snapshot"}
 KNOWN_DATA_CLASSES = HEADER_REQUIRED_CLASSES | {"diagnostic_trace", "qa_trace", "worker_trace_raw"}
-EXACT_CLASSES = frozenset({"final_packet", "patch_diff", "canonical_html_css", "manifest_hashes", "claim_ledger", "final_artifact"})
+EXACT_CLASSES = frozenset(
+    {
+        "final_packet",
+        "patch_diff",
+        "canonical_html_css",
+        "manifest_hashes",
+        "claim_ledger",
+        "final_artifact",
+        "prompt_or_skill",
+        "memory_or_recall",
+        "operational_state",
+        "failure_trace",
+        "user_authored_file",
+    }
+)
 BLOCKED_CLASSES = frozenset({"secret_or_sensitive", "memory_profile_instruction", "protected_contamination", "system_developer_instructions"})
 COMPRESSIBLE_CLASSES = frozenset({"raw_log", "source_readback", "worker_trace_raw", "browser_debug_trace", "ocr_raw_text", "research_corpus_raw", "qa_trace", "diagnostic_intermediate"})
+
+
+@dataclass(frozen=True)
+class SemanticAdmission:
+    outcome: str
+    data_class: str
+    reason: str
+    compress: bool
 
 
 def _safe_name(raw: str) -> str:
@@ -55,7 +116,17 @@ def _redact_text(text: str) -> str:
 
 
 def _args_preview(args: dict[str, Any]) -> str:
-    args_preview = json.dumps(args, ensure_ascii=False, sort_keys=True, default=str)
+    bounded: dict[str, Any] = {}
+    for key, value in args.items():
+        if str(key) not in TRACE_ARG_ALLOWLIST:
+            continue
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            bounded[str(key)] = _safe_name(str(value)) if str(key) == "profile" else str(value)[:500]
+        elif isinstance(value, (list, tuple)):
+            bounded[str(key)] = [str(item)[:200] for item in value[:12]]
+    if len(bounded) < len(args):
+        bounded["_omitted_argument_count"] = len(args) - len(bounded)
+    args_preview = json.dumps(bounded, ensure_ascii=False, sort_keys=True, default=str)
     args_preview = _redact_text(args_preview)
     if len(args_preview) > 5_000:
         args_preview = args_preview[:5_000] + " ...[args truncated in trace header]"
@@ -229,7 +300,7 @@ def _scan_text(tool_name: str, args: dict[str, Any], result: str) -> str:
 
 def _normalize_data_class(value: Any) -> str | None:
     normalized = re.sub(r"[^a-z0-9]+", "_", str(value or "").lower()).strip("_")
-    if normalized in KNOWN_DATA_CLASSES:
+    if normalized in KNOWN_DATA_CLASSES | EXACT_CLASSES | BLOCKED_CLASSES | COMPRESSIBLE_CLASSES:
         return normalized
     aliases = {
         "diagnostic": "diagnostic_trace",
@@ -263,7 +334,16 @@ def _detect_data_class(tool_name: str, args: dict[str, Any], result: str, eligib
     tool = str(tool_name or "").lower()
     scan = _scan_text(tool_name, args, result).lower()
 
-    if tool in {"read_file", "search_files", "skill_view", "fact_store"} or (
+    if tool == "skill_view":
+        return "prompt_or_skill"
+    if tool in {"fact_store", "memory"}:
+        return "memory_or_recall"
+    if FAILURE_MARKER_RE.search(scan) and re.search(
+        r"\b(?:rollback|recovery|restore|checksum|sha(?:256)?|commit|patch|integrity)\b",
+        scan,
+    ):
+        return "failure_trace"
+    if tool in {"read_file", "search_files"} or (
         tool.startswith(("mcp__", "mcp_"))
         and any(hint in tool for hint in READ_ONLY_MCP_HINTS)
         and not any(hint in tool for hint in MUTATING_MCP_HINTS)
@@ -291,6 +371,57 @@ def _detect_data_class(tool_name: str, args: dict[str, Any], result: str, eligib
     if tool in {"delegate_task", "process", "execute_code", "terminal"} or "lane_hint" in eligibility_reason:
         return "worker_trace_raw" if tool == "delegate_task" else "diagnostic_trace"
     return "diagnostic_trace" if eligibility_reason == "always_chars" else "worker_trace_raw"
+
+
+def semantic_admission(
+    tool_name: str,
+    args: dict[str, Any],
+    result: str,
+    *,
+    surface: str = "tool_execution",
+    age: str = "hot",
+    excluded_tools: tuple[str, ...] | set[str] = (),
+) -> SemanticAdmission:
+    """Return the single semantic authority for tool-result reduction.
+
+    ``hot_exact_then_cold_compact`` is exact at immediate tool/request
+    boundaries. It becomes compressible only inside the age-aware context
+    lifecycle after the result is no longer hot. Explicit config exclusions
+    remain exact on every surface until the operator changes that policy.
+    """
+    tool = str(tool_name or "").strip().lower()
+    excluded = {str(item).strip().lower() for item in excluded_tools}
+    explicit_class = next(
+        (
+            _normalize_data_class(args.get(key))
+            for key in ("data_class", "headroom_data_class", "classification")
+            if args.get(key)
+        ),
+        None,
+    )
+    data_class = explicit_class or _detect_data_class(tool_name, args, result, "semantic_policy")
+
+    if tool in excluded:
+        return SemanticAdmission(ADMISSION_ALWAYS_EXACT, data_class, "config_excluded_tool", False)
+    exact_reason = _exact_or_blocked_reason(tool_name, args, result)
+    if exact_reason:
+        return SemanticAdmission(ADMISSION_ALWAYS_EXACT, data_class, exact_reason, False)
+    if data_class in EXACT_CLASSES or data_class in BLOCKED_CLASSES:
+        return SemanticAdmission(ADMISSION_ALWAYS_EXACT, data_class, f"exact_data_class:{data_class}", False)
+
+    source_like = data_class in {"source_readback", "research_corpus", "interaction_state"}
+    if tool in HOT_EXACT_TOOLS or source_like:
+        lifecycle_cold = str(surface or "").lower() in {"context_engine", "lifecycle"} and str(age or "").lower() in {
+            "warm",
+            "cold",
+        }
+        return SemanticAdmission(
+            ADMISSION_HOT_EXACT_COLD_COMPACT,
+            data_class,
+            "aged_source_readback" if lifecycle_cold else "hot_source_readback",
+            lifecycle_cold,
+        )
+    return SemanticAdmission(ADMISSION_COMPRESS_NOW, data_class, "diagnostic_intermediate", True)
 
 
 def _safe_header_value(value: Any, *, limit: int = 220) -> str:
@@ -505,6 +636,10 @@ def _format_exact_header(
     report_path: Path,
     source_path: Path,
     marker: str | None,
+    source_retention_state: str = "exact_report_sidecar",
+    source_sha256: str = "",
+    source_bytes: int = 0,
+    exact_authority: str = "ccr_temporal",
 ) -> str:
     def section(name: str, values: list[str]) -> list[str]:
         if not values:
@@ -529,9 +664,12 @@ def _format_exact_header(
         [
             "source_retention:",
             f"  report: {report_path}",
-            "  sidecar_type: redacted_sidecar",
+            f"  sidecar_type: {source_retention_state}",
             f"  source_path: {source_path}",
             f"  marker: {marker or ''}",
+            f"  source_sha256: {source_sha256}",
+            f"  source_bytes: {source_bytes}",
+            f"  exact_authority: {exact_authority}",
             "contract: compressed body is intermediate only; verify material claims against exact source/authorized retrieval before final decisions.",
         ]
     )

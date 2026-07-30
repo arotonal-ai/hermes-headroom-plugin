@@ -25,6 +25,9 @@ DEFAULT_LLM_REQUEST_CACHE_MAX = 2_048
 DEFAULT_REPORT_RETENTION_DAYS = 14
 DEFAULT_REPORT_MAX_BYTES = 256 * 1024 * 1024
 DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS = 3_600
+DEFAULT_LOCAL_EXACT_TTL_SECONDS = 86_400
+DEFAULT_LOCAL_EXACT_MAX_ENTRIES = 256
+DEFAULT_LOCAL_EXACT_MAX_BYTES = 64 * 1024 * 1024
 _TRUE = {"1", "true", "yes", "y", "on", "enabled", "enable", "auto", "automatic"}
 _FALSE = {"0", "false", "no", "n", "off", "disabled", "disable", "manual", "on_demand", "ondemand"}
 
@@ -118,6 +121,7 @@ class EffectiveConfig:
     proxy_url: str = DEFAULT_PROXY_URL
     allow_remote_proxy: bool = False
     auto_compression: bool = True
+    excluded_tools: tuple[str, ...] = ()
     llm_request_enabled: bool = False
     llm_request_mode: str = "tool_results"
     request_shaping_enabled: bool = False
@@ -137,6 +141,10 @@ class EffectiveConfig:
     report_retention_days: int = DEFAULT_REPORT_RETENTION_DAYS
     report_max_bytes: int = DEFAULT_REPORT_MAX_BYTES
     report_prune_interval_seconds: int = DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS
+    local_exact_enabled: bool = False
+    local_exact_ttl_seconds: int = DEFAULT_LOCAL_EXACT_TTL_SECONDS
+    local_exact_max_entries: int = DEFAULT_LOCAL_EXACT_MAX_ENTRIES
+    local_exact_max_bytes: int = DEFAULT_LOCAL_EXACT_MAX_BYTES
     compatibility_warnings: tuple[str, ...] = ()
     raw: Mapping[str, Any] = field(default_factory=dict, repr=False, compare=False)
 
@@ -265,6 +273,24 @@ def resolve_effective_config(
         "report_prune_interval_seconds",
         default=DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS,
     )
+    raw_excludes = configured("excludes", default=())
+    excluded_tools = tuple(
+        sorted(
+            {
+                str(item).strip().lower()
+                for item in (raw_excludes if isinstance(raw_excludes, (list, tuple, set)) else ())
+                if str(item).strip()
+            }
+        )
+    )
+    local_exact = configured("local_exact_store", default={})
+    local_exact = dict(local_exact) if isinstance(local_exact, Mapping) else {}
+    local_exact_enabled = _boolish(
+        environment.get("HEADROOM_LOCAL_EXACT_STORE")
+        if environment.get("HEADROOM_LOCAL_EXACT_STORE") is not None and "local_exact_store" not in explicit
+        else local_exact.get("enabled"),
+        default=False,
+    )
     legacy_aliases = {
         "host": "proxy_url",
         "port": "proxy_url",
@@ -290,6 +316,7 @@ def resolve_effective_config(
         proxy_url=proxy_url,
         allow_remote_proxy=allow_remote,
         auto_compression=auto_compression,
+        excluded_tools=excluded_tools,
         llm_request_enabled=llm_enabled,
         llm_request_mode=llm_mode,
         request_shaping_enabled=_boolish(shaping.get("enabled"), default=False),
@@ -313,6 +340,25 @@ def resolve_effective_config(
             default=DEFAULT_REPORT_PRUNE_INTERVAL_SECONDS,
             minimum=0,
             maximum=31_536_000,
+        ),
+        local_exact_enabled=local_exact_enabled,
+        local_exact_ttl_seconds=_bounded_int(
+            local_exact.get("ttl_seconds"),
+            default=DEFAULT_LOCAL_EXACT_TTL_SECONDS,
+            minimum=60,
+            maximum=31_536_000,
+        ),
+        local_exact_max_entries=_bounded_int(
+            local_exact.get("max_entries"),
+            default=DEFAULT_LOCAL_EXACT_MAX_ENTRIES,
+            minimum=1,
+            maximum=100_000,
+        ),
+        local_exact_max_bytes=_bounded_int(
+            local_exact.get("max_bytes"),
+            default=DEFAULT_LOCAL_EXACT_MAX_BYTES,
+            minimum=64_000,
+            maximum=10_000_000_000,
         ),
         compatibility_warnings=compatibility_warnings,
         raw=raw,

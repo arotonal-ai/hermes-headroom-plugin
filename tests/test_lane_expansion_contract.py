@@ -91,33 +91,31 @@ class LaneExpansionContractTest(unittest.TestCase):
         self.assertEqual(out, final_packet)
         compress.assert_not_called()
 
-    def test_open_design_mcp_source_readback_compresses_with_retrieval(self):
+    def test_open_design_mcp_source_readback_is_hot_exact(self):
         result = self._huge_text("open design source readback")
         with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
-        ):
+        ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="mcp__open_design__get_artifact",
                 args={"entry": "index.html"},
                 next_call=lambda current_args: result,
             )
-        self.assertIn("Headroom auto-compressed tool result", out)
-        self.assertIn("classification: source_readback", out)
-        self.assertIn("entry=index.html", out)
+        self.assertEqual(out, result)
+        compress.assert_not_called()
 
-    def test_generic_readonly_mcp_compresses_with_query_header(self):
+    def test_generic_readonly_mcp_is_hot_exact(self):
         result = self._huge_text("generic mcp source response")
         with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
-        ):
+        ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="mcp__vendor__query",
                 args={"query": "bounded"},
                 next_call=lambda current_args: result,
             )
-        self.assertIn("Headroom auto-compressed tool result", out)
-        self.assertIn("classification: source_readback", out)
-        self.assertIn("query=bounded", out)
+        self.assertEqual(out, result)
+        compress.assert_not_called()
 
     def test_generic_mcp_explicit_diagnostic_intermediate_can_compress(self):
         result = self._large_text("generic mcp diagnostic trace")
@@ -369,22 +367,20 @@ class LaneExpansionContractTest(unittest.TestCase):
         self.assertEqual(out, result)
         compress.assert_not_called()
 
-    def test_always_chars_research_corpus_gets_citation_header_before_compression(self):
+    def test_always_chars_research_corpus_is_hot_exact(self):
         result = self._huge_text(
             "x_search answer citation url=https://source.example/a title=Source-A document_id=doc-123 degraded=false line=41"
         )
         with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
-        ):
+        ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="x_search",
                 args={"query": "neutral synthesis"},
                 next_call=lambda current_args: result,
             )
-        self.assertIn("classification: research_corpus", out)
-        self.assertIn("https://source.example/a", out)
-        self.assertIn("document_id=doc-123", out)
-        self.assertIn("degraded=false", out)
+        self.assertEqual(out, result)
+        compress.assert_not_called()
 
     def test_header_required_research_without_citation_or_quality_anchor_fails_closed(self):
         result = self._huge_text("large answer-like corpus without durable citation anchors")
@@ -399,23 +395,20 @@ class LaneExpansionContractTest(unittest.TestCase):
         self.assertEqual(out, result)
         compress.assert_not_called()
 
-    def test_always_chars_interaction_state_gets_selector_header_before_compression(self):
+    def test_always_chars_interaction_state_is_hot_exact(self):
         result = self._huge_text(
             "CDP method=DOM.getDocument url=https://example.test/app frame_id=FRAME-1 target_id=TARGET-1 selector=#submit bounds=10x20x100x32 status=ok"
         )
         with patch("hermes_headroom_plugin.provider_headroom.readyz", return_value={"ok": True}), patch(
             "hermes_headroom_plugin.provider_headroom.compress_messages", return_value=self._compressed_response()
-        ):
+        ) as compress:
             out = middleware.on_tool_execution(
                 tool_name="browser_cdp",
                 args={"method": "DOM.getDocument"},
                 next_call=lambda current_args: result,
             )
-        self.assertIn("classification: interaction_state", out)
-        self.assertIn("https://example.test/app", out)
-        self.assertIn("frame_id=FRAME-1", out)
-        self.assertIn("selector=#submit", out)
-        self.assertIn("bounds=10x20x100x32", out)
+        self.assertEqual(out, result)
+        compress.assert_not_called()
 
     def test_header_required_interaction_without_actionable_anchor_fails_closed(self):
         result = self._huge_text("large browser payload without url selector node id bounds or error")
@@ -430,7 +423,7 @@ class LaneExpansionContractTest(unittest.TestCase):
         self.assertEqual(out, result)
         compress.assert_not_called()
 
-    def test_compressed_replacement_must_not_label_redacted_sidecar_as_exact_source(self):
+    def test_compressed_replacement_labels_exact_report_sidecar_truthfully(self):
         result = self._large_text("delegate diagnostics")
         with tempfile.TemporaryDirectory() as td, patch(
             "hermes_headroom_plugin.observability.hermes_home", return_value=Path(td)
@@ -443,7 +436,9 @@ class LaneExpansionContractTest(unittest.TestCase):
                 next_call=lambda current_args: result,
             )
         self.assertNotIn("Redacted exact source sidecar", out)
-        self.assertIn("redacted_sidecar", out)
+        self.assertNotIn("redacted_sidecar", out)
+        self.assertIn("exact_report_sidecar", out)
+        self.assertIn("local_state=disabled", out)
 
 
 if __name__ == "__main__":

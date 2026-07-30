@@ -90,13 +90,13 @@ def test_shadow_event_temp_home_metadata_only_and_request_identical(tmp_path, mo
     assert not any(secret in raw for secret in ("prompt-secret", "arg-secret", "output-secret", "schema-secret"))
 
 
-def test_warm_real_marker_anchors_pairing_and_stability():
+def test_warm_failure_trace_with_rollback_anchor_remains_exact_and_stable():
     text = "path: synthetic/a.py\nstatus: failed\nrollback available\n--- a/a\n+++ b/a\n@@ line\n" + "ordinary body\n" * 900
     messages = history([text])
     a, info = transform_history(messages, hot_tool_results=0, compressor=durable)
     b, _ = transform_history(messages, hot_tool_results=0, compressor=durable)
-    assert info["changed"] == 1 and a == b and a[2]["tool_call_id"] == "c0"
-    for anchor in ("path: synthetic/a.py", "status: failed", "rollback", "source_sha256=", "headroom_retrieve"):
+    assert info["changed"] == 0 and a == b == messages and a[2]["tool_call_id"] == "c0"
+    for anchor in ("path: synthetic/a.py", "status: failed", "rollback"):
         assert anchor in a[2]["content"]
 
 

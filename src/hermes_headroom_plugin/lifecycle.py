@@ -8,7 +8,9 @@ from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from typing import Any, Callable
 
-from .policy import _already_compressed, _contains_protected_control, _exact_or_blocked_reason, _extract_markers
+from .config import resolve_effective_config
+from .local_exact_store import retrieve_local_source as _retrieve_local_exact_source
+from .policy import _already_compressed, _contains_protected_control, _extract_markers, semantic_admission
 
 _CACHE: OrderedDict[str, str] = OrderedDict()
 _CACHE_BYTES = 0
@@ -24,9 +26,8 @@ def source_hash(tool: str, text: str) -> str:
 
 
 def retrieve_local_source(digest: str) -> str | None:
-    # Kept as an import-compatible hook. Lifecycle never claims volatile memory
-    # as durable recovery; exact recovery is owned by a real CCR marker.
-    return None
+    """Import-compatible exact local fallback backed by verified manifests."""
+    return _retrieve_local_exact_source(digest)
 
 
 def _tool_metadata(messages: list[dict[str, Any]]) -> dict[str, tuple[str, dict[str, Any]]]:
@@ -57,7 +58,7 @@ def _tool_metadata(messages: list[dict[str, Any]]) -> dict[str, tuple[str, dict[
 
 def _marker(text: str) -> str | None:
     values = _extract_markers(text)
-    return values[0] if values else None
+    return values[0] if len(values) == 1 else None
 
 
 def _call(
@@ -68,14 +69,20 @@ def _call(
     *,
     aggregate: bool,
     tool_args: dict[str, Any],
+    age: str,
 ) -> str | None:
     if compressor is None:
         return None
     try:
-        return compressor(tool, text, digest, aggregate=aggregate, tool_args=tool_args)
+        return compressor(tool, text, digest, aggregate=aggregate, tool_args=tool_args, policy_age=age)
     except TypeError:
         try:
-            return compressor(tool, text, digest)
+            return compressor(tool, text, digest, aggregate=aggregate, tool_args=tool_args)
+        except TypeError:
+            try:
+                return compressor(tool, text, digest)
+            except Exception:
+                return None
         except Exception:
             return None
     except Exception:
@@ -169,16 +176,22 @@ def transform_history(messages: list[dict[str, Any]], *, protect_first_n: int = 
         item["age"] = "hot" if newest_rank < hot_tool_results else "warm" if newest_rank < hot_tool_results + warm_tool_results else "cold"
 
     changed = blocked = backlog = compressor_calls = 0
+    excluded_tools = resolve_effective_config().excluded_tools
     eligible_small: list[dict[str, Any]] = []
     for item in candidates:
         text, tool, tool_args, age = item["text"], item["tool"], item["tool_args"], item["age"]
         if _contains_protected_control(tool, tool_args, text):
             blocked += 1
             continue
-        if age == "hot" or tool in _MUTATIONS or tool == "headroom_retrieve":
-            continue
-        reason = _exact_or_blocked_reason(tool, tool_args, text)
-        if reason and tool not in {"read_file", "search_files", "session_search"}:
+        admission = semantic_admission(
+            tool,
+            tool_args,
+            text,
+            surface="lifecycle",
+            age=age,
+            excluded_tools=excluded_tools,
+        )
+        if not admission.compress:
             continue
         existing = _marker(text)
         if _already_compressed(text):
@@ -194,7 +207,7 @@ def transform_history(messages: list[dict[str, Any]], *, protect_first_n: int = 
                 eligible_small.append(item)
             continue
         digest = source_hash(tool, text)
-        replacement = _call(compressor, tool, text, digest, aggregate=False, tool_args=tool_args)
+        replacement = _call(compressor, tool, text, digest, aggregate=False, tool_args=tool_args, age=age)
         compressor_calls += int(compressor is not None)
         marker = _marker(replacement or "")
         if not replacement or not marker or len(replacement) >= len(text):
@@ -223,6 +236,7 @@ def transform_history(messages: list[dict[str, Any]], *, protect_first_n: int = 
             group_digest,
             aggregate=True,
             tool_args=group[0]["tool_args"],
+            age=age,
         )
         compressor_calls += int(compressor is not None)
         marker = _marker(replacement or "")
