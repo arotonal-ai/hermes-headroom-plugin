@@ -80,6 +80,11 @@ hermes gateway restart   # gateway/platform sessions
 # or start /new in an active CLI/chat session
 ```
 
+On a clean install the bundled `llm-monitor` surface is active in strict
+`metadata` mode. Verify with `/llm-monitor status`; use `/llm-monitor off` for a
+persistent opt-out. An enabled standalone `llm-monitor` takes precedence, so the
+Headroom plugin does not duplicate observability hooks.
+
 Verify in Hermes:
 
 ```text

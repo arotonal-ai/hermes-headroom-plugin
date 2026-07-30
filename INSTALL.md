@@ -41,9 +41,12 @@ Verify inside Hermes:
 ```text
 /headroom status
 /headroom setup   # read-only setup guidance; does not install/start runtime
+/llm-monitor status
 ```
 
-Expected: the commands exist and return proxy/status guidance. The optional marker is off by default; when explicitly enabled it reports `visible_marker=on:[HR✓]` only if proxy readiness is healthy. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
+Expected: the commands exist, `/llm-monitor status` reports `ON · mode=metadata`, and Headroom returns proxy/status guidance. The embedded monitor keeps strict local metadata counters only; it does not retain request/response bodies, call another model, or send external telemetry. Use `/llm-monitor off` for a persistent opt-out. When an enabled standalone `llm-monitor` already exists, that plugin remains authoritative and the embedded copy stays inactive to avoid duplicate hooks.
+
+The optional final-answer Headroom marker remains off by default; when explicitly enabled it reports `visible_marker=on:[HR✓]` only if proxy readiness is healthy. If no proxy is running, it may report unavailable; that is `RUNTIME_PARTIAL`, not a failed plugin install.
 
 ## 2. Install Headroom runtime for real compression
 

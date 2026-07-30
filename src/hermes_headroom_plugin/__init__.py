@@ -10,6 +10,7 @@ from .schemas import HEADROOM_RETRIEVE_SCHEMA
 from .tools import handle_headroom_retrieve
 from .context_engine import HeadroomCompositeEngine
 from .config import load_host_compression_config, resolve_effective_config
+from .embedded_monitor import register_embedded_monitor
 
 
 def register(ctx) -> None:
@@ -58,6 +59,11 @@ def register(ctx) -> None:
                 host_compression_config=load_host_compression_config(),
             )
         )
+
+    # Hermes does not expose declarative user-plugin dependencies. Register the
+    # bundled metadata-only monitor here unless an enabled standalone monitor or
+    # an explicit plugins.disabled entry already owns that capability.
+    register_embedded_monitor(ctx)
 
     skill_path = Path(__file__).parent / "skills" / "headroom-token-cost-evaluation" / "SKILL.md"
     if skill_path.exists() and hasattr(ctx, "register_skill"):

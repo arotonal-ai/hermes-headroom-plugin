@@ -17,7 +17,14 @@ class PluginManifestTest(unittest.TestCase):
         self.assertEqual(data["provides_tools"], ["headroom_retrieve"])
         self.assertEqual(
             data["provides_hooks"],
-            ["transform_terminal_output", "transform_llm_output", "pre_llm_call"],
+            [
+                "transform_terminal_output",
+                "transform_llm_output",
+                "pre_llm_call",
+                "pre_api_request",
+                "post_api_request",
+                "api_request_error",
+            ],
         )
 
     def test_manifest_does_not_use_unsupported_metadata_fields_or_paint_plugin_version(self):

@@ -1,5 +1,5 @@
 name: llm-monitor
-version: "0.4.1"
+version: "0.4.2"
 description: "Owner-local LLM request monitor with Headroom Attribution v2, idempotent tool-event aggregation, strict metadata retention, and no provider-routing mutation."
 author: owner-local
 hooks:

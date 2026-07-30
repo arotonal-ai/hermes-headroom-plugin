@@ -28,6 +28,7 @@ required=(
   __init__.py
   pyproject.toml
   src/hermes_headroom_plugin/__init__.py
+  src/hermes_headroom_plugin/embedded_monitor.py
   src/hermes_headroom_plugin/runtime_manager.py
   src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md
   scripts/install-hermes-plugin.sh
@@ -47,6 +48,7 @@ required=(
   .github/workflows/runtime-smoke.yml
   .github/workflows/future-runtime-monitor.yml
   .github/workflows/release-candidate.yml
+  tests/test_embedded_monitor.py
 )
 
 for f in "${required[@]}"; do
@@ -69,10 +71,10 @@ for p in py_files:
 print(f"PASS: python syntax ok ({len(py_files)} files)")
 required_text = {
     'pyproject.toml': ['version = "0.6.4"', 'requires-python = ">=3.11,<3.15"', 'headroom-ai[proxy]==0.33.0', 'litellm==1.94.0rc3', 'pytest==9.1.1'],
-    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'headroomlabs-ai/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'scripts/test-headroom-runtime-smoke.py', 'scripts/install-production-runtime.py', 'scripts/run-isolated-unit-tests.py', 'docs/metrics/weekly-savings.md', 'docs/compatibility.md', 'docs/ports-and-services.md', 'future-runtime-monitor.yml', 'headroom-ai[proxy]', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup', 'Python boundary', '28787'],
-    'INSTALL.md': ['Acceptance matrix', 'API keys', 'scripts/test-clean-hermes-install.sh --local', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'scripts/headroom-runtime.py', 'headroom-runtime setup', 'headroom-runtime status --json', 'headroom-runtime doctor --json', 'headroom-runtime uninstall --json', 'headroom-ai[proxy]==0.33.0', 'provider_mode=manual', 'targets=[]', 'mutations=[]', 'docs/runtime-manager.md', 'docs/compatibility.md', 'HEADROOM_ALLOW_REMOTE_PROXY', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
+    'README.md': ['hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/headroom status', '/llm-monitor status', 'strict `metadata` mode', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'headroomlabs-ai/headroom', 'scripts/test-headroom-dependency-install.sh', 'scripts/test-headroom-dependency-install.py', 'scripts/test-headroom-runtime-smoke.py', 'scripts/install-production-runtime.py', 'scripts/run-isolated-unit-tests.py', 'docs/metrics/weekly-savings.md', 'docs/compatibility.md', 'docs/ports-and-services.md', 'future-runtime-monitor.yml', 'headroom-ai[proxy]', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup', 'Python boundary', '28787'],
+    'INSTALL.md': ['Acceptance matrix', 'API keys', '/llm-monitor status', 'mode=metadata', 'scripts/test-clean-hermes-install.sh --local', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'scripts/headroom-runtime.py', 'headroom-runtime setup', 'headroom-runtime status --json', 'headroom-runtime doctor --json', 'headroom-runtime uninstall --json', 'headroom-ai[proxy]==0.33.0', 'provider_mode=manual', 'targets=[]', 'mutations=[]', 'docs/runtime-manager.md', 'docs/compatibility.md', 'HEADROOM_ALLOW_REMOTE_PROXY', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
     'AGENTS.md': ['Do not copy another machine', 'Acceptance states', 'headroom_retrieve', 'upstream Headroom', 'scripts/headroom-runtime.py', 'headroom-runtime doctor --json', 'headroom-ai[proxy]==0.33.0', 'provider_mode=manual', 'targets=[]', 'mutations=[]', 'weekly metrics', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
-    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', 'headroom-ai[proxy]==0.33.0', 'scripts/headroom-runtime.py', 'scripts/run-isolated-unit-tests.py', 'headroom-runtime doctor --json', 'provider_mode=manual', 'mutations=[]', 'Python 3.12/3.13', '3.11/3.14', 'generate-weekly-savings-table.py', 'tool_execution', 'headroom-worker-lane'],
+    'docs/AGENT-INSTALL.md': ['PASS if', 'PARTIAL if', 'FAIL if', '/llm-monitor status', 'mode=metadata', 'headroom-ai[proxy]==0.33.0', 'scripts/headroom-runtime.py', 'scripts/run-isolated-unit-tests.py', 'headroom-runtime doctor --json', 'provider_mode=manual', 'mutations=[]', 'Python 3.12/3.13', '3.11/3.14', 'generate-weekly-savings-table.py', 'tool_execution', 'headroom-worker-lane'],
     'docs/ports-and-services.md': ['http://127.0.0.1:8787', 'headroom-hermes-plugin.service', 'com.headroom.hermes-plugin', 'headroom-hermes-plugin-startup', 'headroom-hermes-plugin-health', '127.0.0.1:28787', 'Retired integration-specific default', 'hermes-context-reduction.service', 'Instance-specific override only'],
     'docs/portable-core.md': ['hermes-headroom-plugin==0.6.4', 'headroom-ai[proxy]==0.33.0', 'litellm==1.94.0rc3'],
     'docs/compatibility.md': ['Published v0.4.x baseline', 'Published v0.5.x runtime manager', 'Future Runtime Monitor', 'Python 3.13', 'Python 3.14', 'headroom-ai[proxy]==0.33.0'],
@@ -80,9 +82,9 @@ required_text = {
     'MANIFEST.in': ['include INSTALL.md', 'recursive-include docs *.md', 'recursive-include scripts *.py *.sh'],
     'docs/metrics/weekly-savings.md': ['Weekly Headroom savings', 'no published metrics yet', 'pending real data'],
     'docs/context-economy-loop.md': ['observe -> classify -> act -> verify -> learn', 'Portable gate', 'exact source authority', 'Do not require external telemetry'],
-    'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/install-production-runtime.py', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'generate-weekly-savings-table.py', 'Python 3.13', 'Python 3.14', 'Do not print or advertise a plugin/skill version', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
+    'src/hermes_headroom_plugin/skills/headroom-token-cost-evaluation/SKILL.md': ['headroom_retrieve:headroom-token-cost-evaluation', 'hermes plugins install arotonal-ai/hermes-headroom-plugin --enable', '/llm-monitor status', 'strict', '`metadata` mode', 'INSTALL_PASS', 'RUNTIME_PARTIAL', 'RUNTIME_FULL', 'python scripts/install-production-runtime.py', 'python scripts/test-headroom-dependency-install.py', 'python scripts/test-headroom-runtime-smoke.py', 'generate-weekly-savings-table.py', 'Python 3.13', 'Python 3.14', 'Do not print or advertise a plugin/skill version', 'HEADROOM_ALLOW_REMOTE_PROXY', 'tool_execution', 'delegate_task', 'headroom-worker-lane', 'headroom-command-preflight', '/headroom setup'],
     'ACKNOWLEDGEMENTS.md': ['headroomlabs-ai/headroom', 'headroom-ai', 'Hermes Agent integration layer'],
-    'after-install.md': ['real savings are not active', 'PLUGIN_DIR=', 'scripts/headroom-runtime.py', 'headroom-runtime doctor --json', 'headroom-ai[proxy]==0.33.0', '/headroom smoke'],
+    'after-install.md': ['real savings are not active', 'PLUGIN_DIR=', '/llm-monitor status', 'strict `metadata` mode', 'scripts/headroom-runtime.py', 'headroom-runtime doctor --json', 'headroom-ai[proxy]==0.33.0', '/headroom smoke'],
     'docs/evidence/headroom-032-local-canary-20260718.json': ['0.32.0', 'not_promoted', 'single_host_canary'],
 }
 for rel, needles in required_text.items():

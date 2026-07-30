@@ -24,6 +24,12 @@ hermes gateway restart || true
 
 If operating inside an active Hermes chat instead of gateway shell, start a fresh session with `/new` after install.
 
+The plugin embeds `llm-monitor` and activates it by default in strict `metadata`
+mode. Verify with `/llm-monitor status`; expected state is `ON · mode=metadata`.
+This stores local counters/attribution only, makes no extra LLM calls, and sends
+no external telemetry. `/llm-monitor off` is the persistent opt-out. An enabled
+standalone monitor takes precedence without duplicate hooks.
+
 Production runtime — required for `/headroom smoke`, `headroom_retrieve`, middleware compression, and wrapper compression. Native Hermes install clones the full repo; invoke its deterministic launcher:
 
 ```bash
@@ -65,6 +71,7 @@ In Hermes:
 ```text
 /headroom status
 /headroom setup   # read-only setup guidance; does not install/start runtime
+/llm-monitor status
 ```
 
 If full runtime/proxy validation is requested, verify the upstream Headroom dependency/runtime without touching the real environment:

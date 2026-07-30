@@ -52,9 +52,16 @@ Then reload Hermes and run:
 ```text
 /headroom status
 /headroom smoke
+/llm-monitor status
 ```
 
 Expected durable state: `RUNTIME_FULL_DURABLE`.
+
+`llm-monitor` is active after a clean plugin install in strict `metadata` mode.
+It records local counters/attribution without request/response bodies, extra LLM
+calls, or external telemetry. `/llm-monitor off` is the persistent opt-out. If
+an enabled standalone monitor already exists, it remains authoritative and the
+embedded monitor does not duplicate hooks.
 
 The managed runtime uses `headroom-ai[proxy]==0.33.0` with `litellm==1.94.0rc3` on certified Python `>=3.11,<3.15`. It installs the pair in an isolated venv, strips inherited Python import-path overrides, binds only to `127.0.0.1:8787` by default, disables telemetry and unbacked Kompress, uses manual provider selection with no targets, checks upstream lifecycle/readiness, and runs real compress → retrieve smoke.
 

@@ -9,3 +9,6 @@ provides_hooks:
   - transform_terminal_output
   - transform_llm_output
   - pre_llm_call
+  - pre_api_request
+  - post_api_request
+  - api_request_error

@@ -82,8 +82,10 @@ _LAST_INSTRUCTIONS_CHARS = 0
 _LAST_TOOL_SCHEMA_CHARS_BY_COUNT: Dict[int, int] = {}
 
 _DEFAULT_STATE = {
-    "enabled": False,
-    "mode": "full",  # full = sanitized request/response payloads; metadata = counters only
+    # Installation default: useful local accounting without retaining request or
+    # response bodies. `/llm-monitor off` remains a persistent explicit opt-out.
+    "enabled": True,
+    "mode": "metadata",  # full = sanitized payloads; metadata = counters only
     "strict_metadata": True,
     "retention_days": 14,
     "max_trace_files": 2000,

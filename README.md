@@ -22,7 +22,14 @@ Then in Hermes:
 ```text
 /headroom status
 /headroom setup   # read-only setup guidance; does not install/start runtime
+/llm-monitor status
 ```
+
+`llm-monitor` is active on a clean install in strict `metadata` mode: it records
+local counters and attribution, not request/response bodies. `/llm-monitor off`
+is the persistent opt-out. If an enabled standalone `llm-monitor` is already
+installed, it remains authoritative and the embedded copy does not register
+duplicate hooks.
 
 After the Headroom runtime/proxy is installed and healthy:
 
@@ -53,6 +60,7 @@ Hermes can benefit from context reduction, but a context/cost layer must be safe
 | `/headroom smoke` | ✅ requires runtime | real compress → retrieve sentinel check through the configured Headroom proxy |
 | `/headroom audit` | ✅ plugin-only + runtime-aware | local policy/runtime posture summary |
 | `/headroom cache` | ✅ runtime read-only | reports runtime-owned CCR store/cache entries, TTL, backend, usage, and retrieval counts; the plugin has no independent CCR cache |
+| `/llm-monitor status` | ✅ default-on | embedded local observability starts in strict metadata mode; no request/response bodies, external telemetry, or extra LLM calls; standalone enabled monitor wins without duplicate hooks |
 | Visible `[HR✓]` / `[HR!]` final-answer marker | ✅ opt-in | disabled by default; enable with `context_reduction.visible_status_marker: true` or `HEADROOM_VISIBLE_STATUS_MARKER=1`; reports readiness only |
 | Conservative admission policy | ✅ included | exact/compressible/blocked classification scaffolding |
 | Bundled operating skill | ✅ included | `headroom_retrieve:headroom-token-cost-evaluation` when plugin skills are supported |

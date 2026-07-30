@@ -71,6 +71,7 @@ from hermes_cli.plugins import PluginManager
 pm = PluginManager()
 pm.discover_and_load(force=True)
 from hermes_headroom_plugin.commands import handle_headroom_command
+from hermes_headroom_plugin.embedded_monitor import load_embedded_monitor
 loaded = pm._plugins.get('headroom_retrieve')
 with patch('hermes_headroom_plugin.commands.readyz', return_value={
     'ok': True,
@@ -84,8 +85,10 @@ data = {
     'enabled': bool(getattr(loaded, 'enabled', False)) if loaded else False,
     'error': getattr(loaded, 'error', None) if loaded else None,
     'tools': getattr(loaded, 'tools_registered', []) if loaded else [],
+    'hooks': getattr(loaded, 'hooks_registered', []) if loaded else [],
     'commands': getattr(loaded, 'commands_registered', []) if loaded else [],
     'headroom_on_text': headroom_on_text,
+    'llm_monitor_status': load_embedded_monitor().handle_command('status'),
 }
 print(json.dumps(data, sort_keys=True))
 assert data['seen'], data
@@ -93,8 +96,13 @@ assert data['enabled'], data
 assert data['error'] is None, data
 assert 'headroom_retrieve' in data['tools'], data
 assert 'headroom' in data['commands'], data
+assert 'llm-monitor' in data['commands'], data
+assert 'pre_api_request' in data['hooks'], data
+assert 'post_api_request' in data['hooks'], data
+assert 'api_request_error' in data['hooks'], data
 assert 'already active' in data['headroom_on_text'], data
 assert '/headroom smoke' in data['headroom_on_text'], data
+assert data['llm_monitor_status'].startswith('LLM monitor ON · mode=metadata'), data
 PY
 
 echo "PASS: clean Hermes temp-home install/load works ($MODE)"

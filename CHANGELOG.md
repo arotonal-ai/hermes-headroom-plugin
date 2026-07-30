@@ -12,6 +12,7 @@
 - Add a deduplicated net ledger that separates exact middleware deltas from provider/cache/billing observations and subtracts retrieval, retry, extra-call and quality-correction overhead.
 - Add a content-free paired exact-vs-reduced evaluator for representative quality, exact-invariant, latency and task-level net gates; synthetic provider/cache fixtures remain explicitly non-promotable.
 - Observe canonical completed-turn usage/transport outcomes through the native composite-engine hook while keeping them separate from semantic task success and request-level provider, retry and billing authority.
+- Activate the bundled `llm-monitor` capability on clean plugin installs in strict metadata-only mode, preserve `/llm-monitor off` as a persistent opt-out, and defer to an enabled standalone monitor to avoid duplicate hooks or overwriting owner-local variants.
 
 ## v0.6.3 — 2026-07-30
 
