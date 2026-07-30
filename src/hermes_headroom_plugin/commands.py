@@ -96,6 +96,8 @@ def _read_net_ledger_events(*, limit: int = 10000) -> tuple[list[dict[str, Any]]
         "headroom_retry",
         "headroom_extra_call",
         "headroom_task_result",
+        "headroom_turn_usage",
+        "headroom_turn_result",
     }
     events: list[dict[str, Any]] = []
     try:
@@ -413,7 +415,9 @@ def _render_usage(parts: list[str]) -> str:
             f"Headroom usage turn · {label} · events={len(scoped)} · "
             f"{_format_action_counts(summary['actions'])} · saved={summary['tokens_saved']} · "
             f"gross_est={net['gross_est_tokens_saved']} retrieval_est={net['retrieval_reintroduced_est_tokens']} "
-            f"net_est={net['net_est_tokens_saved']} provider_requests={net['provider_request_count']} · "
+            f"net_est={net['net_est_tokens_saved']} provider_requests={net['provider_request_count']} "
+            f"turn_usage={net['turn_usage_count']} turn_results={net['turn_result_count']} "
+            f"turn_cache_read={net['turn_cache_read_tokens']} · "
             f"lanes={_format_top_lanes(summary['lanes'])} · platforms={_format_top_platforms(summary['platforms'])} · path={path}"
         )
 
@@ -426,7 +430,9 @@ def _render_usage(parts: list[str]) -> str:
         f"Headroom usage · events={len(events)} · {_format_action_counts(summary['actions'])} · "
         f"saved={summary['tokens_saved']} · gross_est={net['gross_est_tokens_saved']} "
         f"retrieval_est={net['retrieval_reintroduced_est_tokens']} net_est={net['net_est_tokens_saved']} "
-        f"provider_requests={net['provider_request_count']} cache_read={net['provider_cache_read_tokens']} · "
+        f"provider_requests={net['provider_request_count']} cache_read={net['provider_cache_read_tokens']} "
+        f"turn_usage={net['turn_usage_count']} turn_results={net['turn_result_count']} "
+        f"turn_cache_read={net['turn_cache_read_tokens']} · "
         f"lanes={_format_top_lanes(summary['lanes'])} · platforms={_format_top_platforms(summary['platforms'])} · path={path}"
     )
 

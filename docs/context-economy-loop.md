@@ -87,6 +87,22 @@ Decision semantics:
 
 The command does not mutate Hermes config, plugin registration, runtime cache, or provider routing.
 
+### Paired quality/net gate
+
+Score retained exact-vs-reduced evidence before any compatibility or promotion canary:
+
+```bash
+headroom-paired-evaluation --input paired-corpus.jsonl --output paired-report.json
+# repository fixture/contract gate
+PYTHONPATH=src python scripts/headroom-paired-evaluation.py \
+  --input tests/fixtures/phase2-paired-corpus.jsonl \
+  --output /tmp/headroom-paired-report.json
+```
+
+The report requires representative cohorts, critical-invariant and outcome parity, byte equality for exact-required cases, bounded latency and positive task-level net estimates for admitted reductions. It never includes paired source text. `PASS_SYNTHETIC_CONTRACT__REAL_PROVIDER_CACHE_EVIDENCE_MISSING` validates the evaluator and ledger only; it is not model-quality, provider-cache, billing or promotion evidence.
+
+When the composite engine is selected, Hermes's native `on_turn_complete` hook can add content-free `headroom_turn_usage` and `headroom_turn_result` rows. Completed-turn usage is canonical at **turn aggregate** scope, while a completed turn is not mislabelled as task success. Without an exact `api_request_id`, usage stays separate from request-level provider rows; `api_call_count > 1` is not automatically labelled as retry cost, and billing remains unavailable. Only an evaluator with explicit task invariants/outcome evidence may emit `headroom_task_result`.
+
 
 ## Runtime boundary
 

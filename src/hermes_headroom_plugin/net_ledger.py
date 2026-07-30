@@ -96,6 +96,8 @@ def build_net_ledger(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     pending_retrievals: list[Mapping[str, Any]] = []
     provider_requests: dict[str, dict[str, Any]] = {}
     pending_overheads: list[Mapping[str, Any]] = []
+    turn_usage: dict[str, dict[str, Any]] = {}
+    turn_results: dict[str, dict[str, Any]] = {}
     seen_event_ids: set[str] = set()
     seen_source_keys: set[str] = set()
     seen_retrieval_keys: set[str] = set()
@@ -177,6 +179,46 @@ def build_net_ledger(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             pending_overheads.append(event)
             continue
 
+        if event_type == "headroom_turn_usage":
+            turn_identity = str(event.get("turn_id") or event.get("task_id") or "").strip()
+            turn_key = f"{event.get('session_id') or ''}\0{turn_identity}"
+            if not turn_identity or turn_key in turn_usage:
+                continue
+            turn_usage[turn_key] = {
+                "turn_id": str(event.get("turn_id") or ""),
+                "task_id": str(event.get("task_id") or ""),
+                "provider": str(event.get("provider") or ""),
+                "model": str(event.get("model") or ""),
+                "prompt_or_input_tokens": _int(event.get("prompt_tokens")) or _int(event.get("input_tokens")),
+                "cache_read_tokens": _int(event.get("cache_read_tokens")),
+                "cache_write_tokens": _int(event.get("cache_write_tokens")),
+                "output_tokens": _int(event.get("output_tokens")),
+                "total_tokens": _int(event.get("total_tokens")),
+                "api_call_count": _int(event.get("api_call_count")),
+                "usage_scope": str(event.get("usage_scope") or "completed_turn_aggregate"),
+                "usage_authority": str(event.get("usage_authority") or "unknown"),
+                "request_level_attribution": False,
+                "billing_authority": str(event.get("billing_authority") or "unavailable"),
+            }
+            continue
+
+        if event_type == "headroom_turn_result":
+            turn_identity = str(event.get("turn_id") or event.get("task_id") or "").strip()
+            turn_key = f"{event.get('session_id') or ''}\0{turn_identity}"
+            if not turn_identity or turn_key in turn_results:
+                continue
+            turn_results[turn_key] = {
+                "turn_id": str(event.get("turn_id") or ""),
+                "task_id": str(event.get("task_id") or ""),
+                "turn_success": event.get("turn_success"),
+                "critical_failure": bool(event.get("critical_failure")),
+                "interrupted": bool(event.get("interrupted")),
+                "turn_exit_reason": str(event.get("turn_exit_reason") or ""),
+                "result_scope": str(event.get("result_scope") or "completed_turn_transport"),
+                "result_authority": str(event.get("result_authority") or "unknown"),
+            }
+            continue
+
         if event_type == "headroom_task_result":
             task_key = str(event.get("task_id") or event.get("turn_id") or "")
             if task_key:
@@ -236,6 +278,8 @@ def build_net_ledger(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "rows": rows,
         "provider_requests": sorted(provider_requests.values(), key=lambda item: item["api_request_id"]),
+        "turn_usage": sorted(turn_usage.values(), key=lambda item: item["turn_id"] or item["task_id"]),
+        "turn_results": sorted(turn_results.values(), key=lambda item: item["turn_id"] or item["task_id"]),
         "task_results": sorted(task_results.values(), key=lambda item: item["task_id"]),
         "unmatched_retrieval_events": unmatched_retrievals,
         "unmatched_overhead_events": unmatched_overheads,
@@ -253,5 +297,10 @@ def build_net_ledger(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
             "provider_prompt_or_input_tokens": sum(item["prompt_or_input_tokens"] for item in provider_requests.values()),
             "provider_cache_read_tokens": sum(item["cache_read_tokens"] for item in provider_requests.values()),
             "provider_cache_write_tokens": sum(item["cache_write_tokens"] for item in provider_requests.values()),
+            "turn_usage_count": len(turn_usage),
+            "turn_prompt_or_input_tokens": sum(item["prompt_or_input_tokens"] for item in turn_usage.values()),
+            "turn_cache_read_tokens": sum(item["cache_read_tokens"] for item in turn_usage.values()),
+            "turn_cache_write_tokens": sum(item["cache_write_tokens"] for item in turn_usage.values()),
+            "turn_result_count": len(turn_results),
         },
     }

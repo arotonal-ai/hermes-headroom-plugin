@@ -6,6 +6,8 @@
 - Centralize semantic admission as `compress_now`, `hot_exact_then_cold_compact`, or `always_exact`, keeping instructions, edits/recovery, memory, interaction/research sources and immediate readbacks exact.
 - Add a default-off, profile-isolated, content-addressed local exact fallback with TTL/quota, `0700`/`0600` permissions, checksum verification and explicit exact/redacted/expired states.
 - Add a deduplicated net ledger that separates exact middleware deltas from provider/cache/billing observations and subtracts retrieval, retry, extra-call and quality-correction overhead.
+- Add a content-free paired exact-vs-reduced evaluator for representative quality, exact-invariant, latency and task-level net gates; synthetic provider/cache fixtures remain explicitly non-promotable.
+- Observe canonical completed-turn usage/transport outcomes through the native composite-engine hook while keeping them separate from semantic task success and request-level provider, retry and billing authority.
 
 ## v0.6.3 — 2026-07-30
 

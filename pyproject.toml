@@ -44,6 +44,7 @@ headroom-command-preflight = "hermes_headroom_plugin.wrappers:preflight_main"
 headroom-events-summary = "hermes_headroom_plugin.commands:events_summary_main"
 headroom-adoption-benchmark = "hermes_headroom_plugin.benchmark:main"
 headroom-cache-effectiveness = "hermes_headroom_plugin.cache_effectiveness:main"
+headroom-paired-evaluation = "hermes_headroom_plugin.paired_evaluation:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

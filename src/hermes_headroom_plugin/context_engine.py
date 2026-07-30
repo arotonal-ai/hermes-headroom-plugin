@@ -42,11 +42,34 @@ ContextEngine = _HermesContextEngine
 
 from .config import EffectiveConfig, resolve_effective_config
 from .lifecycle import transform_history
+from .observability import append_metadata_event
 from .reduction import compress_tool_result_for_context
 
 
 def _history_digest(messages: list[dict[str, Any]]) -> str:
     return hashlib.sha256(repr(messages).encode("utf-8", errors="replace")).hexdigest()
+
+
+def _turn_event_id(kind: str, *, session_id: str, turn_id: str, task_id: str) -> str:
+    identity = f"{kind}\0{session_id}\0{turn_id}\0{task_id}"
+    return hashlib.sha256(identity.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _usage_int(usage: Mapping[str, Any], *keys: str) -> int:
+    for key in keys:
+        value = usage.get(key)
+        if value is None:
+            continue
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def _metadata_text(value: Any, *, limit: int) -> str:
+    text = str(value or "").replace("\r", " ").replace("\n", " ")
+    return "".join(char for char in text if char >= " " or char == "\t").strip()[:limit]
 
 
 def _valid(original: list[dict[str, Any]], candidate: list[dict[str, Any]]) -> bool:
@@ -213,6 +236,75 @@ class HeadroomCompositeEngine(_HermesContextEngine):  # type: ignore[reportGener
         if self._builtin is not None: self._builtin.on_session_start(session_id, **kwargs)
     def on_session_end(self, session_id, messages):
         if self._builtin is not None: self._builtin.on_session_end(session_id, messages)
+    def on_turn_complete(self, messages, usage=None, **kwargs):
+        """Record content-free canonical turn usage and outcome metadata.
+
+        Hermes owns the completed-turn usage authority. It is intentionally kept
+        separate from request-level provider/billing rows because this hook does
+        not guarantee an ``api_request_id`` for every provider call.
+        """
+        if self._builtin is not None:
+            hook = getattr(self._builtin, "on_turn_complete", None)
+            if callable(hook):
+                hook(messages, usage, **kwargs)
+        session_id = _metadata_text(kwargs.get("session_id") or self._session_id, limit=120)
+        turn_id = _metadata_text(kwargs.get("turn_id"), limit=120)
+        task_id = _metadata_text(kwargs.get("task_id"), limit=120)
+        if not (turn_id or task_id):
+            return
+        interrupted = bool(kwargs.get("interrupted"))
+        failed = bool(kwargs.get("failed"))
+        exit_reason = _metadata_text(kwargs.get("turn_exit_reason"), limit=120)
+        try:
+            api_call_count = max(0, int(kwargs.get("api_call_count") or 0))
+        except (TypeError, ValueError):
+            api_call_count = 0
+        if isinstance(usage, Mapping):
+            prompt_tokens = _usage_int(usage, "prompt_tokens", "input_tokens")
+            input_tokens = _usage_int(usage, "input_tokens", "prompt_tokens")
+            output_tokens = _usage_int(usage, "output_tokens", "completion_tokens")
+            total_tokens = _usage_int(usage, "total_tokens") or input_tokens + output_tokens
+            append_metadata_event(
+                {
+                    "type": "headroom_turn_usage",
+                    "schema": "headroom.turn_usage.v1",
+                    "event_id": _turn_event_id("usage", session_id=session_id, turn_id=turn_id, task_id=task_id),
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "task_id": task_id,
+                    "provider": _metadata_text(kwargs.get("provider"), limit=80),
+                    "model": _metadata_text(kwargs.get("model") or self.model, limit=120),
+                    "prompt_tokens": prompt_tokens,
+                    "input_tokens": input_tokens,
+                    "cache_read_tokens": _usage_int(usage, "cache_read_tokens"),
+                    "cache_write_tokens": _usage_int(usage, "cache_write_tokens"),
+                    "output_tokens": output_tokens,
+                    "reasoning_tokens": _usage_int(usage, "reasoning_tokens"),
+                    "total_tokens": total_tokens,
+                    "api_call_count": api_call_count,
+                    "usage_scope": "completed_turn_aggregate",
+                    "usage_authority": "hermes_context_engine_completed_turn",
+                    "request_level_attribution": False,
+                    "retry_tokens_inferred": False,
+                    "billing_authority": "unavailable",
+                }
+            )
+        append_metadata_event(
+            {
+                "type": "headroom_turn_result",
+                "schema": "headroom.turn_result.v1",
+                "event_id": _turn_event_id("turn", session_id=session_id, turn_id=turn_id, task_id=task_id),
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "task_id": task_id,
+                "turn_success": False if failed else None if interrupted else True,
+                "critical_failure": failed,
+                "interrupted": interrupted,
+                "turn_exit_reason": exit_reason,
+                "result_scope": "completed_turn_transport",
+                "result_authority": "hermes_context_engine_completed_turn",
+            }
+        )
     def on_session_reset(self):
         super().on_session_reset(); self._session_id = ""; self._no_op.clear()
         if self._builtin is not None: self._builtin.on_session_reset()
