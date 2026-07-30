@@ -113,7 +113,7 @@ DURABLE if:
 - the expected user-level supervisor artifact is present for the target platform;
 - `/headroom smoke` still returns PASS after the relevant restart/login lifecycle.
 
-Published v0.6.2 certifies the Python `>=3.11,<3.15` range through blocking 3.11/3.14 unit, dependency, and managed-lifecycle boundary jobs on Linux, macOS, and native Windows. Python 3.12/3.13 remain inside that package contract; every real host still needs target-host `RUNTIME_FULL_DURABLE` evidence. WSL2/Termux remain target-evidence lanes. Existing-deployment reconciliation is separately tracked and is not a clean-install Python support gate.
+Published v0.6.3 certifies the Python `>=3.11,<3.15` range through blocking 3.11/3.14 unit, dependency, and managed-lifecycle boundary jobs on Linux, macOS, and native Windows. Python 3.12/3.13 remain inside that package contract; every real host still needs target-host `RUNTIME_FULL_DURABLE` evidence. WSL2/Termux remain target-evidence lanes. Existing-deployment reconciliation is separately tracked and is not a clean-install Python support gate.
 
 FAIL if:
 

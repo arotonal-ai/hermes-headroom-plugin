@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.6.3 — 2026-07-30
+
 - Make `python scripts/run-isolated-unit-tests.py` the canonical developer/operator test entrypoint. When the selected interpreter lacks pytest or can import a live Hermes host, it re-executes in a pinned ephemeral `uv --isolated --no-project` environment instead of installing test dependencies into the production/runtime venv.
 - Strip inherited `PYTHONPATH`, `PYTHONHOME`, and `HEADROOM_*` state from unit-test subprocesses case-insensitively and retain the upstream Hermes threshold-resolver compatibility fixture.
 - Reconcile public port/service documentation: `8787` is the portable default, profile `hermes-plugin` derives the native supervisor names, `28787` is retired, and ports such as `28789` are instance-specific overrides only.

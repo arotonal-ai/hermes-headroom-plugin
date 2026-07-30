@@ -250,7 +250,7 @@ This report is read-only: no config mutation, no cache purge, no provider/model 
 
 ## Certified runtime matrix
 
-The v0.6.2 blocking CI and Runtime Manager Lifecycle workflows validate the certified Python range at its 3.11 and 3.14 boundaries. The lifecycle workflow installs the base wheel, creates a real managed runtime, verifies status/doctor plus compress → retrieve, and uninstalls it.
+The v0.6.3 blocking CI and Runtime Manager Lifecycle workflows validate the certified Python range at its 3.11 and 3.14 boundaries. The lifecycle workflow installs the base wheel, creates a real managed runtime, verifies status/doctor plus compress → retrieve, and uninstalls it.
 
 | OS | Python boundary | Plugin CI | Managed lifecycle |
 |---|---:|---:|---:|
@@ -263,7 +263,7 @@ The v0.6.2 blocking CI and Runtime Manager Lifecycle workflows validate the cert
 | WSL2 | target evidence required | 🟡 expected | 🟡 expected |
 | Termux | target evidence required | 🟡 expected | 🟡 expected |
 
-Legend: ✅ verified in the published v0.6.2 workflows, 🟡 expected but not certified here. Python 3.12 and 3.13 are inside the published `>=3.11,<3.15` package contract; the blocking matrix exercises the lower and upper boundaries. Every target host still needs its own `RUNTIME_FULL_DURABLE` evidence. See [docs/compatibility.md](docs/compatibility.md).
+Legend: ✅ verified in the published v0.6.3 workflows, 🟡 expected but not certified here. Python 3.12 and 3.13 are inside the published `>=3.11,<3.15` package contract; the blocking matrix exercises the lower and upper boundaries. Every target host still needs its own `RUNTIME_FULL_DURABLE` evidence. See [docs/compatibility.md](docs/compatibility.md).
 
 ## Agent quick contract
 
@@ -330,7 +330,7 @@ Default plugin proxy URL:
 http://127.0.0.1:8787
 ```
 
-Port `8787` is the portable default for this integration and the v0.6.2 runtime manager. Production commands pass it explicitly so `/headroom status`, `tool_execution`, and `/headroom smoke` share one endpoint. For concurrent Hermes instances on the same host, assign each isolated run a different free loopback port and pass the same endpoint through canonical Hermes config or `HEADROOM_PROXY_URL`; do not treat another user's healthy proxy as clean-instance evidence. `28787` is a retired integration-specific default, while ports such as `28789` have only instance-local meaning. See [ports and native supervisor names](docs/ports-and-services.md).
+Port `8787` is the portable default for this integration and the v0.6.3 runtime manager. Production commands pass it explicitly so `/headroom status`, `tool_execution`, and `/headroom smoke` share one endpoint. For concurrent Hermes instances on the same host, assign each isolated run a different free loopback port and pass the same endpoint through canonical Hermes config or `HEADROOM_PROXY_URL`; do not treat another user's healthy proxy as clean-instance evidence. `28787` is a retired integration-specific default, while ports such as `28789` have only instance-local meaning. See [ports and native supervisor names](docs/ports-and-services.md).
 
 Environment override:
 

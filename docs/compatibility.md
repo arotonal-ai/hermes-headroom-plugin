@@ -9,6 +9,7 @@ This page separates **published certified releases** from withdrawn releases and
 - Published prerelease `v0.6.0rc1`: the same managed pair plus optional P1–P3 context lifecycle, validated locally and on the blocking multi-OS lifecycle matrix.
 - Published `v0.6.1`: Python `>=3.11,<3.15`, `headroom-ai[proxy]==0.32.1`, and `litellm==1.94.0rc3`, with blocking Python 3.11/3.14 unit, dependency, and lifecycle lanes on Linux, macOS, and Windows.
 - Published `v0.6.2`: the same certified pair and Python range, plus exact v0.6.0 managed-manifest compatibility for safe uninstall during upgrade.
+- Published `v0.6.3`: portable pytest isolation, reconciled port/service authority, listener-free plugin semantics, and explicit temporal in-memory CCR authority, with the same certified runtime pair and Python range.
 
 ## Python 3.14 production compatibility
 
