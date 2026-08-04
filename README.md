@@ -1,5 +1,12 @@
 # Hermes Headroom Plugin
 
+> [!IMPORTANT]
+> **Archived historical project — not recommended for new installations.**
+>
+> This repository preserves an owner-local Headroom integration experiment and its release history. The active recommended default for Hermes Agent is its native context compressor. For future Headroom work, start from the official upstream [Hermes integration](https://github.com/headroomlabs-ai/headroom/tree/main/plugins/hermes), which currently provides a retrieval-only `headroom_retrieve` baseline. Do not infer complete generic `headroom wrap hermes` or end-to-end provider support from that retrieval plugin.
+>
+> The releases and installation instructions below remain available as historical evidence, but they describe a retired architecture and should not be deployed as a current recommendation. No new features, runtime compatibility work, or support fixes are planned here.
+
 [![CI](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/workflows/ci.yml)
 [![Runtime Smoke](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/workflows/runtime-smoke.yml/badge.svg)](https://github.com/arotonal-ai/hermes-headroom-plugin/actions/workflows/runtime-smoke.yml)
 ![Hermes Plugin](https://img.shields.io/badge/Hermes-plugin-purple)
